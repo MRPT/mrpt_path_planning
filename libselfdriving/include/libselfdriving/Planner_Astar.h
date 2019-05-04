@@ -5,3 +5,27 @@
  * ------------------------------------------------------------------------- */
 
 #pragma once
+
+#include "PlannerTypes.h"
+
+namespace selfdrive
+{
+class Planner_Astar
+{
+   public:
+	Planner_Astar()  = default;
+	~Planner_Astar() = default;
+
+	NavPlan plan(const PlannerInput& in);
+
+	struct Parameters
+	{
+		double grid_resolution{.05};  //!< [meters]
+	};
+
+	Parameters params_;
+
+   private:
+};
+
+}  // namespace selfdrive
