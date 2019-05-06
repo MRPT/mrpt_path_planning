@@ -18,8 +18,7 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
 
     NavPlan ret;
 
-    ret.state_start = in.state_start;
-    ret.state_goal  = in.state_goal;
+    ret.original_input = in;
 
     // Reuse MRPT's implementation:
     mrpt::nav::PlannerSimple2D grid_planner;
@@ -41,6 +40,17 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
     float min_x, max_x, min_y, max_y, min_z, max_z;
     obs_pts->boundingBox(min_x, max_x, min_y, max_y, min_z, max_z);
 
+    // make sure the bbox includes the goal & start poses as well as obstacles:
+    mrpt::keep_max(max_x, in.state_start.pose.x + 1.0);
+    mrpt::keep_max(max_x, in.state_goal.pose.x + 1.0);
+    mrpt::keep_max(max_y, in.state_start.pose.y + 1.0);
+    mrpt::keep_max(max_y, in.state_goal.pose.y + 1.0);
+
+    mrpt::keep_min(min_x, in.state_start.pose.x - 1.0);
+    mrpt::keep_min(min_x, in.state_goal.pose.x - 1.0);
+    mrpt::keep_min(min_y, in.state_start.pose.y - 1.0);
+    mrpt::keep_min(min_y, in.state_goal.pose.y - 1.0);
+
     // Build an occ. grid: all free except obstacles in the input
     // pointcloud.
     profiler_.enter("plan.build_grid");
@@ -58,10 +68,6 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
     }
     profiler_.leave("plan.build_grid");
 
-#if 1
-    obsGrid.saveAsBitmapFile("gridmap.png");
-#endif
-
     // Run A* itself:
     profiler_.enter("plan.computePath");
 
@@ -74,7 +80,7 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
 
     profiler_.leave("plan.computePath");
 
-    if (path_not_found)
+    if (path_not_found || path.empty())
     {
         ret.success = false;
         return ret;
@@ -82,6 +88,38 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
 
     // Go thru the list of points and convert them into a sequence of PTG
     // actions:
+    SE2_KinState last_state;
+    last_state = in.state_start;
+
+    // Make sure PTGs are initialized
+    if (!in.ptgs.empty())
+    {
+        CTimeLoggerEntry tle(profiler_, "plan.init_PTGs");
+        for (auto& ptg : in.ptgs)
+        {
+            ASSERT_(ptg);
+            ptg->initialize();
+        }
+    }
+
+    for (const auto& p : path)
+    {
+        NavPlanAction act;
+        act.state_from    = last_state;
+        act.state_to.pose = mrpt::math::TPose2D(p.x, p.y, 0);
+
+        // Compute PTG actions (trajectory segments):
+        if (!in.ptgs.empty())
+        {
+            //
+            MRPT_TODO("adjust phi() according to ptg");
+        }
+
+        // for the next iter:
+        last_state = act.state_to;
+
+        ret.actions.push_back(std::move(act));
+    }
 
     return ret;
     MRPT_END
