@@ -7,7 +7,9 @@
 #pragma once
 
 #include <mrpt/maps/CSimplePointsMap.h>
-#include <mrpt/math/lightweight_geom_data.h>
+#include <mrpt/math/TPolygon2D.h>
+#include <mrpt/math/TPose2D.h>
+#include <mrpt/math/TTwist2D.h>
 #include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
 #include <memory>
 #include <vector>
