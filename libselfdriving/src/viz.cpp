@@ -20,9 +20,17 @@ static mrpt::opengl::CRenderizable::Ptr getRobotShapeViz(const RobotShape& r)
 {
     if (r.robot_shape.empty())
     {
+#if 0
         return mrpt::opengl::CCylinder::Create(
             r.robot_radius, r.robot_radius, 0.10f /*height*/, 20 /*slices*/,
             2 /*stacks*/);
+#else
+        auto obj = mrpt::opengl::CCylinder::Create(
+            r.robot_radius, r.robot_radius, 0.05f /*height*/, 20 /*slices*/,
+            2 /*stacks*/);
+        obj->setHasBases(false, false);
+        return obj;
+#endif
     }
     else
     {
