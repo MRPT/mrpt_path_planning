@@ -14,7 +14,7 @@ struct NavPlanRenderOptions
 {
     /** dont return viz_nav_plan() until user closes the window */
     bool gui_modal{true};
-    int  show_robot_shape_every_N{5};
+    int  show_robot_shape_every_N{1};
 };
 
 void viz_nav_plan(
