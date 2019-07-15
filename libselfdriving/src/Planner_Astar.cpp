@@ -92,10 +92,10 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
     last_state = in.state_start;
 
     // Make sure PTGs are initialized
-    if (!in.ptgs.empty())
+    if (!in.ptgs.ptgs.empty())
     {
         CTimeLoggerEntry tle(profiler_, "plan.init_PTGs");
-        for (auto& ptg : in.ptgs)
+        for (auto& ptg : in.ptgs.ptgs)
         {
             ASSERT_(ptg);
             ptg->initialize();
@@ -109,7 +109,7 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
         act.state_to.pose = mrpt::math::TPose2D(p.x, p.y, 0);
 
         // Compute PTG actions (trajectory segments):
-        if (!in.ptgs.empty())
+        if (!in.ptgs.ptgs.empty())
         {
             //
             MRPT_TODO("adjust phi() according to ptg");

@@ -6,6 +6,7 @@
 
 #include <libselfdriving/Planner_Astar.h>
 #include <libselfdriving/viz.h>
+#include <mrpt/config/CConfigFile.h>
 #include <tclap/CmdLine.h>
 #include <iostream>
 
@@ -18,6 +19,10 @@ static TCLAP::CmdLine cmd("plan-path");
 static TCLAP::ValueArg<std::string> arg_obs_file(
     "o", "obstacles", "Input .txt file with obstacle points.", true, "",
     "obs.txt", cmd);
+
+static TCLAP::ValueArg<std::string> arg_ptgs_file(
+    "p", "ptg-config", "Input .ini file with PTG definitions.", true, "",
+    "ptgs.ini", cmd);
 
 static TCLAP::ValueArg<std::string> arg_start_pose(
     "s", "start-pose", "Start 2D pose", true, "", "\"[x y phi_deg]\"", cmd);
@@ -57,6 +62,10 @@ static void do_plan_path()
 
     // Set planner required params:
     planner.params_.grid_resolution = 0.05;
+
+    // PTGs config file:
+    mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
+    pi.ptgs.initFromConfigFile(cfg, "CReactiveNavigationSystem");
 
     const selfdrive::NavPlan plan = planner.plan(pi);
 
