@@ -84,7 +84,7 @@ void selfdrive::viz_nav_plan(
                     getRobotShapeViz(plan.original_input.robot_shape));
             }
 
-            gl_group->setLocation(p.state_from.pose.x, p.state_from.pose.y, 0);
+            gl_group->setPose(p.state_from.pose);
             scene->insert(gl_group);
         }
 

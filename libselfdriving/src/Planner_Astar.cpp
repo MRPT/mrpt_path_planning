@@ -5,6 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <libselfdriving/Planner_Astar.h>
+#include <libselfdriving/bestTrajectory.h>
 #include <mrpt/maps/COccupancyGridMap2D.h>
 #include <mrpt/nav/planners/PlannerSimple2D.h>
 #include <iostream>
@@ -111,8 +112,8 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
         // Compute PTG actions (trajectory segments):
         if (!in.ptgs.ptgs.empty())
         {
-            //
-            MRPT_TODO("adjust phi() according to ptg");
+            // This finds the best PTG segments for the from/to poses.
+            selfdrive::bestTrajectory(act, in.ptgs);
         }
 
         // for the next iter:
