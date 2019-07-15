@@ -48,13 +48,30 @@ class ObstacleSource
     mrpt::maps::CSimplePointsMap::Ptr static_obs_{};
 };
 
+struct TrajectoriesAndRobotShape
+{
+    void initFromConfigFile(
+        mrpt::config::CConfigFileBase& cfg, const std::string& section);
+
+    std::vector<std::shared_ptr<ptg_t>> ptgs;  //!< Allowed movement sets
+
+    /** The robot 2D shape model. Only one of `robot_shape` or
+     * `robot_shape_circular_radius` will be used in each PTG */
+    mrpt::math::CPolygon robotShape;
+
+    /** Radius of the robot if approximated as a circle. Only one of
+     * `robot_shape` or `robot_shape_circular_radius` will be used in each PTG
+     */
+    double robotShapeCircularRadius{.0};
+};
+
 struct PlannerInput
 {
-    RobotShape                          robot_shape;
-    SE2_KinState                        state_start, state_goal;
-    ObstacleSource::Ptr                 obstacles;
-    double                              min_step_len{0.25};  //!< [meters]
-    std::vector<std::shared_ptr<ptg_t>> ptgs;  //!< Allowed movement sets
+    RobotShape                robot_shape;
+    SE2_KinState              state_start, state_goal;
+    ObstacleSource::Ptr       obstacles;
+    double                    min_step_len{0.25};  //!< [meters]
+    TrajectoriesAndRobotShape ptgs;
 };
 
 struct NavPlanAction
