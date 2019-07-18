@@ -9,6 +9,7 @@
 #include <mrpt/opengl/CCylinder.h>
 #include <mrpt/opengl/CGridPlaneXY.h>
 #include <mrpt/opengl/COpenGLScene.h>
+#include <mrpt/opengl/CSetOfLines.h>
 #include <mrpt/opengl/CSetOfObjects.h>
 #include <mrpt/opengl/stock_objects.h>
 
@@ -84,6 +85,23 @@ void selfdrive::viz_nav_plan(
                     getRobotShapeViz(plan.original_input.robot_shape));
             }
 
+            // PTG path:
+            if (opts.show_ptg_path_segments &&
+                !plan.original_input.ptgs.ptgs.empty())
+            {
+                auto& ptg = plan.original_input.ptgs.ptgs.at(p.ptg_index);
+                ptg->updateNavDynamicState(p.getPTGDynState());
+
+                auto gl_path_seg = mrpt::opengl::CSetOfLines::Create();
+
+                ptg->renderPathAsSimpleLine(
+                    p.ptg_path_index, *gl_path_seg, 0.05, p.ptg_to_d);
+
+                gl_path_seg->setLineWidth(4.0f);
+                gl_path_seg->setColor_u8(0x20, 0x20, 0x20);
+                gl_group->insert(gl_path_seg);
+            }
+
             gl_group->setPose(p.state_from.pose);
             scene->insert(gl_group);
         }
@@ -106,6 +124,7 @@ void selfdrive::viz_nav_plan(
     // Camera:
     win->setCameraAzimuthDeg(-90);
     win->setCameraElevationDeg(90);
+    win->setCameraProjective(false);
 
     // Render:
     win->updateWindow();

@@ -28,6 +28,12 @@ struct SE2_KinState
 {
     mrpt::math::TPose2D  pose{0, 0, 0};  //!< global pose
     mrpt::math::TTwist2D vel{0, 0, 0};  //!< global velocity
+
+    std::string asString() const
+    {
+        return std::string("p=") + pose.asString() + std::string(" v=") +
+               vel.asString();
+    }
 };
 
 class ObstacleSource
@@ -81,6 +87,9 @@ struct NavPlanAction
     int          ptg_index{-1}, ptg_path_index{-1};
     double       ptg_path_alpha{-1.0}, ptg_to_d{-1.0};
     double       ptg_speed_scale{1.0};
+
+    mrpt::nav::CParameterizedTrajectoryGenerator::TNavDynamicState
+        getPTGDynState() const;
 };
 
 struct NavPlan

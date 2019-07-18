@@ -110,3 +110,19 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
 
     MRPT_END
 }
+
+mrpt::nav::CParameterizedTrajectoryGenerator::TNavDynamicState
+    NavPlanAction::getPTGDynState() const
+{
+    mrpt::nav::CParameterizedTrajectoryGenerator::TNavDynamicState newDyn;
+
+    newDyn.relTarget   = state_to.pose - state_from.pose;
+    newDyn.curVelLocal = state_from.vel;
+    // Global to local velocity:
+    newDyn.curVelLocal.rotate(-state_from.pose.phi);
+
+    MRPT_TODO("Support stop at final pose?");
+    newDyn.targetRelSpeed = 1.0;
+
+    return newDyn;
+}
