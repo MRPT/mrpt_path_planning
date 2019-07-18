@@ -103,6 +103,10 @@ void selfdrive::viz_nav_plan(
         }
     }
 
+    // Camera:
+    win->setCameraAzimuthDeg(-90);
+    win->setCameraElevationDeg(90);
+
     // Render:
     win->updateWindow();
 

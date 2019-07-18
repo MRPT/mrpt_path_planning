@@ -112,15 +112,20 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
         // Compute PTG actions (trajectory segments):
         if (!in.ptgs.ptgs.empty())
         {
+            CTimeLoggerEntry tle(profiler_, "plan.bestTrajectory");
+
             // This finds the best PTG segments for the from/to poses.
             selfdrive::bestTrajectory(act, in.ptgs);
         }
 
         // for the next iter:
+        // Note that "state_to" may have been modified by bestTrajectory().
         last_state = act.state_to;
 
         ret.actions.push_back(std::move(act));
     }
+
+    ret.success = true;
 
     return ret;
     MRPT_END

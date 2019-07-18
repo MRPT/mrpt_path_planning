@@ -26,8 +26,8 @@ struct RobotShape
 
 struct SE2_KinState
 {
-    mrpt::math::TPose2D  pose{0, 0, 0};
-    mrpt::math::TTwist2D vel{0, 0, 0};
+    mrpt::math::TPose2D  pose{0, 0, 0};  //!< global pose
+    mrpt::math::TTwist2D vel{0, 0, 0};  //!< global velocity
 };
 
 class ObstacleSource
