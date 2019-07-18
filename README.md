@@ -19,3 +19,10 @@ sudo apt install libmrpt-dev
 sudo apt install libtclap-dev
 ```
 
+
+## Demo runs
+
+```
+bin/plan-path -g "[5.1 2.0 0]" -s "[-0.2 -0 0]" -p ../share/ptgs_holonomic_robot.ini -o ../share/obstacles_01.txt --min-step-length  0.
+```
+
