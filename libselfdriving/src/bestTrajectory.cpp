@@ -22,11 +22,23 @@ bool selfdrive::bestTrajectory(
     const auto relPose = npa.state_to.pose - npa.state_from.pose;
 
     double best_ptg_target_dist = std::numeric_limits<double>::max();
+    mrpt::math::TPose2D  best_ptg_relPose;
+    mrpt::math::TTwist2D best_ptg_velAtEnd;
 
     // For each ptg:
     for (unsigned int ptg_idx = 0; ptg_idx < trs.ptgs.size(); ptg_idx++)
     {
         auto& ptg = trs.ptgs[ptg_idx];
+
+        // Make PTG realize of current kinematic state:
+        mrpt::nav::CParameterizedTrajectoryGenerator::TNavDynamicState newDyn;
+        newDyn.relTarget   = relPose;
+        newDyn.curVelLocal = npa.state_from.vel;
+        // Global to local velocity:
+        newDyn.curVelLocal.rotate(-npa.state_from.pose.phi);
+        MRPT_TODO("Support stop at final pose?");
+        newDyn.targetRelSpeed = 1.0;
+        ptg->updateNavDynamicState(newDyn);
 
         // Inverse map of relative pose:
         int    ptg_k;
@@ -41,17 +53,20 @@ bool selfdrive::bestTrajectory(
             continue;
         }
 
+        const double ptg_dist = ptg_norm_dist * ptg->getRefDistance();
+
         // Evaluate distance to target:
         MRPT_TODO("add other optimality criteria?");
         uint32_t ptg_step;
-        ptg->getPathStepForDist(ptg_k, ptg_norm_dist, ptg_step);
+        ptg->getPathStepForDist(ptg_k, ptg_dist, ptg_step);
 
-        mrpt::math::TPose2D reconstr_pose;
-        ptg->getPathPose(ptg_k, ptg_step, reconstr_pose);
+        const auto reconstr_pose = ptg->getPathPose(ptg_k, ptg_step);
 
+        // Sanity check: (ignore heading since relPose may not have a valid
+        // one)
         const auto reconstrErr = reconstr_pose - relPose;
-        std::cout << "ptg[" << ptg_idx
-                  << "] reconstrErr: " << reconstrErr.asString() << "\n";
+        ASSERT_BELOW_(reconstrErr.norm(), 0.10);
+
         double this_ptg_dist_at_target =
             reconstrErr.norm() +
             std::abs(reconstrErr.phi) * HEADING_ERROR_WEIGHT;
@@ -62,11 +77,27 @@ bool selfdrive::bestTrajectory(
             best_ptg_target_dist = this_ptg_dist_at_target;
             npa.ptg_index        = ptg_idx;
             npa.ptg_path_index   = ptg_k;
-            npa.ptg_to_d         = ptg_norm_dist * ptg->getRefDistance();
+            npa.ptg_to_d         = ptg_dist;
             npa.ptg_path_alpha   = ptg->index2alpha(ptg_k);
+            best_ptg_relPose     = reconstr_pose;
+            best_ptg_velAtEnd    = ptg->getPathTwist(ptg_k, ptg_step);
         }
 
     }  // end for each ptg
+
+    // Any valid PTG? Take goal target pose from PTG, since it represents the
+    // predicted robot pose more accurately than the initial plan, which may not
+    // take care of robot kinematics limitations:
+    if (npa.ptg_index >= 0)
+    {
+        // Correct pose:
+        npa.state_to.pose = npa.state_from.pose + best_ptg_relPose;
+
+        // Update vel:
+        npa.state_to.vel = best_ptg_velAtEnd;
+        // local to global:
+        npa.state_to.vel.rotate(npa.state_to.pose.phi);
+    }
 
     return true;
     MRPT_END

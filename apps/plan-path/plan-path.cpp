@@ -30,6 +30,10 @@ static TCLAP::ValueArg<std::string> arg_start_pose(
 static TCLAP::ValueArg<std::string> arg_goal_pose(
     "g", "goal-pose", "Goal 2D pose", true, "", "\"[x y phi_deg]\"", cmd);
 
+static TCLAP::ValueArg<double> arg_min_step_len(
+    "", "min-step-length", "Minimum step length [meters]", false, 0.25, "0.25",
+    cmd);
+
 static void do_plan_path()
 {
     // Load obstacles:
@@ -48,6 +52,7 @@ static void do_plan_path()
     pi.state_goal.pose.fromString(arg_goal_pose.getValue());
     pi.obstacles                = obs;
     pi.robot_shape.robot_radius = 0.35;
+    pi.min_step_len             = arg_min_step_len.getValue();
 
     std::cout << "Start pose: " << pi.state_start.pose.asString() << "\n";
     std::cout << "Goal pose : " << pi.state_goal.pose.asString() << "\n";
