@@ -18,10 +18,9 @@ ObstacleSource::ObstacleSource(
 }
 
 mrpt::maps::CSimplePointsMap::Ptr ObstacleSource::obstacles(
-    mrpt::system::TTimeStamp t)
+    [[maybe_unused]] mrpt::system::TTimeStamp t)
 {
     MRPT_START
-    MRPT_UNUSED_PARAM(t);
 
     if (static_obs_) return static_obs_;
 

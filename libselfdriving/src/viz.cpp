@@ -27,8 +27,7 @@ static mrpt::opengl::CRenderizable::Ptr getRobotShapeViz(const RobotShape& r)
             2 /*stacks*/);
 #else
         auto obj = mrpt::opengl::CCylinder::Create(
-            r.robot_radius, r.robot_radius, 0.05f /*height*/, 20 /*slices*/,
-            2 /*stacks*/);
+            r.robot_radius, r.robot_radius, 0.05f /*height*/, 20 /*slices*/);
         obj->setHasBases(false, false);
         return obj;
 #endif
