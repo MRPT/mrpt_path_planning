@@ -6,8 +6,9 @@
 
 #include <libselfdriving/Planner_Astar.h>
 #include <libselfdriving/viz.h>
+#include <mrpt/3rdparty/tclap/CmdLine.h>
 #include <mrpt/config/CConfigFile.h>
-#include <tclap/CmdLine.h>
+
 #include <iostream>
 
 #if MRPT_VERSION >= 0x199

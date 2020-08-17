@@ -1,8 +1,7 @@
 project(plan-path LANGUAGES CXX)
 
 # find dependencies:
-find_package(MRPT REQUIRED COMPONENTS gui nav)
-find_package(TCLAP REQUIRED)
+find_package(MRPT REQUIRED COMPONENTS gui nav tclap)
 
 add_executable(${PROJECT_NAME}
     plan-path.cpp
