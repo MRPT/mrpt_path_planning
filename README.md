@@ -1,6 +1,7 @@
+[![CircleCI](https://circleci.com/gh/jlblancoc/selfdriving.svg?style=svg)](https://circleci.com/gh/jlblancoc/selfdriving)
+
 # selfdriving
 Self-driving (autonomous navigation) algorithms for 2D robots/vehicles based on mrpt-nav
-
 
 ## Build requisites
 
@@ -25,4 +26,3 @@ sudo apt install libtclap-dev
 ```
 bin/plan-path -g "[5.1 2.0 0]" -s "[-0.2 -0 0]" -p ../share/ptgs_holonomic_robot.ini -o ../share/obstacles_01.txt --min-step-length  0.
 ```
-
