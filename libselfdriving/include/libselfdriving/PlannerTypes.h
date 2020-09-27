@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <mrpt/containers/yaml.h>
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/math/TPolygon2D.h>
 #include <mrpt/math/TPose2D.h>
@@ -29,11 +30,7 @@ struct SE2_KinState
     mrpt::math::TPose2D  pose{0, 0, 0};  //!< global pose
     mrpt::math::TTwist2D vel{0, 0, 0};  //!< global velocity
 
-    std::string asString() const
-    {
-        return std::string("p=") + pose.asString() + std::string(" v=") +
-               vel.asString();
-    }
+    std::string asString() const;
 };
 
 class ObstacleSource
@@ -54,21 +51,24 @@ class ObstacleSource
     mrpt::maps::CSimplePointsMap::Ptr static_obs_{};
 };
 
-struct TrajectoriesAndRobotShape
+class TrajectoriesAndRobotShape
 {
+   public:
+    TrajectoriesAndRobotShape()  = default;
+    ~TrajectoriesAndRobotShape() = default;
+
+    bool initialized() const { return initialized_; }
+    void clear();
+
     void initFromConfigFile(
         mrpt::config::CConfigFileBase& cfg, const std::string& section);
+    void initFromYAML(const mrpt::containers::yaml& node);
 
     std::vector<std::shared_ptr<ptg_t>> ptgs;  //!< Allowed movement sets
+    RobotShape                          robotShape;
 
-    /** The robot 2D shape model. Only one of `robot_shape` or
-     * `robot_shape_circular_radius` will be used in each PTG */
-    mrpt::math::CPolygon robotShape;
-
-    /** Radius of the robot if approximated as a circle. Only one of
-     * `robot_shape` or `robot_shape_circular_radius` will be used in each PTG
-     */
-    double robotShapeCircularRadius{.0};
+   private:
+    bool initialized_ = false;
 };
 
 struct PlannerInput
@@ -88,8 +88,7 @@ struct NavPlanAction
     double       ptg_path_alpha{-1.0}, ptg_to_d{-1.0};
     double       ptg_speed_scale{1.0};
 
-    mrpt::nav::CParameterizedTrajectoryGenerator::TNavDynamicState
-        getPTGDynState() const;
+    ptg_t::TNavDynamicState getPTGDynState() const;
 };
 
 struct NavPlan

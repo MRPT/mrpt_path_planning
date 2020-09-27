@@ -23,7 +23,7 @@ add_library(${PROJECT_NAME} SHARED
     )
 
 # find dependencies:
-find_package(MRPT REQUIRED COMPONENTS gui nav)
+find_package(MRPT 2.0.0 REQUIRED COMPONENTS gui nav)
 
 target_link_libraries(${PROJECT_NAME}
   PUBLIC

@@ -86,7 +86,7 @@ void selfdrive::viz_nav_plan(
 
             // PTG path:
             if (opts.show_ptg_path_segments &&
-                !plan.original_input.ptgs.ptgs.empty())
+                !plan.original_input.ptgs.ptgs.empty() && p.ptg_index != -1)
             {
                 auto& ptg = plan.original_input.ptgs.ptgs.at(p.ptg_index);
                 ptg->updateNavDynamicState(p.getPTGDynState());

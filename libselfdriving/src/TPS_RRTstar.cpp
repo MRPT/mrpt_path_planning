@@ -4,7 +4,7 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <libselfdriving/Planner_Astar.h>
+#include <libselfdriving/TPS_RRTstar.h>
 #include <libselfdriving/bestTrajectory.h>
 #include <mrpt/maps/COccupancyGridMap2D.h>
 #include <mrpt/nav/planners/PlannerSimple2D.h>
@@ -12,10 +12,40 @@
 
 using namespace selfdrive;
 
-NavPlan Planner_Astar::plan(const PlannerInput& in)
+/* Algorithms (to be developed in future paper?)
+ *
+ * ================================================================
+ *  TPS-RRT*
+ * ================================================================
+ * Q_T ← {q_0 }    # Tree nodes (configuration space)
+ * E T ← ∅         # Tree edges
+ * n ← 1           # Iteration counter
+ *
+ * while n ≤ N do
+ *  q_rand ← SAMPLE( Q_free )
+ *  Q_near ← NEAR_NODES( q_rand )
+ *  q_best ← EXTEND( Q_near, q_rand )
+ *  if q_rand \notin Q_T ∧ q_best != ∅ then
+ *   Q_T ← Q_T U { q_rand }
+ *   E_T ← E_T U { ( q_best , q_rand ) }
+ *   n ← n + 1
+ *   E_T ← REWIRE(Q_T, E_T, q_rand, Q_near )
+ *  else if q_rand \in Q_T then
+ *   q_prev ← PARENT( q_rand )
+ *   if q_best != q_prev then
+ *    E_T ← ( E_T \ { ( q_prev , q_rand ) } ) U {q_best, q_rand }
+ *    E_T ← REWIRE ( Q_T , E_T , q_rand , Q_near )
+ *
+ * return (Q_T, E_T)
+ *
+ */
+
+TPS_RRTstar::TPS_RRTstar() : mrpt::system::COutputLogger("TPS_RRTstar") {}
+
+NavPlan TPS_RRTstar::plan(const PlannerInput& in)
 {
     MRPT_START
-    CTimeLoggerEntry tleg(profiler_, "plan");
+    mrpt::system::CTimeLoggerEntry tleg(profiler_, "plan");
 
     NavPlan ret;
 
@@ -31,7 +61,7 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
     // Get obstacles:
     ASSERT_(in.obstacles);
     if (in.obstacles->dynamic())
-        std::cerr << "[Planner_Astar] Warning: Ignoring dynamic obstacles.\n";
+        std::cerr << "[TPS_RRTstar] Warning: Ignoring dynamic obstacles.\n";
 
     profiler_.enter("plan.obstacles()");
     const auto obs_pts = in.obstacles->obstacles();
@@ -95,7 +125,7 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
     // Make sure PTGs are initialized
     if (!in.ptgs.ptgs.empty())
     {
-        CTimeLoggerEntry tle(profiler_, "plan.init_PTGs");
+        mrpt::system::CTimeLoggerEntry tle(profiler_, "plan.init_PTGs");
         for (auto& ptg : in.ptgs.ptgs)
         {
             ASSERT_(ptg);
@@ -112,7 +142,8 @@ NavPlan Planner_Astar::plan(const PlannerInput& in)
         // Compute PTG actions (trajectory segments):
         if (!in.ptgs.ptgs.empty())
         {
-            CTimeLoggerEntry tle(profiler_, "plan.bestTrajectory");
+            mrpt::system::CTimeLoggerEntry tle(
+                profiler_, "plan.bestTrajectory");
 
             // This finds the best PTG segments for the from/to poses.
             selfdrive::bestTrajectory(act, in.ptgs);
