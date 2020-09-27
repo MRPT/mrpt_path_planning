@@ -8,9 +8,9 @@ jobs:
           name: "Install dependencies"
           command: |
             apt-get update
-            apt-get install software-properties-common -y
+            DEBIAN_FRONTEND=noninteractive apt-get install software-properties-common -y
             add-apt-repository ppa:joseluisblancoc/mrpt -y
-            apt-get install libmrpt-dev -y
+            DEBIAN_FRONTEND=noninteractive apt-get install libmrpt-dev -y
       - checkout
       - run:
           name: Generate cmake files
@@ -21,8 +21,26 @@ jobs:
 #      - run: make gcov -C build
 #      - run: make -C build
 #      - run: bash <(curl -s https://codecov.io/bash) -X gcov -y .codecov.yml -s build
+  u20.04-focal:
+    docker:
+      - image: ubuntu:focal
+    steps:
+      - run:
+          name: "Install dependencies"
+          command: |
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install software-properties-common -y
+            add-apt-repository ppa:joseluisblancoc/mrpt -y
+            DEBIAN_FRONTEND=noninteractive apt-get install libmrpt-dev -y
+      - checkout
+      - run:
+          name: Generate cmake files
+          command: |
+            cmake -H. -Bbuild
+      - run: make -C build
 workflows:
   version: 2
   build:
     jobs:
       - u18.04-bionic
+      - u20.04-focal
