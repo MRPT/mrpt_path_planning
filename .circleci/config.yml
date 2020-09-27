@@ -10,7 +10,7 @@ jobs:
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install software-properties-common -y
             add-apt-repository ppa:joseluisblancoc/mrpt -y
-            DEBIAN_FRONTEND=noninteractive apt-get install libmrpt-dev -y
+            DEBIAN_FRONTEND=noninteractive apt-get install libmrpt-dev cmake -y
       - checkout
       - run:
           name: Generate cmake files
@@ -31,7 +31,7 @@ jobs:
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install software-properties-common -y
             add-apt-repository ppa:joseluisblancoc/mrpt -y
-            DEBIAN_FRONTEND=noninteractive apt-get install libmrpt-dev -y
+            DEBIAN_FRONTEND=noninteractive apt-get install libmrpt-dev cmake -y
       - checkout
       - run:
           name: Generate cmake files
