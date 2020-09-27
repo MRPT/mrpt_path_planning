@@ -6,18 +6,18 @@
 
 #pragma once
 
-#include <libselfdriving/MoveEdgeSE2_TPS.h>
-#include <libselfdriving/SE2_KinState.h>
 #include <mrpt/containers/traits_map.h>
 #include <mrpt/graphs/CDirectedTree.h>
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
 #include <mrpt/poses/CPose2D.h>
+#include <selfdriving/MoveEdgeSE2_TPS.h>
+#include <selfdriving/SE2_KinState.h>
 #include <cstdint>
 #include <list>
 #include <set>
 
-namespace selfdrive
+namespace selfdriving
 {
 /** Generic base for metrics */
 template <class node_t>
@@ -183,16 +183,16 @@ struct PoseDistanceMetric<SE2_KinState>
     bool cannotBeNearerThan(
         const SE2_KinState& a, const SE2_KinState& b, const double d) const
     {
-        if (std::abs(a.state.x - b.state.x) > d) return true;
-        if (std::abs(a.state.y - b.state.y) > d) return true;
+        if (std::abs(a.pose.x - b.pose.x) > d) return true;
+        if (std::abs(a.pose.y - b.pose.y) > d) return true;
         return false;
     }
 
     double distance(const SE2_KinState& a, const SE2_KinState& b) const
     {
-        return mrpt::square(a.state.x - b.state.x) +
-               mrpt::square(a.state.y - b.state.y) +
-               mrpt::square(mrpt::math::angDistance(a.state.phi, b.state.phi));
+        return mrpt::square(a.pose.x - b.pose.x) +
+               mrpt::square(a.pose.y - b.pose.y) +
+               mrpt::square(mrpt::math::angDistance(a.pose.phi, b.pose.phi));
     }
     PoseDistanceMetric() = default;
 };
@@ -246,7 +246,7 @@ struct PoseDistanceMetric<SE2_KinState_TP>
 
 /** tree data structure for planning in SE2 within TP-Space manifolds */
 using MotionPrimitivesTreeSE2 =
-    MotionPrimitivesTree<SE2_KinState_TP, TMoveEdgeSE2_TPS>;
+    MotionPrimitivesTree<SE2_KinState_TP, MoveEdgeSE2_TPS>;
 
 /** @} */
-}  // namespace selfdrive
+}  // namespace selfdriving

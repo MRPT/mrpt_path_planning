@@ -4,4 +4,6 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <selfdriving/NavPlanExecutor.h>
+#include <selfdriving/PlannerInput.h>
+
+using namespace selfdriving;

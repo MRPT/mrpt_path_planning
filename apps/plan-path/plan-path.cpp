@@ -4,11 +4,11 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <libselfdriving/TPS_RRTstar.h>
-#include <libselfdriving/viz.h>
 #include <mrpt/3rdparty/tclap/CmdLine.h>
 #include <mrpt/config/CConfigFile.h>
 #include <mrpt/core/exceptions.h>  // exception_to_str()
+#include <selfdriving/TPS_RRTstar.h>
+#include <selfdriving/viz.h>
 #include <iostream>
 
 static TCLAP::CmdLine cmd("plan-path");
@@ -40,10 +40,10 @@ static void do_plan_path()
             "Cannot read obstacle point cloud from: `%s`",
             arg_obs_file.getValue().c_str());
 
-    auto obs = std::make_shared<selfdrive::ObstacleSource>(obsPts);
+    auto obs = std::make_shared<selfdriving::ObstacleSource>(obsPts);
 
     // Prepare planner input data:
-    selfdrive::PlannerInput pi;
+    selfdriving::PlannerInput pi;
 
     pi.state_start.pose.fromString(arg_start_pose.getValue());
     pi.state_goal.pose.fromString(arg_goal_pose.getValue());
@@ -57,7 +57,7 @@ static void do_plan_path()
               << " points\n";
 
     // Do the path planning :
-    selfdrive::TPS_RRTstar planner;
+    selfdriving::TPS_RRTstar planner;
 
     // Enable time profiler:
     planner.profiler_.enable(true);
@@ -69,17 +69,19 @@ static void do_plan_path()
     mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
     pi.ptgs.initFromConfigFile(cfg, "CReactiveNavigationSystem");
 
-    const selfdrive::NavPlan plan = planner.plan(pi);
+    const selfdriving::PlannerOutput plan = planner.plan(pi);
 
     std::cout << "\nDone.\n";
     std::cout << "Success: " << (plan.success ? "YES" : "NO") << "\n";
-    std::cout << "Plan has " << plan.actions.size() << " steps\n";
+    std::cout << "Plan has " << plan.motionTree.edges_to_children.size()
+              << " overall edges, " << plan.motionTree.getAllNodes().size()
+              << " nodes\n";
 
     // Visualize:
-    selfdrive::NavPlanRenderOptions renderOptions;
+    selfdriving::NavPlanRenderOptions renderOptions;
     renderOptions.show_robot_shape_every_N = 10;
 
-    selfdrive::viz_nav_plan(plan, renderOptions);
+    selfdriving::viz_nav_plan(plan, renderOptions);
 }
 
 int main(int argc, char** argv)

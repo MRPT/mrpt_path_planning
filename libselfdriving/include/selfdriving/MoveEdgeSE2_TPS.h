@@ -6,16 +6,19 @@
 
 #pragma once
 
-#include <libselfdriving/SE2_KinState.h>
-#include <libselfdriving/ptg_t.h>
 #include <mrpt/graphs/TNodeID.h>
+#include <selfdriving/SE2_KinState.h>
+#include <selfdriving/ptg_t.h>
 #include <cstdint>
 
-namespace selfdrive
+namespace selfdriving
 {
 /** An edge for the move tree used for planning in SE2 and TP-space */
-struct TMoveEdgeSE2_TPS
+struct MoveEdgeSE2_TPS
 {
+    MoveEdgeSE2_TPS()  = default;
+    ~MoveEdgeSE2_TPS() = default;
+
     /** The ID of the parent node in the tree (all edges must have a valid
      * starting node). */
     mrpt::graphs::TNodeID parentId = INVALID_NODEID;
@@ -29,8 +32,8 @@ struct TMoveEdgeSE2_TPS
     /** indicate the type of trajectory used for this motion */
     int8_t ptgIndex = -1;
 
-    /** identify the trajectory number K of the type ptg_index */
-    int16_t ptgK = -1;
+    /** identify the trajectory number K of the type ptgIndex */
+    int16_t ptgPathIndex = -1;
 
     /** identify the PTG normalized distance [0,1] of the trajectory for this
      * motion segment */
@@ -40,8 +43,6 @@ struct TMoveEdgeSE2_TPS
     double estimatedExecTime = .0;
 
     ptg_t::TNavDynamicState getPTGDynState() const;
-
-    TMoveEdgeSE2_TPS() = default;
 };
 
-}  // namespace selfdrive
+}  // namespace selfdriving

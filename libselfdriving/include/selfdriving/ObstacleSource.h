@@ -6,9 +6,9 @@
 
 #pragma once
 
-#include <libselfdriving/MotionPrimitivesTree.h>
-#include <libselfdriving/SE2_KinState.h>
-#include <libselfdriving/ptg_t.h>
+#include <selfdriving/MotionPrimitivesTree.h>
+#include <selfdriving/SE2_KinState.h>
+#include <selfdriving/ptg_t.h>
 #include <mrpt/containers/yaml.h>
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/math/TPolygon2D.h>
@@ -17,7 +17,7 @@
 #include <memory>
 #include <vector>
 
-namespace selfdrive
+namespace selfdriving
 {
 class ObstacleSource
 {
@@ -37,4 +37,4 @@ class ObstacleSource
     mrpt::maps::CSimplePointsMap::Ptr static_obs_{};
 };
 
-}  // namespace selfdrive
+}  // namespace selfdriving

@@ -4,7 +4,6 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <libselfdriving/viz.h>
 #include <mrpt/gui/CDisplayWindow3D.h>
 #include <mrpt/opengl/CCylinder.h>
 #include <mrpt/opengl/CGridPlaneXY.h>
@@ -12,8 +11,9 @@
 #include <mrpt/opengl/CSetOfLines.h>
 #include <mrpt/opengl/CSetOfObjects.h>
 #include <mrpt/opengl/stock_objects.h>
+#include <selfdriving/viz.h>
 
-using namespace selfdrive;
+using namespace selfdriving;
 
 static std::vector<mrpt::gui::CDisplayWindow3D::Ptr> nonmodal_wins;
 
@@ -38,8 +38,9 @@ static mrpt::opengl::CRenderizable::Ptr getRobotShapeViz(const RobotShape& r)
     }
 }
 
-void selfdrive::viz_nav_plan(
-    const selfdrive::NavPlan& plan, const selfdrive::NavPlanRenderOptions& opts)
+void selfdriving::viz_nav_plan(
+    const selfdriving::PlannerOutput&        plan,
+    const selfdriving::NavPlanRenderOptions& opts)
 {
     MRPT_START
     //
@@ -60,14 +61,17 @@ void selfdrive::viz_nav_plan(
             auto gl_obj =
                 mrpt::opengl::stock_objects::CornerXYZSimple(1.0f, 6.0f);
             gl_group->insert(gl_obj);
-            gl_group->insert(getRobotShapeViz(plan.original_input.robot_shape));
+            gl_group->insert(getRobotShapeViz(plan.originalInput.robot_shape));
 
             gl_group->setLocation(
-                plan.original_input.state_goal.pose.x,
-                plan.original_input.state_goal.pose.y, 0);
+                plan.originalInput.state_goal.pose.x,
+                plan.originalInput.state_goal.pose.y, 0);
 
             scene->insert(gl_group);
         }
+        // TODO: Rewrite after rewrite as a real tree.
+        // TODO: Add option to render whole tree vs just optimal path.
+#if 0        
         // Intermediary poses:
         int stepCount = -1;
         for (const auto& p : plan.actions)
@@ -81,32 +85,32 @@ void selfdrive::viz_nav_plan(
             {
                 stepCount = 0;
                 gl_group->insert(
-                    getRobotShapeViz(plan.original_input.robot_shape));
+                    getRobotShapeViz(plan.originalInput.robot_shape));
             }
 
             // PTG path:
             if (opts.show_ptg_path_segments &&
-                !plan.original_input.ptgs.ptgs.empty() && p.ptg_index != -1)
+                !plan.originalInput.ptgs.ptgs.empty() && p.ptgIndex != -1)
             {
-                auto& ptg = plan.original_input.ptgs.ptgs.at(p.ptg_index);
+                auto& ptg = plan.originalInput.ptgs.ptgs.at(p.ptgIndex);
                 ptg->updateNavDynamicState(p.getPTGDynState());
 
                 auto gl_path_seg = mrpt::opengl::CSetOfLines::Create();
 
                 ptg->renderPathAsSimpleLine(
-                    p.ptg_path_index, *gl_path_seg, 0.05, p.ptg_to_d);
+                    p.ptgPathIndex, *gl_path_seg, 0.05, p.ptgDist);
 
                 gl_path_seg->setLineWidth(4.0f);
                 gl_path_seg->setColor_u8(0x20, 0x20, 0x20);
                 gl_group->insert(gl_path_seg);
             }
 
-            gl_group->setPose(p.state_from.pose);
+            gl_group->setPose(p.stateFrom.pose);
             scene->insert(gl_group);
         }
-
+#endif
         // Obstacles:
-        auto obs = plan.original_input.obstacles->obstacles();
+        auto obs = plan.originalInput.obstacles->obstacles();
         if (obs)
         {
             obs->renderOptions.color.R    = 1;
