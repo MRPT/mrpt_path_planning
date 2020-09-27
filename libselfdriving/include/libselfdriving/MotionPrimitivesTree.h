@@ -6,12 +6,14 @@
 
 #pragma once
 
+#include <libselfdriving/MoveEdgeSE2_TPS.h>
 #include <libselfdriving/SE2_KinState.h>
 #include <mrpt/containers/traits_map.h>
 #include <mrpt/graphs/CDirectedTree.h>
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
 #include <mrpt/poses/CPose2D.h>
+#include <cstdint>
 #include <list>
 #include <set>
 
@@ -174,39 +176,6 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
 
 };  // end TMoveTree
 
-/** An edge for the move tree used for planning in SE2 and TP-space */
-struct TMoveEdgeSE2_TPS
-{
-    /** The ID of the parent node in the tree */
-    mrpt::graphs::TNodeID parent_id = INVALID_NODEID;
-    /** state in SE2 as 2D pose (x, y, phi)  - \note: it is not possible to
-     * initialize a motion without a state */
-    mrpt::math::TPose2D end_state;
-
-    /** cost associated to each motion, this should be defined by the user
-     * according to a spefic cost function */
-    double cost = 1e9;
-    /** indicate the type of trajectory used for this motion */
-    int ptg_index = -1;
-    /** identify the trajectory number K of the type ptg_index */
-    int ptg_K = -1;
-    /** identify the lenght of the trajectory for this motion */
-    double ptg_dist = -1;
-
-    TMoveEdgeSE2_TPS() = default;
-    TMoveEdgeSE2_TPS(
-        const mrpt::graphs::TNodeID parent_id_,
-        const mrpt::math::TPose2D   end_pose_)
-        : parent_id(parent_id_),
-          end_state(end_pose_),
-          cost(0.0),
-          ptg_index(0),
-          ptg_K(0),
-          ptg_dist(0.0)  // these are all PTGs parameters
-    {
-    }
-};
-
 /** Pose metric for SE(2) */
 template <>
 struct PoseDistanceMetric<SE2_KinState>
@@ -275,10 +244,9 @@ struct PoseDistanceMetric<SE2_KinState_TP>
     const mrpt::nav::CParameterizedTrajectoryGenerator& m_ptg;
 };
 
-// using TMoveTreeSE2_TP = TMoveTree<SE2_KinState   ,TMoveEdgeSE2>;  //!< tree
-// data structure for planning in SE2
 /** tree data structure for planning in SE2 within TP-Space manifolds */
-using TMoveTreeSE2_TP = TMoveTree<SE2_KinState_TP, TMoveEdgeSE2_TPS>;
+using MotionPrimitivesTreeSE2 =
+    MotionPrimitivesTree<SE2_KinState_TP, TMoveEdgeSE2_TPS>;
 
 /** @} */
 }  // namespace selfdrive

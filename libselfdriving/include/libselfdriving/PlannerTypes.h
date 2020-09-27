@@ -6,40 +6,23 @@
 
 #pragma once
 
+#include <libselfdriving/MotionPrimitivesTree.h>
 #include <libselfdriving/SE2_KinState.h>
+#include <libselfdriving/ptg_t.h>
 #include <mrpt/containers/yaml.h>
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/math/TPolygon2D.h>
 #include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
+#include <limits>
 #include <memory>
 #include <vector>
 
 namespace selfdrive
 {
-using ptg_t = mrpt::nav::CParameterizedTrajectoryGenerator;
-
 struct RobotShape
 {
     mrpt::math::TPolygon2D robot_shape;  //!< 2D robot shape
     double                 robot_radius{-1.0};  //!< Radius of circ. robot
-};
-
-class ObstacleSource
-{
-   public:
-    using Ptr = std::shared_ptr<ObstacleSource>;
-
-    ObstacleSource() = default;
-    ObstacleSource(const mrpt::maps::CSimplePointsMap& staticObstacles);
-    virtual ~ObstacleSource();
-
-    virtual mrpt::maps::CSimplePointsMap::Ptr obstacles(
-        mrpt::system::TTimeStamp t = mrpt::system::TTimeStamp());
-
-    virtual bool dynamic() const { return false; }
-
-   private:
-    mrpt::maps::CSimplePointsMap::Ptr static_obs_{};
 };
 
 class TrajectoriesAndRobotShape
@@ -72,22 +55,32 @@ struct PlannerInput
     TrajectoriesAndRobotShape ptgs;
 };
 
-struct NavPlanAction
-{
-    SE2_KinState state_from, state_to;
-    double       estimated_exec_time{.0};
-    int          ptg_index{-1}, ptg_path_index{-1};
-    double       ptg_path_alpha{-1.0}, ptg_to_d{-1.0};
-    double       ptg_speed_scale{1.0};
-
-    ptg_t::TNavDynamicState getPTGDynState() const;
-};
-
+/** The output of the path planner */
 struct NavPlan
 {
-    PlannerInput               original_input;
-    bool                       success{false};
-    std::vector<NavPlanAction> actions;
+    PlannerInput originalInput;
+
+    bool success = false;
+
+    /** Time spent (in secs) */
+    double computationTime = 0;
+
+    /** Distance from best found path to goal */
+    double goalDistance = std::numeric_limits<double>::max();
+
+    /** Total cost of the best found path (cost; Euclidean distance) */
+    double pathCost = std::numeric_limits<double>::max();
+
+    /** The ID of the best target node in the tree */
+    mrpt::graphs::TNodeID best_goal_node_id = INVALID_NODEID;
+
+    /** The set of target nodes within an acceptable distance to target
+     * (including `best_goal_node_id` and others) */
+    std::set<mrpt::graphs::TNodeID> acceptable_goal_node_ids;
+
+    /** The generated motion tree that explores free space starting at "start"
+     */
+    MotionPrimitivesTreeSE2 motionTree;
 };
 
 }  // namespace selfdrive
