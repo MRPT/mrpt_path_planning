@@ -6,28 +6,29 @@
 
 #pragma once
 
-#include "PlannerTypes.h"
-#include "mrpt_1or2.h"
+#include <libselfdriving/PlannerTypes.h>
+#include <mrpt/system/COutputLogger.h>
+#include <mrpt/system/CTimeLogger.h>
 
 namespace selfdrive
 {
-class Planner_Astar
+class TPS_RRTstar : public mrpt::system::COutputLogger
 {
    public:
-    Planner_Astar()  = default;
-    ~Planner_Astar() = default;
+    TPS_RRTstar();
+    ~TPS_RRTstar() = default;
 
     NavPlan plan(const PlannerInput& in);
 
     struct Parameters
     {
-        double grid_resolution{.05};  //!< [meters]
+        double grid_resolution = .05;  //!< [meters]
     };
 
     Parameters params_;
 
     /** Time profiler (Default: enabled)*/
-    CTimeLogger profiler_{true, "Planner_Astar"};
+    mrpt::system::CTimeLogger profiler_{true, "TPS_RRTstar"};
 
    private:
 };

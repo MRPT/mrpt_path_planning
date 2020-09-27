@@ -8,6 +8,12 @@
 
 using namespace selfdrive;
 
+std::string SE2_KinState::asString() const
+{
+    return std::string("p=") + pose.asString() + std::string(" v=") +
+           vel.asString();
+}
+
 ObstacleSource::~ObstacleSource() = default;
 
 ObstacleSource::ObstacleSource(
@@ -17,8 +23,8 @@ ObstacleSource::ObstacleSource(
         std::make_shared<mrpt::maps::CSimplePointsMap>(staticObstacles);
 }
 
-mrpt::maps::CSimplePointsMap::Ptr ObstacleSource::obstacles(
-    [[maybe_unused]] mrpt::system::TTimeStamp t)
+mrpt::maps::CSimplePointsMap::Ptr ObstacleSource::obstacles([
+    [maybe_unused]] mrpt::system::TTimeStamp t)
 {
     MRPT_START
 
@@ -31,6 +37,8 @@ mrpt::maps::CSimplePointsMap::Ptr ObstacleSource::obstacles(
     MRPT_END
 }
 
+void TrajectoriesAndRobotShape::clear() { *this = TrajectoriesAndRobotShape(); }
+
 void TrajectoriesAndRobotShape::initFromConfigFile(
     mrpt::config::CConfigFileBase& c, const std::string& s)
 {
@@ -41,6 +49,8 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
 
     // Load robot shape: 1/2 polygon
     // ---------------------------------------------
+    mrpt::math::CPolygon robShape;
+
     std::vector<float> xs, ys;
     c.read_vector(s, "RobotModel_shape2D_xs", std::vector<float>(), xs, false);
     c.read_vector(s, "RobotModel_shape2D_ys", std::vector<float>(), ys, false);
@@ -50,16 +60,19 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
         "must have the same length!");
     if (!xs.empty())
     {
-        robotShape.clear();
+        robotShape.robot_shape.clear();
         for (size_t i = 0; i < xs.size(); i++)
-            robotShape.AddVertex(xs[i], ys[i]);
+        {
+            robotShape.robot_shape.emplace_back(xs[i], ys[i]);
+            robShape.AddVertex(xs[i], ys[i]);
+        }
     }
 
     // Load robot shape: 2/2 circle
     // ---------------------------------------------
-    robotShapeCircularRadius =
+    robotShape.robot_radius =
         c.read_double(s, "RobotModel_circular_shape_radius", .0, false);
-    ASSERT_(robotShapeCircularRadius >= .0);
+    ASSERT_GE_(robotShape.robot_radius, .0);
 
     // Load PTGs from file:
     // ---------------------------------------------
@@ -87,7 +100,7 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
             ptg_polygon)
         {
             // Set it:
-            ptg_polygon->setRobotShape(robotShape);
+            ptg_polygon->setRobotShape(robShape);
         }
 
         if (auto* ptg_circ = dynamic_cast<mrpt::nav::CPTG_RobotShape_Circular*>(
@@ -95,7 +108,7 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
             ptg_circ)
         {
             // Set it:
-            ptg_circ->setRobotShapeRadius(robotShapeCircularRadius);
+            ptg_circ->setRobotShapeRadius(robotShape.robot_radius);
         }
 
         // Init:
@@ -106,12 +119,19 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
             false /*verbose*/
         );
     }
-
+    initialized_ = true;
     MRPT_END
 }
 
-mrpt::nav::CParameterizedTrajectoryGenerator::TNavDynamicState
-    NavPlanAction::getPTGDynState() const
+void TrajectoriesAndRobotShape::initFromYAML(const mrpt::containers::yaml& node)
+{
+    MRPT_START
+    THROW_EXCEPTION("Write me!");
+    initialized_ = false;
+    MRPT_END
+}
+
+ptg_t::TNavDynamicState NavPlanAction::getPTGDynState() const
 {
     mrpt::nav::CParameterizedTrajectoryGenerator::TNavDynamicState newDyn;
 

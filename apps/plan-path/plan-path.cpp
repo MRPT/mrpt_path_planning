@@ -4,16 +4,12 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <libselfdriving/Planner_Astar.h>
+#include <libselfdriving/TPS_RRTstar.h>
 #include <libselfdriving/viz.h>
 #include <mrpt/3rdparty/tclap/CmdLine.h>
 #include <mrpt/config/CConfigFile.h>
-
-#include <iostream>
-
-#if MRPT_VERSION >= 0x199
 #include <mrpt/core/exceptions.h>  // exception_to_str()
-#endif
+#include <iostream>
 
 static TCLAP::CmdLine cmd("plan-path");
 
@@ -61,7 +57,7 @@ static void do_plan_path()
               << " points\n";
 
     // Do the path planning :
-    selfdrive::Planner_Astar planner;
+    selfdrive::TPS_RRTstar planner;
 
     // Enable time profiler:
     planner.profiler_.enable(true);
@@ -80,7 +76,10 @@ static void do_plan_path()
     std::cout << "Plan has " << plan.actions.size() << " steps\n";
 
     // Visualize:
-    selfdrive::viz_nav_plan(plan);
+    selfdrive::NavPlanRenderOptions renderOptions;
+    renderOptions.show_robot_shape_every_N = 10;
+
+    selfdrive::viz_nav_plan(plan, renderOptions);
 }
 
 int main(int argc, char** argv)
@@ -93,11 +92,7 @@ int main(int argc, char** argv)
     }
     catch (std::exception& e)
     {
-#if MRPT_VERSION >= 0x199
         std::cerr << mrpt::exception_to_str(e);
-#else
-        std::cerr << e.what();
-#endif
         return 1;
     }
 }
