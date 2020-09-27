@@ -4,11 +4,12 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#pragma once
+#include <selfdriving/SE2_KinState.h>
 
-#include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
+using namespace selfdriving;
 
-namespace selfdrive
+std::string SE2_KinState::asString() const
 {
-using ptg_t = mrpt::nav::CParameterizedTrajectoryGenerator;
+    return std::string("p=") + pose.asString() + std::string(" v=") +
+           vel.asString();
 }

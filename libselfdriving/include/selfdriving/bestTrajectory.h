@@ -6,14 +6,19 @@
 
 #pragma once
 
-#include "PlannerTypes.h"
+#include <mrpt/system/COutputLogger.h>
+#include <selfdriving/MoveEdgeSE2_TPS.h>
+#include <selfdriving/TrajectoriesAndRobotShape.h>
+#include <optional>
 
-namespace selfdrive
+namespace selfdriving
 {
 /** Finds the best trajectory between two kinematic states, given the set of
  * feasible trajectories.
  * \return true on success, false on no valid path found
  */
-bool bestTrajectory(NavPlanAction& npa, const TrajectoriesAndRobotShape& trs);
+bool bestTrajectory(
+    MoveEdgeSE2_TPS& npa, const TrajectoriesAndRobotShape& trs,
+    std::optional<mrpt::system::COutputLogger*> logger = std::nullopt);
 
-}  // namespace selfdrive
+}  // namespace selfdriving

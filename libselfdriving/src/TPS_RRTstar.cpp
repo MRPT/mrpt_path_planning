@@ -4,13 +4,13 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <libselfdriving/TPS_RRTstar.h>
-#include <libselfdriving/bestTrajectory.h>
 #include <mrpt/maps/COccupancyGridMap2D.h>
 #include <mrpt/nav/planners/PlannerSimple2D.h>
+#include <selfdriving/TPS_RRTstar.h>
+#include <selfdriving/bestTrajectory.h>
 #include <iostream>
 
-using namespace selfdrive;
+using namespace selfdriving;
 
 /* Algorithms (to be developed in future paper?)
  *
@@ -42,23 +42,25 @@ using namespace selfdrive;
 
 TPS_RRTstar::TPS_RRTstar() : mrpt::system::COutputLogger("TPS_RRTstar") {}
 
-NavPlan TPS_RRTstar::plan(const PlannerInput& in)
+PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 {
     MRPT_START
     mrpt::system::CTimeLoggerEntry tleg(profiler_, "plan");
 
     // Sanity checks on inputs:
     ASSERT_(in.ptgs.initialized());
-    ASSERT_NOT_EQUAL_(in.world_bbox_min, in.world_bbox_max);
+    ASSERT_(in.world_bbox_min != in.world_bbox_max);
 
-    NavPlan ret;
-    ret.original_input = in;
+    PlannerOutput ret;
+    ret.originalInput = in;
 
     // Calc maximum vehicle shape radius:
     double max_veh_radius = 0.;
     for (const auto& ptg : in.ptgs.ptgs)
         mrpt::keep_max(max_veh_radius, ptg->getMaxRobotRadius());
 
+// XXX
+#if 0
     // [Algo `tp_space_rrt`: Line 1]: Init tree adding the initial pose
     if (ret.move_tree.getAllNodes().empty())
     {
@@ -66,6 +68,7 @@ NavPlan TPS_RRTstar::plan(const PlannerInput& in)
         result.move_tree.insertNode(
             result.move_tree.root, TNodeSE2_TP(pi.start_pose));
     }
+#endif
 
     // Reuse MRPT's implementation:
     mrpt::nav::PlannerSimple2D grid_planner;
@@ -149,11 +152,12 @@ NavPlan TPS_RRTstar::plan(const PlannerInput& in)
         }
     }
 
+#if 0
     for (const auto& p : path)
     {
         NavPlanAction act;
-        act.state_from    = last_state;
-        act.state_to.pose = mrpt::math::TPose2D(p.x, p.y, 0);
+        act.stateFrom    = last_state;
+        act.stateTo.pose = mrpt::math::TPose2D(p.x, p.y, 0);
 
         // Compute PTG actions (trajectory segments):
         if (!in.ptgs.ptgs.empty())
@@ -162,17 +166,18 @@ NavPlan TPS_RRTstar::plan(const PlannerInput& in)
                 profiler_, "plan.bestTrajectory");
 
             // This finds the best PTG segments for the from/to poses.
-            selfdrive::bestTrajectory(act, in.ptgs);
+            selfdriving::bestTrajectory(act, in.ptgs);
         }
 
         // for the next iter:
-        // Note that "state_to" may have been modified by bestTrajectory().
-        last_state = act.state_to;
+        // Note that "stateTo" may have been modified by bestTrajectory().
+        last_state = act.stateTo;
 
         ret.actions.push_back(std::move(act));
     }
 
     ret.success = true;
+#endif
 
     return ret;
     MRPT_END

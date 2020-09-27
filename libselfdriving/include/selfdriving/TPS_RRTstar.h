@@ -6,11 +6,12 @@
 
 #pragma once
 
-#include <libselfdriving/PlannerTypes.h>
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
+#include <selfdriving/PlannerInput.h>
+#include <selfdriving/PlannerOutput.h>
 
-namespace selfdrive
+namespace selfdriving
 {
 class TPS_RRTstar : public mrpt::system::COutputLogger
 {
@@ -18,7 +19,7 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
     TPS_RRTstar();
     ~TPS_RRTstar() = default;
 
-    NavPlan plan(const PlannerInput& in);
+    PlannerOutput plan(const PlannerInput& in);
 
     struct Parameters
     {
@@ -45,4 +46,4 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
         const double MAX_DIST, double& out_TPObstacle_k);
 };
 
-}  // namespace selfdrive
+}  // namespace selfdriving

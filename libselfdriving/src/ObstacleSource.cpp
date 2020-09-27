@@ -4,9 +4,9 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <libselfdriving/ObstacleSource.h>
+#include <selfdriving/ObstacleSource.h>
 
-using namespace selfdrive;
+using namespace selfdriving;
 
 ObstacleSource::~ObstacleSource() = default;
 

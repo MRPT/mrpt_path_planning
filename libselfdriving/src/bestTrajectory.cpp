@@ -4,25 +4,24 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <libselfdriving/bestTrajectory.h>
 #include <mrpt/core/get_env.h>
+#include <selfdriving/bestTrajectory.h>
 
-static const bool VERBOSE = mrpt::get_env<bool>("VERBOSE", false);
+using namespace selfdriving;
 
-using namespace selfdrive;
-
-bool selfdrive::bestTrajectory(
-    NavPlanAction& npa, const TrajectoriesAndRobotShape& trs)
+bool selfdriving::bestTrajectory(
+    MoveEdgeSE2_TPS& npa, const TrajectoriesAndRobotShape& trs,
+    std::optional<mrpt::system::COutputLogger*> logger)
 {
     MRPT_START
 
     const double HEADING_ERROR_WEIGHT = 1.0;
 
-    npa.ptg_index = -1;  // Default: invalid index
+    npa.ptgIndex = -1;  // Default: invalid index
 
     if (trs.ptgs.empty()) return false;
 
-    const auto relPose = npa.state_to.pose - npa.state_from.pose;
+    const auto relPose = npa.stateTo.pose - npa.stateFrom.pose;
 
     double best_ptg_target_dist = std::numeric_limits<double>::max();
     mrpt::math::TPose2D  best_ptg_relPose;
@@ -43,10 +42,12 @@ bool selfdrive::bestTrajectory(
         double ptg_norm_dist;
         if (!ptg->inverseMap_WS2TP(relPose.x, relPose.y, ptg_k, ptg_norm_dist))
         {
-            std::cout << "ptg[" << ptg_idx
-                      << "] out of range relPose:" << relPose.asString()
-                      << "\n";
-
+            if (logger)
+            {
+                logger.value()->logFmt(
+                    mrpt::system::LVL_WARN, "ptg[%u] out of range relPose: %s",
+                    ptg_idx, relPose.asString().c_str());
+            }
             // Out of PTG range. Cannot do anything here.
             continue;
         }
@@ -74,32 +75,41 @@ bool selfdrive::bestTrajectory(
         {
             best_ptg_target_dist = this_ptg_dist_at_target;
 
-            npa.ptg_index      = ptg_idx;
-            npa.ptg_path_index = ptg_k;
-            npa.ptg_to_d       = ptg_dist;
-            npa.ptg_path_alpha = ptg->index2alpha(ptg_k);
-            best_ptg_relPose   = reconstr_pose;
-            best_ptg_velAtEnd  = ptg->getPathTwist(ptg_k, ptg_step);
+            npa.ptgIndex      = ptg_idx;
+            npa.ptgPathIndex  = ptg_k;
+            npa.ptgDist       = ptg_dist;
+            best_ptg_relPose  = reconstr_pose;
+            best_ptg_velAtEnd = ptg->getPathTwist(ptg_k, ptg_step);
         }
 
     }  // end for each ptg
 
-    // Any valid PTG? Take goal target pose from PTG, since it represents the
-    // predicted robot pose more accurately than the initial plan, which may not
-    // take care of robot kinematics limitations:
-    if (npa.ptg_index >= 0)
+    // Any valid PTG? Take goal target pose from PTG, since it represents
+    // the predicted robot pose more accurately than the initial plan, which
+    // may not take care of robot kinematics limitations:
+    if (npa.ptgIndex >= 0)
     {
-        if (VERBOSE) std::cout << "before: " << npa.state_to.asString() << "\n";
+        if (logger)
+        {
+            logger.value()->logFmt(
+                mrpt::system::LVL_DEBUG, "bestTrajectory(): before: %s",
+                npa.stateTo.asString().c_str());
+        }
 
         // Correct pose:
-        npa.state_to.pose = npa.state_from.pose + best_ptg_relPose;
+        npa.stateTo.pose = npa.stateFrom.pose + best_ptg_relPose;
 
         // Update vel:
-        npa.state_to.vel = best_ptg_velAtEnd;
+        npa.stateTo.vel = best_ptg_velAtEnd;
         // local to global:
-        npa.state_to.vel.rotate(npa.state_to.pose.phi);
+        npa.stateTo.vel.rotate(npa.stateTo.pose.phi);
 
-        if (VERBOSE) std::cout << " after: " << npa.state_to.asString() << "\n";
+        if (logger)
+        {
+            logger.value()->logFmt(
+                mrpt::system::LVL_DEBUG, "bestTrajectory(): after: %s",
+                npa.stateTo.asString().c_str());
+        }
     }
 
     return true;

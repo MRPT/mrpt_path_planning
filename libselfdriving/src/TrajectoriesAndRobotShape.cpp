@@ -4,15 +4,9 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <libselfdriving/PlannerTypes.h>
+#include <selfdriving/TrajectoriesAndRobotShape.h>
 
-using namespace selfdrive;
-
-std::string SE2_KinState::asString() const
-{
-    return std::string("p=") + pose.asString() + std::string(" v=") +
-           vel.asString();
-}
+using namespace selfdriving;
 
 void TrajectoriesAndRobotShape::clear() { *this = TrajectoriesAndRobotShape(); }
 
@@ -106,19 +100,4 @@ void TrajectoriesAndRobotShape::initFromYAML(const mrpt::containers::yaml& node)
     THROW_EXCEPTION("Write me!");
     initialized_ = false;
     MRPT_END
-}
-
-ptg_t::TNavDynamicState NavPlanAction::getPTGDynState() const
-{
-    mrpt::nav::CParameterizedTrajectoryGenerator::TNavDynamicState newDyn;
-
-    newDyn.relTarget   = state_to.pose - state_from.pose;
-    newDyn.curVelLocal = state_from.vel;
-    // Global to local velocity:
-    newDyn.curVelLocal.rotate(-state_from.pose.phi);
-
-    MRPT_TODO("Support stop at final pose?");
-    newDyn.targetRelSpeed = 1.0;
-
-    return newDyn;
 }

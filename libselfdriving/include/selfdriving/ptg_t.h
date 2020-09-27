@@ -6,19 +6,9 @@
 
 #pragma once
 
-#include <mrpt/math/TPose2D.h>
-#include <mrpt/math/TTwist2D.h>
+#include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
 
-namespace selfdrive
+namespace selfdriving
 {
-struct SE2_KinState
-{
-    SE2_KinState() = default;
-
-    mrpt::math::TPose2D  pose{0, 0, 0};  //!< global pose
-    mrpt::math::TTwist2D vel{0, 0, 0};  //!< global velocity
-
-    std::string asString() const;
-};
-
-}  // namespace selfdrive
+using ptg_t = mrpt::nav::CParameterizedTrajectoryGenerator;
+}
