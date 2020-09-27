@@ -6,11 +6,10 @@
 
 #pragma once
 
+#include <libselfdriving/SE2_KinState.h>
 #include <mrpt/containers/yaml.h>
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/math/TPolygon2D.h>
-#include <mrpt/math/TPose2D.h>
-#include <mrpt/math/TTwist2D.h>
 #include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
 #include <memory>
 #include <vector>
@@ -23,14 +22,6 @@ struct RobotShape
 {
     mrpt::math::TPolygon2D robot_shape;  //!< 2D robot shape
     double                 robot_radius{-1.0};  //!< Radius of circ. robot
-};
-
-struct SE2_KinState
-{
-    mrpt::math::TPose2D  pose{0, 0, 0};  //!< global pose
-    mrpt::math::TTwist2D vel{0, 0, 0};  //!< global velocity
-
-    std::string asString() const;
 };
 
 class ObstacleSource
@@ -73,10 +64,11 @@ class TrajectoriesAndRobotShape
 
 struct PlannerInput
 {
-    RobotShape                robot_shape;
-    SE2_KinState              state_start, state_goal;
-    ObstacleSource::Ptr       obstacles;
-    double                    min_step_len{0.25};  //!< [meters]
+    RobotShape          robot_shape;
+    SE2_KinState        state_start, state_goal;
+    mrpt::math::TPose2D world_bbox_min, world_bbox_max;  //!< World bounding box
+    ObstacleSource::Ptr obstacles;
+    double              min_step_len{0.25};  //!< [meters]
     TrajectoriesAndRobotShape ptgs;
 };
 
