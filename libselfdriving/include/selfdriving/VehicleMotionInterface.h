@@ -113,14 +113,6 @@ class VehicleMotionInterface
         const std::optional<CVehicleVelCmd::Ptr>& immediate,
         const std::optional<EnqueuedMotionCmd>&   next) = 0;
 
-    /** Just like changeSpeeds(), but will be called when the last velocity
-     * command is still the preferred solution,
-     * so there is no need to change that past command. The unique effect of
-     * this callback would be resetting the watchdog timer.
-     * \return false on any error.
-     * \sa changeSpeeds(), startWatchdog()
-     * \callergraph */
-    virtual bool changeSpeedsNOP();
 };
 
 }  // namespace selfdriving
