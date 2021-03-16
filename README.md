@@ -1,4 +1,5 @@
 [![CircleCI](https://circleci.com/gh/jlblancoc/selfdriving.svg?style=svg)](https://circleci.com/gh/jlblancoc/selfdriving)
+[![Documentation Status](https://readthedocs.org/projects/selfdriving/badge/?version=latest)](https://selfdriving.readthedocs.io/en/latest/?badge=latest)
 
 # selfdriving
 Self-driving (autonomous navigation) algorithms for 2D robots/vehicles based on mrpt-nav
