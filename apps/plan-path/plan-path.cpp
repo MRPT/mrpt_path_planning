@@ -74,7 +74,7 @@ static void do_plan_path()
 
     // PTGs config file:
     mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
-    pi.ptgs.initFromConfigFile(cfg, "CReactiveNavigationSystem");
+    pi.ptgs.initFromConfigFile(cfg, "SelfDriving");
 
     const selfdriving::PlannerOutput plan = planner.plan(pi);
 

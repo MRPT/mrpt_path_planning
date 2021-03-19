@@ -15,11 +15,11 @@ namespace selfdriving
 {
 struct PlannerInput
 {
-    RobotShape          robot_shape;
-    SE2_KinState        state_start, state_goal;
-    mrpt::math::TPose2D world_bbox_min, world_bbox_max;  //!< World bounding box
-    ObstacleSource::Ptr obstacles;
-    double              min_step_len{0.25};  //!< [meters]
+    RobotShape                robot_shape;
+    SE2_KinState              state_start, state_goal;
+    mrpt::math::TPose2D       world_bbox_min, world_bbox_max;  //!< World bounds
+    ObstacleSource::Ptr       obstacles;
+    double                    min_step_len{0.25};  //!< Between waypoints [m]
     TrajectoriesAndRobotShape ptgs;
 };
 

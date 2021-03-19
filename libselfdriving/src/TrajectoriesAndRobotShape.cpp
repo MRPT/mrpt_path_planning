@@ -94,6 +94,7 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
     MRPT_END
 }
 
+#if 0
 void TrajectoriesAndRobotShape::initFromYAML(const mrpt::containers::yaml& node)
 {
     MRPT_START
@@ -101,3 +102,4 @@ void TrajectoriesAndRobotShape::initFromYAML(const mrpt::containers::yaml& node)
     initialized_ = false;
     MRPT_END
 }
+#endif

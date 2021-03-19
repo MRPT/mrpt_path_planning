@@ -10,6 +10,7 @@
 #include <mrpt/containers/yaml.h>
 #include <mrpt/math/TPolygon2D.h>
 #include <selfdriving/ptg_t.h>
+
 #include <memory>
 #include <vector>
 
@@ -32,7 +33,7 @@ class TrajectoriesAndRobotShape
 
     void initFromConfigFile(
         mrpt::config::CConfigFileBase& cfg, const std::string& section);
-    void initFromYAML(const mrpt::containers::yaml& node);
+    // void initFromYAML(const mrpt::containers::yaml& node);
 
     std::vector<std::shared_ptr<ptg_t>> ptgs;  //!< Allowed movement sets
     RobotShape                          robotShape;
