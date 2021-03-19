@@ -1,14 +1,16 @@
 /* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2021 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
 #include <mrpt/3rdparty/tclap/CmdLine.h>
 #include <mrpt/config/CConfigFile.h>
 #include <mrpt/core/exceptions.h>  // exception_to_str()
+#include <mrpt/maps/CSimplePointsMap.h>
 #include <selfdriving/TPS_RRTstar.h>
 #include <selfdriving/viz.h>
+
 #include <iostream>
 
 static TCLAP::CmdLine cmd("plan-path");
@@ -34,13 +36,13 @@ static TCLAP::ValueArg<double> arg_min_step_len(
 static void do_plan_path()
 {
     // Load obstacles:
-    mrpt::maps::CSimplePointsMap obsPts;
-    if (!obsPts.load2D_from_text_file(arg_obs_file.getValue()))
+    auto obsPts = mrpt::maps::CSimplePointsMap::Create();
+    if (!obsPts->load2D_from_text_file(arg_obs_file.getValue()))
         THROW_EXCEPTION_FMT(
             "Cannot read obstacle point cloud from: `%s`",
             arg_obs_file.getValue().c_str());
 
-    auto obs = std::make_shared<selfdriving::ObstacleSource>(obsPts);
+    auto obs = selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
 
     // Prepare planner input data:
     selfdriving::PlannerInput pi;
@@ -50,6 +52,11 @@ static void do_plan_path()
     pi.obstacles                = obs;
     pi.robot_shape.robot_radius = 0.35;
     pi.min_step_len             = arg_min_step_len.getValue();
+
+    const auto& bbox = obs->obstacles()->boundingBox();
+
+    pi.world_bbox_max = {bbox.max.x, bbox.max.y, M_PI};
+    pi.world_bbox_min = {bbox.min.x, bbox.min.y, -M_PI};
 
     std::cout << "Start pose: " << pi.state_start.pose.asString() << "\n";
     std::cout << "Goal pose : " << pi.state_goal.pose.asString() << "\n";

@@ -5,9 +5,11 @@
  * ------------------------------------------------------------------------- */
 
 #include <mrpt/maps/COccupancyGridMap2D.h>
+#include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/nav/planners/PlannerSimple2D.h>
 #include <selfdriving/TPS_RRTstar.h>
 #include <selfdriving/bestTrajectory.h>
+
 #include <iostream>
 
 using namespace selfdriving;
@@ -87,19 +89,14 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     profiler_.leave("plan.obstacles()");
 
     ASSERT_(obs_pts);
-    float min_x, max_x, min_y, max_y, min_z, max_z;
-    obs_pts->boundingBox(min_x, max_x, min_y, max_y, min_z, max_z);
+    mrpt::math::TBoundingBoxf bbox = obs_pts->boundingBox();
 
     // make sure the bbox includes the goal & start poses as well as obstacles:
-    mrpt::keep_max(max_x, in.state_start.pose.x + 1.0);
-    mrpt::keep_max(max_x, in.state_goal.pose.x + 1.0);
-    mrpt::keep_max(max_y, in.state_start.pose.y + 1.0);
-    mrpt::keep_max(max_y, in.state_goal.pose.y + 1.0);
+    bbox.updateWithPoint(mrpt::math::TPoint3Df(
+        in.state_start.pose.x + 1.0, in.state_start.pose.y + 1.0, .0f));
 
-    mrpt::keep_min(min_x, in.state_start.pose.x - 1.0);
-    mrpt::keep_min(min_x, in.state_goal.pose.x - 1.0);
-    mrpt::keep_min(min_y, in.state_start.pose.y - 1.0);
-    mrpt::keep_min(min_y, in.state_goal.pose.y - 1.0);
+    bbox.updateWithPoint(mrpt::math::TPoint3Df(
+        in.state_start.pose.x - 1.0, in.state_start.pose.y - 1.0, .0f));
 
     // Build an occ. grid: all free except obstacles in the input
     // pointcloud.
@@ -107,8 +104,8 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 
     mrpt::maps::COccupancyGridMap2D obsGrid;
     obsGrid.setSize(
-        min_x, max_x, min_y, max_y, static_cast<float>(params_.grid_resolution),
-        0.99f);
+        bbox.min.x, bbox.max.x, bbox.min.y, bbox.max.y,
+        static_cast<float>(params_.grid_resolution), 0.99f);
     {
         const auto& xs = obs_pts->getPointsBufferRef_x();
         const auto& ys = obs_pts->getPointsBufferRef_y();

@@ -6,16 +6,8 @@
 
 #pragma once
 
-#include <selfdriving/MotionPrimitivesTree.h>
-#include <selfdriving/SE2_KinState.h>
-#include <selfdriving/ptg_t.h>
-#include <mrpt/containers/yaml.h>
-#include <mrpt/maps/CSimplePointsMap.h>
-#include <mrpt/math/TPolygon2D.h>
-#include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
-#include <limits>
-#include <memory>
-#include <vector>
+#include <mrpt/maps/CPointsMap.h>
+#include <mrpt/system/datetime.h>
 
 namespace selfdriving
 {
@@ -25,16 +17,38 @@ class ObstacleSource
     using Ptr = std::shared_ptr<ObstacleSource>;
 
     ObstacleSource() = default;
-    ObstacleSource(const mrpt::maps::CSimplePointsMap& staticObstacles);
     virtual ~ObstacleSource();
 
-    virtual mrpt::maps::CSimplePointsMap::Ptr obstacles(
-        mrpt::system::TTimeStamp t = mrpt::system::TTimeStamp());
+    static Ptr FromStaticPointcloud(const mrpt::maps::CPointsMap::Ptr& pc);
+
+    /** Returns all global obstacle points, in global "map" reference frame.
+     */
+    virtual mrpt::maps::CPointsMap::Ptr obstacles(
+        mrpt::system::TTimeStamp t = mrpt::system::TTimeStamp()) = 0;
 
     virtual bool dynamic() const { return false; }
+};
+
+/** A simple obstacle source from a fixed (static world) point cloud. */
+class ObstacleSourceStaticPointcloud : public ObstacleSource
+{
+   public:
+    ObstacleSourceStaticPointcloud(
+        const mrpt::maps::CPointsMap::Ptr& staticObstacles)
+        : static_obs_(staticObstacles)
+    {
+        ASSERT_(static_obs_);
+    }
+
+    virtual mrpt::maps::CPointsMap::Ptr obstacles(
+        [[maybe_unused]] mrpt::system::TTimeStamp t =
+            mrpt::system::TTimeStamp()) override
+    {
+        return static_obs_;
+    }
 
    private:
-    mrpt::maps::CSimplePointsMap::Ptr static_obs_{};
+    mrpt::maps::CPointsMap::Ptr static_obs_;
 };
 
 }  // namespace selfdriving

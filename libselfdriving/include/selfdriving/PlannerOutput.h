@@ -6,7 +6,11 @@
 
 #pragma once
 
+#include <mrpt/graphs/TNodeID.h>
+#include <selfdriving/MotionPrimitivesTree.h>
 #include <selfdriving/PlannerInput.h>
+
+#include <set>
 
 namespace selfdriving
 {
