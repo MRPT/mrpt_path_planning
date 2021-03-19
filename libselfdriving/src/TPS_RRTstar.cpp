@@ -14,33 +14,32 @@
 
 using namespace selfdriving;
 
-/* Algorithms (to be developed in future paper?)
+// clang-format off
+/* Algorithm:
  *
  * ================================================================
  *  TPS-RRT*
  * ================================================================
- * Q_T ← {q_0 }    # Tree nodes (configuration space)
- * E T ← ∅         # Tree edges
- * n ← 1           # Iteration counter
- *
- * while n ≤ N do
- *  q_rand ← SAMPLE( Q_free )
- *  Q_near ← NEAR_NODES( q_rand )
- *  q_best ← EXTEND( Q_near, q_rand )
- *  if q_rand \notin Q_T ∧ q_best != ∅ then
- *   Q_T ← Q_T U { q_rand }
- *   E_T ← E_T U { ( q_best , q_rand ) }
- *   n ← n + 1
- *   E_T ← REWIRE(Q_T, E_T, q_rand, Q_near )
- *  else if q_rand \in Q_T then
- *   q_prev ← PARENT( q_rand )
- *   if q_best != q_prev then
- *    E_T ← ( E_T \ { ( q_prev , q_rand ) } ) U {q_best, q_rand }
- *    E_T ← REWIRE ( Q_T , E_T , q_rand , Q_near )
- *
- * return (Q_T, E_T)
+ *  1  |  X_T ← {X_0 }    # Tree nodes (state space)
+ *  2  |  E T ← ∅         # Tree edges
+ *  3  | 
+ *  4  |  for i \in [1,N] do
+ *  5  |   q_i ← SAMPLE( Q_free )
+ *  6  |   {x_best, x_i} ← argmin{x ∈ Tree | cost[x, q_i ] < r ∧ CollisionFree(pi(x,q_i)}( cost[x] + cost[x,x_i] )
+ *  7  |   parent[x_i] ← x_best
+ *  8  |   cost[x_i] ← cost[x_best] + cost[x_best, x_i]
+ *  9  |  
+ * 10  |   for all {x ∈ Tree ∪ {x goal } | cost[x, x_i ] < r ∧ cost[x_i] +cost[x_i,x]<cost[x] ∧ CollisionFree(pi(x,x_i)} do
+ * 11  |    cost[x] ← cost[x_i] + cost[x_i, x]
+ * 12  |    parent[x] ← x_i
+ * 13  |   
+ * 14  |   X_T ← X_T U { x_i }
+ * 15  |   E_T ← E_T U { ( x_best, x_i ) }
+ * 16  | 
+ * 17  |  return (X_T, E_T)
  *
  */
+// clang-format on
 
 TPS_RRTstar::TPS_RRTstar() : mrpt::system::COutputLogger("TPS_RRTstar") {}
 
@@ -53,22 +52,15 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     ASSERT_(in.ptgs.initialized());
     ASSERT_(in.world_bbox_min != in.world_bbox_max);
 
-    PlannerOutput ret;
-    ret.originalInput = in;
+    PlannerOutput po;
+    po.originalInput = in;
 
-    // Calc maximum vehicle shape radius:
-    double max_veh_radius = 0.;
-    for (const auto& ptg : in.ptgs.ptgs)
-        mrpt::keep_max(max_veh_radius, ptg->getMaxRobotRadius());
-
-// XXX
 #if 0
-    // [Algo `tp_space_rrt`: Line 1]: Init tree adding the initial pose
-    if (ret.move_tree.getAllNodes().empty())
+    // [Algo `tp_space_rrtstar`: Line 1]: Init tree adding the initial pose
+    if (po.move_tree.getAllNodes().empty())
     {
-        result.move_tree.root = 0;
-        result.move_tree.insertNode(
-            result.move_tree.root, TNodeSE2_TP(pi.start_pose));
+        po.move_tree.root = 0;
+        po.move_tree.insertNode(po.move_tree.root, TNodeSE2_TP(pi.start_pose));
     }
 #endif
 
@@ -129,8 +121,8 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 
     if (path_not_found || path.empty())
     {
-        ret.success = false;
-        return ret;
+        po.success = false;
+        return po;
     }
 
     // Go thru the list of points and convert them into a sequence of PTG
@@ -176,7 +168,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     ret.success = true;
 #endif
 
-    return ret;
+    return po;
     MRPT_END
 }
 
