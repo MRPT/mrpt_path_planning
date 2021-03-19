@@ -15,8 +15,8 @@ struct SE2_KinState
 {
     SE2_KinState() = default;
 
-    mrpt::math::TPose2D  pose{0, 0, 0};  //!< global pose
-    mrpt::math::TTwist2D vel{0, 0, 0};  //!< global velocity
+    mrpt::math::TPose2D  pose{0, 0, 0};  //!< global pose (x,y,phi)
+    mrpt::math::TTwist2D vel{0, 0, 0};  //!< global velocity (vx,vy,omega)
 
     std::string asString() const;
 };
