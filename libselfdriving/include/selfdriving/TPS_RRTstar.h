@@ -23,7 +23,7 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
 
     struct Parameters
     {
-        double grid_resolution = .05;  //!< [meters]
+        double goalBias = 0.02;
     };
 
     Parameters params_;
@@ -32,18 +32,33 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
     mrpt::system::CTimeLogger profiler_{true, "TPS_RRTstar"};
 
    private:
-    static void transformPointcloudWithSquareClipping(
+    struct DrawFreePoseParams
+    {
+        DrawFreePoseParams(const PlannerInput& pi) : pi_(pi) {}
+
+        const PlannerInput& pi_;
+    };
+
+    mrpt::math::TPose2D draw_random_free_pose(const DrawFreePoseParams& p);
+
+    std::set<TNodeID> find_nodes_within_ball(
+        const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
+        const double maxDistance);
+
+    static void transform_pc_square_clipping(
         const mrpt::maps::CPointsMap& in_map, mrpt::maps::CPointsMap& out_map,
         const mrpt::poses::CPose2D& asSeenFrom, const double MAX_DIST_XY);
 
-    void spaceTransformer(
+    /// Returns normalized TPS-distances to obstacles.
+    std::vector<double> transform_to_tps(
         const mrpt::maps::CSimplePointsMap& in_obstacles, const ptg_t& ptg,
-        const double MAX_DIST, std::vector<double>& out_TPObstacles);
+        const double MAX_DIST);
 
-    void spaceTransformerOneDirectionOnly(
+    /// Returns normalized TPS-distance to obstacles.
+    double transform_to_tps_single_path(
         const int                           tp_space_k_direction,
         const mrpt::maps::CSimplePointsMap& in_obstacles, const ptg_t& ptg,
-        const double MAX_DIST, double& out_TPObstacle_k);
+        const double MAX_DIST);
 };
 
 }  // namespace selfdriving

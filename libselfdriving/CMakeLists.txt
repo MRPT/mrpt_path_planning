@@ -41,8 +41,29 @@ target_include_directories(${PROJECT_NAME}
 set_target_properties(${PROJECT_NAME} PROPERTIES
   VERSION "${SELFDRIVING_VERSION_NUMBER_MAJOR}.${SELFDRIVING_VERSION_NUMBER_MINOR}.${SELFDRIVING_VERSION_NUMBER_PATCH}"
   SOVERSION ${SELFDRIVING_VERSION_NUMBER_MAJOR}.${SELFDRIVING_VERSION_NUMBER_MINOR}
-  )
+)
 
+set(COMPILER_IS_CLANG 0)
+if (${CMAKE_CXX_COMPILER_ID}  STREQUAL "Clang")
+	set(COMPILER_IS_CLANG 1)
+endif()
+set(COMPILER_IS_GCC ${CMAKE_COMPILER_IS_GNUCXX})
+if (COMPILER_IS_GCC OR COMPILER_IS_CLANG)
+	set(COMPILER_IS_GCC_OR_CLANG 1)
+else()
+	set(COMPILER_IS_GCC_OR_CLANG 0)
+endif()
+
+
+if (COMPILER_IS_GCC_OR_CLANG)
+  target_compile_options(
+    ${PROJECT_NAME}
+  PRIVATE
+    -Wreturn-type         -Werror=return-type
+    -Wformat              -Werror=format-security
+    -Wextra -Wtype-limits -Wcast-align -Wparentheses
+  )
+endif()
 
 if((NOT MSVC) AND ((NOT CMAKE_CROSSCOMPILING) AND (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")))
   target_compile_options(${PROJECT_NAME} PRIVATE -O3 -mtune=native)

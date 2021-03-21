@@ -47,21 +47,35 @@ static void do_plan_path()
     // Prepare planner input data:
     selfdriving::PlannerInput pi;
 
-    pi.state_start.pose.fromString(arg_start_pose.getValue());
-    pi.state_goal.pose.fromString(arg_goal_pose.getValue());
-    pi.obstacles                = obs;
-    pi.robot_shape.robot_radius = 0.35;
-    pi.min_step_len             = arg_min_step_len.getValue();
+    pi.stateStart.pose.fromString(arg_start_pose.getValue());
+    pi.stateGoal.pose.fromString(arg_goal_pose.getValue());
+    pi.obstacles     = obs;
+    pi.minStepLength = arg_min_step_len.getValue();
 
-    const auto& bbox = obs->obstacles()->boundingBox();
+    auto bbox = obs->obstacles()->boundingBox();
 
-    pi.world_bbox_max = {bbox.max.x, bbox.max.y, M_PI};
-    pi.world_bbox_min = {bbox.min.x, bbox.min.y, -M_PI};
+    // Make sure goal and start are within bbox:
+    {
+        const auto bboxMargin = mrpt::math::TPoint3Df(1.0, 1.0, .0);
+        const auto ptStart    = mrpt::math::TPoint3Df(
+            pi.stateStart.pose.x, pi.stateStart.pose.y, 0);
+        const auto ptGoal =
+            mrpt::math::TPoint3Df(pi.stateGoal.pose.x, pi.stateGoal.pose.y, 0);
+        bbox.updateWithPoint(ptStart - bboxMargin);
+        bbox.updateWithPoint(ptStart + bboxMargin);
+        bbox.updateWithPoint(ptGoal - bboxMargin);
+        bbox.updateWithPoint(ptGoal + bboxMargin);
+    }
 
-    std::cout << "Start pose: " << pi.state_start.pose.asString() << "\n";
-    std::cout << "Goal pose : " << pi.state_goal.pose.asString() << "\n";
+    pi.worldBboxMax = {bbox.max.x, bbox.max.y, M_PI};
+    pi.worldBboxMin = {bbox.min.x, bbox.min.y, -M_PI};
+
+    std::cout << "Start pose: " << pi.stateStart.pose.asString() << "\n";
+    std::cout << "Goal pose : " << pi.stateGoal.pose.asString() << "\n";
     std::cout << "Obstacles : " << pi.obstacles->obstacles()->size()
               << " points\n";
+    std::cout << "World bbox: " << pi.worldBboxMin.asString() << " - "
+              << pi.worldBboxMax.asString() << "\n";
 
     // Do the path planning :
     selfdriving::TPS_RRTstar planner;
@@ -70,7 +84,7 @@ static void do_plan_path()
     planner.profiler_.enable(true);
 
     // Set planner required params:
-    planner.params_.grid_resolution = 0.05;
+    // planner.params_.X= Y;
 
     // PTGs config file:
     mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
@@ -81,7 +95,7 @@ static void do_plan_path()
     std::cout << "\nDone.\n";
     std::cout << "Success: " << (plan.success ? "YES" : "NO") << "\n";
     std::cout << "Plan has " << plan.motionTree.edges_to_children.size()
-              << " overall edges, " << plan.motionTree.getAllNodes().size()
+              << " overall edges, " << plan.motionTree.nodes().size()
               << " nodes\n";
 
     // Visualize:

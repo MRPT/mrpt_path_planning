@@ -31,19 +31,23 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
         "must have the same length!");
     if (!xs.empty())
     {
-        robotShape.robot_shape.clear();
+        auto& poly = robotShape.emplace<mrpt::math::TPolygon2D>();
         for (size_t i = 0; i < xs.size(); i++)
         {
-            robotShape.robot_shape.emplace_back(xs[i], ys[i]);
+            poly.emplace_back(xs[i], ys[i]);
             robShape.AddVertex(xs[i], ys[i]);
         }
     }
 
     // Load robot shape: 2/2 circle
     // ---------------------------------------------
-    robotShape.robot_radius =
-        c.read_double(s, "RobotModel_circular_shape_radius", .0, false);
-    ASSERT_GE_(robotShape.robot_radius, .0);
+    if (const double robot_radius =
+            c.read_double(s, "RobotModel_circular_shape_radius", -1.0, false);
+        robot_radius > 0)
+    {
+        auto& r = robotShape.emplace<robot_radius_t>();
+        r       = robot_radius;
+    }
 
     // Load PTGs from file:
     // ---------------------------------------------
@@ -79,7 +83,7 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
             ptg_circ)
         {
             // Set it:
-            ptg_circ->setRobotShapeRadius(robotShape.robot_radius);
+            ptg_circ->setRobotShapeRadius(std::get<robot_radius_t>(robotShape));
         }
 
         // Init:
@@ -103,3 +107,11 @@ void TrajectoriesAndRobotShape::initFromYAML(const mrpt::containers::yaml& node)
     MRPT_END
 }
 #endif
+
+bool selfdriving::obstaclePointCollides(
+    const mrpt::math::TPoint2D&      obstacleWrtRobot,
+    const TrajectoriesAndRobotShape& trs)
+{
+    return trs.ptgs.at(0)->isPointInsideRobotShape(
+        obstacleWrtRobot.x, obstacleWrtRobot.y);
+}

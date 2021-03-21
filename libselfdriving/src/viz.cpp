@@ -17,17 +17,22 @@ using namespace selfdriving;
 
 static std::vector<mrpt::gui::CDisplayWindow3D::Ptr> nonmodal_wins;
 
-static mrpt::opengl::CRenderizable::Ptr getRobotShapeViz(const RobotShape& r)
+static mrpt::opengl::CRenderizable::Ptr getRobotShapeViz(
+    const TrajectoriesAndRobotShape& r)
 {
-    if (r.robot_shape.empty())
+    MRPT_TODO("Replace by calls to ptg->add_robotShape_to_setOfLines()");
+
+    if (std::holds_alternative<double>(r.robotShape))
     {
 #if 0
         return mrpt::opengl::CCylinder::Create(
             r.robot_radius, r.robot_radius, 0.10f /*height*/, 20 /*slices*/,
             2 /*stacks*/);
 #else
+        const double R = std::get<double>(r.robotShape);
+
         auto obj = mrpt::opengl::CCylinder::Create(
-            r.robot_radius, r.robot_radius, 0.05f /*height*/, 20 /*slices*/);
+            R, R, 0.05f /*height*/, 20 /*slices*/);
         obj->setHasBases(false, false);
         return obj;
 #endif
@@ -61,11 +66,11 @@ void selfdriving::viz_nav_plan(
             auto gl_obj =
                 mrpt::opengl::stock_objects::CornerXYZSimple(1.0f, 6.0f);
             gl_group->insert(gl_obj);
-            gl_group->insert(getRobotShapeViz(plan.originalInput.robot_shape));
+            gl_group->insert(getRobotShapeViz(plan.originalInput.ptgs));
 
             gl_group->setLocation(
-                plan.originalInput.state_goal.pose.x,
-                plan.originalInput.state_goal.pose.y, 0);
+                plan.originalInput.stateGoal.pose.x,
+                plan.originalInput.stateGoal.pose.y, 0);
 
             scene->insert(gl_group);
         }

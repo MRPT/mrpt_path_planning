@@ -14,6 +14,8 @@
 
 namespace selfdriving
 {
+using TNodeID = mrpt::graphs::TNodeID;
+
 /** The output of the path planner */
 struct PlannerOutput
 {
@@ -34,11 +36,11 @@ struct PlannerOutput
     double pathCost = std::numeric_limits<double>::max();
 
     /** The ID of the best target node in the tree */
-    mrpt::graphs::TNodeID best_goal_node_id = INVALID_NODEID;
+    TNodeID best_goal_node_id = INVALID_NODEID;
 
     /** The set of target nodes within an acceptable distance to target
      * (including `best_goal_node_id` and others) */
-    std::set<mrpt::graphs::TNodeID> acceptable_goal_node_ids;
+    std::set<TNodeID> acceptable_goal_node_ids;
 
     /** The generated motion tree that explores free space starting at "start"
      */
