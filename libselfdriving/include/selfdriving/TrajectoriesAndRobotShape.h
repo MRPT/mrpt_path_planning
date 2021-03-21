@@ -12,15 +12,15 @@
 #include <selfdriving/ptg_t.h>
 
 #include <memory>
+#include <variant>
 #include <vector>
 
 namespace selfdriving
 {
-struct RobotShape
-{
-    mrpt::math::TPolygon2D robot_shape;  //!< 2D robot shape
-    double                 robot_radius{-1.0};  //!< Radius of circ. robot
-};
+using robot_radius_t = double;
+
+using RobotShape =
+    std::variant<mrpt::math::TPolygon2D, robot_radius_t, std::monostate>;
 
 class TrajectoriesAndRobotShape
 {
@@ -41,5 +41,9 @@ class TrajectoriesAndRobotShape
    private:
     bool initialized_ = false;
 };
+
+bool obstaclePointCollides(
+    const mrpt::math::TPoint2D&      obstacleWrtRobot,
+    const TrajectoriesAndRobotShape& trs);
 
 }  // namespace selfdriving
