@@ -23,7 +23,8 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
 
     struct Parameters
     {
-        double goalBias = 0.02;
+        double goalBias            = 0.02;
+        double initialSearchRadius = 1.0;
     };
 
     Parameters params_;
@@ -41,9 +42,12 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
 
     mrpt::math::TPose2D draw_random_free_pose(const DrawFreePoseParams& p);
 
-    std::set<TNodeID> find_nodes_within_ball(
+    using closest_nodes_list_t =
+        std::map<distance_t, std::pair<TNodeID, trajectory_index_t>>;
+
+    closest_nodes_list_t find_nodes_within_ball(
         const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
-        const double maxDistance);
+        const double maxDistance, const TrajectoriesAndRobotShape& trs);
 
     static void transform_pc_square_clipping(
         const mrpt::maps::CPointsMap& in_map, mrpt::maps::CPointsMap& out_map,

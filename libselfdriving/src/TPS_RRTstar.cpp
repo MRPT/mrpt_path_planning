@@ -79,6 +79,8 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     // Prepare draw params:
     DrawFreePoseParams drawParams(in);
 
+    double searchRadius = params_.initialSearchRadius;
+
     //  3  |  for i \in [1,N] do
     for (size_t rrtIter = 0; rrtIter < in.maxPlanIterations; rrtIter++)
     {
@@ -91,6 +93,15 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         //  5  |   {x_best, x_i} ← argmin{x ∈ Tree | cost[x, q_i ] < r ∧
         //  CollisionFree(pi(x,q_i)}( cost[x] + cost[x,x_i] )
         // ------------------------------------------------------------------
+        const closest_nodes_list_t closeNodes =
+            find_nodes_within_ball(tree, qi, searchRadius, in.ptgs);
+
+        // No body around?
+        if (closeNodes.empty()) continue;
+
+        MRPT_LOG_DEBUG_STREAM(
+            "iter: " << rrtIter << ", " << closeNodes.size()
+                     << " candidate nodes near qi=" << qi.asString());
 
         //  6  |   parent[x_i] ← x_best
         // ------------------------------------------------------------------
@@ -334,30 +345,57 @@ mrpt::math::TPose2D TPS_RRTstar::draw_random_free_pose(
     return {};  // should never reach here
 }
 
-std::set<TNodeID> TPS_RRTstar::find_nodes_within_ball(
+TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_nodes_within_ball(
     const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
-    const double maxDistance)
+    const double maxDistance, const TrajectoriesAndRobotShape& trs)
 {
-    ASSERT_(!nodes_.empty());
-    double min_d  = std::numeric_limits<double>::max();
-    auto   min_id = INVALID_NODEID;
-    for (auto it = nodes_.begin(); it != nodes_.end(); ++it)
+    auto tle =
+        mrpt::system::CTimeLoggerEntry(profiler_, "find_nodes_within_ball");
+
+    const auto& nodes = tree.nodes();
+    ASSERT_(!nodes.empty());
+
+    // Prepare distance evaluators for each PTG:
+    const auto nPTGs = trs.ptgs.size();
+    ASSERT_(nPTGs >= 1);
+
+    std::vector<PoseDistanceMetric<SE2_KinState>> distEvaluators;
+    for (auto& ptg : trs.ptgs) distEvaluators.emplace_back(*ptg);
+
+    closest_nodes_list_t closestNodes;
+
+    // TODO: Use KD-tree with nanoflann!
+
+    for (const auto& node : nodes)
     {
-        if (ignored_nodes &&
-            ignored_nodes->find(it->first) != ignored_nodes->end())
-            continue;  // ignore it
-        const NODE_TYPE_FOR_METRIC ptTo(query_pt.state);
-        const NODE_TYPE_FOR_METRIC ptFrom(it->second.state);
-        // Skip the more expensive calculation of exact distance:
-        if (distanceMetricEvaluator.cannotBeNearerThan(ptFrom, ptTo, min_d))
-            continue;
-        double d = distanceMetricEvaluator.distance(ptFrom, ptTo);
-        if (d < min_d)
+        const SE2_KinState& nodeState = node.second;
+
+        for (const auto& de : distEvaluators)
         {
-            min_d  = d;
-            min_id = it->first;
+            // Skip the more expensive calculation of exact distance:
+            if (de.cannotBeNearerThan(nodeState, query, maxDistance))
+            {
+                // It's too far, skip:
+                continue;
+            }
+
+            // Exact look up in the PTG manifold of poses:
+            const auto ret = de.distance(nodeState, query);
+            if (!ret.has_value())
+            {
+                // No exact solution with this ptg, skip:
+                continue;
+            }
+            const auto [distance, trajIndex] = *ret;
+            if (distance > maxDistance)
+            {
+                // Too far, skip:
+                continue;
+            }
+            // Ok, accept it:
+            closestNodes.emplace(
+                distance, std::make_pair(node.first, trajIndex));
         }
     }
-    if (out_distance) *out_distance = min_d;
-    return min_id;
+    return closestNodes;
 }

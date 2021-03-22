@@ -83,6 +83,9 @@ static void do_plan_path()
     // Enable time profiler:
     planner.profiler_.enable(true);
 
+    // verbosity level:
+    planner.setMinLoggingLevel(mrpt::system::LVL_DEBUG);
+
     // Set planner required params:
     // planner.params_.X= Y;
 
