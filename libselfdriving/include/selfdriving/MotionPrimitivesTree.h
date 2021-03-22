@@ -26,6 +26,12 @@ namespace selfdriving
 template <class node_t>
 struct PoseDistanceMetric;
 
+/** Distances measured by PoseDistanceMetric */
+using distance_t = double;
+
+/** Index of a trajectory in a PTG */
+using trajectory_index_t = int;
+
 /** A tree with nodes being vehicle poses, and edges potential valid motion
  * primitives between them.
  *
@@ -81,41 +87,6 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
 
     /** A topological path up-tree */
     using path_t = std::vector<node_t>;
-
-    /** Finds the nearest node to a given pose, using the given metric */
-    template <class NODE_TYPE_FOR_METRIC>
-    mrpt::graphs::TNodeID find_nearest_node(
-        const NODE_TYPE_FOR_METRIC&                     query_pt,
-        const PoseDistanceMetric<NODE_TYPE_FOR_METRIC>& distanceMetricEvaluator,
-        mrpt::optional_ref<double> out_distance = std::nullopt,
-        const std::optional<std::set<mrpt::graphs::TNodeID>>& ignored_nodes =
-            std::nullopt) const
-    {
-        // TODO: Remove this method?
-
-        ASSERT_(!nodes_.empty());
-        double min_d  = std::numeric_limits<double>::max();
-        auto   min_id = INVALID_NODEID;
-        for (auto it = nodes_.begin(); it != nodes_.end(); ++it)
-        {
-            if (ignored_nodes &&
-                ignored_nodes->find(it->first) != ignored_nodes->end())
-                continue;  // ignore it
-            const NODE_TYPE_FOR_METRIC ptTo(query_pt.state);
-            const NODE_TYPE_FOR_METRIC ptFrom(it->second.state);
-            // Skip the more expensive calculation of exact distance:
-            if (distanceMetricEvaluator.cannotBeNearerThan(ptFrom, ptTo, min_d))
-                continue;
-            double d = distanceMetricEvaluator.distance(ptFrom, ptTo);
-            if (d < min_d)
-            {
-                min_d  = d;
-                min_id = it->first;
-            }
-        }
-        if (out_distance) *out_distance = min_d;
-        return min_id;
-    }
 
     void insert_node_and_edge(
         const mrpt::graphs::TNodeID parent_id,
@@ -187,33 +158,6 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
 
 };  // end TMoveTree
 
-#if 0 
-/** Pose metric for SE(2) */
-template <>
-struct PoseDistanceMetric<SE2_KinState>
-{
-    PoseDistanceMetric() = default;
-
-    bool cannotBeNearerThan(
-        const SE2_KinState& a, const SE2_KinState& b, const double d) const
-    {
-        if (std::abs(a.pose.x - b.pose.x) > d) return true;
-        if (std::abs(a.pose.y - b.pose.y) > d) return true;
-        if (std::abs(mrpt::math::angDistance(a.pose.phi, b.pose.phi)) > d)
-            return true;
-        return false;
-    }
-
-    double distance(const SE2_KinState& a, const SE2_KinState& b) const
-    {
-        return std::sqrt(
-            mrpt::square(a.pose.x - b.pose.x) +
-            mrpt::square(a.pose.y - b.pose.y) +
-            mrpt::square(mrpt::math::angDistance(a.pose.phi, b.pose.phi)));
-    }
-};
-#endif
-
 /** Pose metric for SE(2) limited to a given PTG manifold. NOTE: This 'metric'
  * is NOT symmetric for all PTGs: d(a,b)!=d(b,a) */
 template <>
@@ -223,20 +167,22 @@ struct PoseDistanceMetric<SE2_KinState>
     PoseDistanceMetric(ptg_t& ptg) : m_ptg(ptg) {}
 
     bool cannotBeNearerThan(
-        const SE2_KinState& a, const SE2_KinState& b, const double d) const
+        const SE2_KinState& a, const mrpt::math::TPose2D& b,
+        const distance_t d) const
     {
-        if (std::abs(a.pose.x - b.pose.x) > d) return true;
-        if (std::abs(a.pose.y - b.pose.y) > d) return true;
-        if (std::abs(mrpt::math::angDistance(a.pose.phi, b.pose.phi)) > d)
+        if (std::abs(a.pose.x - b.x) > d) return true;
+        if (std::abs(a.pose.y - b.y) > d) return true;
+        if (std::abs(mrpt::math::angDistance(a.pose.phi, b.phi)) > d)
             return true;
         return false;
     }
-    double distance(const SE2_KinState& src, const SE2_KinState& dst) const
+    std::optional<std::tuple<distance_t, trajectory_index_t>> distance(
+        const SE2_KinState& src, const mrpt::math::TPose2D& dst) const
     {
-        double     d;
-        int        k;
-        const auto relPose     = dst.pose - src.pose;
-        auto       localSrcVel = src.vel;
+        double             d;
+        trajectory_index_t k;
+        const auto         relPose     = dst - src.pose;
+        auto               localSrcVel = src.vel;
         localSrcVel.rotate(-src.pose.phi);
 
         ptg_t::TNavDynamicState dynState;
@@ -251,12 +197,12 @@ struct PoseDistanceMetric<SE2_KinState>
         if (tp_point_is_exact)
         {
             // de-normalize distance
-            return d * m_ptg.getRefDistance();
+            return {{d * m_ptg.getRefDistance(), k}};
         }
         else
         {
             // not in range: we can't evaluate this distance!
-            return std::numeric_limits<double>::max();
+            return {};
         }
     }
 
