@@ -49,8 +49,7 @@ static void do_plan_path()
 
     pi.stateStart.pose.fromString(arg_start_pose.getValue());
     pi.stateGoal.pose.fromString(arg_goal_pose.getValue());
-    pi.obstacles     = obs;
-    pi.minStepLength = arg_min_step_len.getValue();
+    pi.obstacles = obs;
 
     auto bbox = obs->obstacles()->boundingBox();
 
@@ -87,7 +86,7 @@ static void do_plan_path()
     planner.setMinLoggingLevel(mrpt::system::LVL_DEBUG);
 
     // Set planner required params:
-    // planner.params_.X= Y;
+    planner.params_.minStepLength = arg_min_step_len.getValue();
 
     // PTGs config file:
     mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());

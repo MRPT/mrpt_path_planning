@@ -25,6 +25,10 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
     {
         double goalBias            = 0.02;
         double initialSearchRadius = 1.0;
+        bool   drawInTPS           = true;
+        double minStepLength       = 0.15;  //!< Between waypoints [m]
+        double maxStepLength       = 3.0;  //!< Between waypoints [m]
+        size_t maxIterations       = 100000;
     };
 
     Parameters params_;
@@ -35,12 +39,20 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
    private:
     struct DrawFreePoseParams
     {
-        DrawFreePoseParams(const PlannerInput& pi) : pi_(pi) {}
+        DrawFreePoseParams(
+            const PlannerInput& pi, const MotionPrimitivesTreeSE2& tree)
+            : pi_(pi), tree_(tree)
+        {
+        }
 
-        const PlannerInput& pi_;
+        const PlannerInput&            pi_;
+        const MotionPrimitivesTreeSE2& tree_;
     };
 
     mrpt::math::TPose2D draw_random_free_pose(const DrawFreePoseParams& p);
+
+    mrpt::math::TPose2D draw_random_tps(const DrawFreePoseParams& p);
+    mrpt::math::TPose2D draw_random_euclidean(const DrawFreePoseParams& p);
 
     using closest_nodes_list_t =
         std::map<distance_t, std::pair<TNodeID, trajectory_index_t>>;
