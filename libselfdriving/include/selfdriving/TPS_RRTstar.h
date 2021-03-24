@@ -37,6 +37,8 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
     mrpt::system::CTimeLogger profiler_{true, "TPS_RRTstar"};
 
    private:
+    using ptg_index_t = size_t;
+
     struct DrawFreePoseParams
     {
         DrawFreePoseParams(
@@ -54,27 +56,40 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
     mrpt::math::TPose2D draw_random_tps(const DrawFreePoseParams& p);
     mrpt::math::TPose2D draw_random_euclidean(const DrawFreePoseParams& p);
 
-    using closest_nodes_list_t =
-        std::map<distance_t, std::pair<TNodeID, trajectory_index_t>>;
+    using closest_nodes_list_t = std::map<
+        distance_t,
+        std::tuple<TNodeID, ptg_index_t, trajectory_index_t, distance_t>>;
 
     closest_nodes_list_t find_nodes_within_ball(
         const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
         const double maxDistance, const TrajectoriesAndRobotShape& trs);
 
+    /** Returns local obstacles as seen from a given pose, clipped to a maximum
+     * distance. */
     static void transform_pc_square_clipping(
-        const mrpt::maps::CPointsMap& in_map, mrpt::maps::CPointsMap& out_map,
-        const mrpt::poses::CPose2D& asSeenFrom, const double MAX_DIST_XY);
+        const mrpt::maps::CPointsMap& inMap,
+        const mrpt::poses::CPose2D& asSeenFrom, const double MAX_DIST_XY,
+        mrpt::maps::CPointsMap& outMap);
 
-    /// Returns normalized TPS-distances to obstacles.
-    std::vector<double> transform_to_tps(
-        const mrpt::maps::CSimplePointsMap& in_obstacles, const ptg_t& ptg,
-        const double MAX_DIST);
+    /** Returns TPS-distance to obstacles.
+     * ptg dynamic state must be updated by the caller.
+     */
+    distance_t tp_obstacles_single_path(
+        const trajectory_index_t      tp_space_k_direction,
+        const mrpt::maps::CPointsMap& localObstacles, const ptg_t& ptg);
 
-    /// Returns normalized TPS-distance to obstacles.
-    double transform_to_tps_single_path(
-        const int                           tp_space_k_direction,
-        const mrpt::maps::CSimplePointsMap& in_obstacles, const ptg_t& ptg,
-        const double MAX_DIST);
+    mrpt::maps::CPointsMap::Ptr cached_local_obstacles(
+        const MotionPrimitivesTreeSE2& tree, const TNodeID nodeID,
+        const mrpt::maps::CPointsMap& globalObstacles, double MAX_XY_DIST);
+
+    /** for use in cached_local_obstacles(), local_obstacles_cache_ */
+    struct LocalObstaclesInfo
+    {
+        mrpt::maps::CPointsMap::Ptr obs;
+        mrpt::math::TPose2D         globalNodePose;
+    };
+
+    std::map<TNodeID, LocalObstaclesInfo> local_obstacles_cache_;
 };
 
 }  // namespace selfdriving
