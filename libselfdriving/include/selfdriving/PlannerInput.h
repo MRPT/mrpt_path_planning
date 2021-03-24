@@ -18,8 +18,6 @@ struct PlannerInput
     SE2_KinState              stateStart, stateGoal;
     mrpt::math::TPose2D       worldBboxMin, worldBboxMax;  //!< World bounds
     ObstacleSource::Ptr       obstacles;
-    double                    minStepLength = 0.15;  //!< Between waypoints [m]
-    size_t                    maxPlanIterations = 100000;
     TrajectoriesAndRobotShape ptgs;
 };
 

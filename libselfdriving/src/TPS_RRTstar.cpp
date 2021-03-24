@@ -77,17 +77,16 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     tree.edges_to_children.clear();
 
     // Prepare draw params:
-    DrawFreePoseParams drawParams(in);
+    DrawFreePoseParams drawParams(in, tree);
 
     double searchRadius = params_.initialSearchRadius;
 
     //  3  |  for i \in [1,N] do
-    for (size_t rrtIter = 0; rrtIter < in.maxPlanIterations; rrtIter++)
+    for (size_t rrtIter = 0; rrtIter < params_.maxIterations; rrtIter++)
     {
         // 4  |   q_i ← SAMPLE( Q_free )
         // ------------------------------------------------------------------
         // issue: What about dynamic obstacles that depend on time?
-
         const mrpt::math::TPose2D qi = draw_random_free_pose(drawParams);
 
         //  5  |   {x_best, x_i} ← argmin{x ∈ Tree | cost[x, q_i ] < r ∧
@@ -302,8 +301,6 @@ mrpt::math::TPose2D TPS_RRTstar::draw_random_free_pose(
 
     auto& rng = mrpt::random::getRandomGenerator();
 
-    const auto obstacles = p.pi_.obstacles->obstacles();
-
     // P[Select goal] = goalBias
     if (rng.drawUniform(0, 1) < params_.goalBias)
     {
@@ -312,37 +309,107 @@ mrpt::math::TPose2D TPS_RRTstar::draw_random_free_pose(
     }
     else
     {
-        // Pick a random pose until we find a collision-free one:
-        const auto& bbMin = p.pi_.worldBboxMin;
-        const auto& bbMax = p.pi_.worldBboxMax;
-
-        const size_t maxAttempts = 1000000;
-
-        for (size_t attempt = 0; attempt < maxAttempts; attempt++)
-        {
-            // tentative pose:
-            const auto q = mrpt::math::TPose2D(
-                rng.drawUniform(bbMin.x, bbMax.x),
-                rng.drawUniform(bbMin.y, bbMax.y),
-                rng.drawUniform(bbMin.phi, bbMax.phi));
-
-            // TODO: More flexible check? Variable no. of points?
-            mrpt::math::TPoint2D closestObs;
-            float                closestDistSqr;
-            obstacles->kdTreeClosestPoint2D(
-                {q.x, q.y}, closestObs, closestDistSqr);
-
-            const auto closestObsWrtRobot = q.inverseComposePoint(closestObs);
-
-            const bool isCollision = selfdriving::obstaclePointCollides(
-                closestObsWrtRobot, p.pi_.ptgs);
-
-            if (!isCollision) return q;
-        }
-        THROW_EXCEPTION("Could not draw collision-free random pose!");
+        if (params_.drawInTPS)
+            return draw_random_tps(p);
+        else
+            return draw_random_euclidean(p);
     }
+}
 
-    return {};  // should never reach here
+mrpt::math::TPose2D TPS_RRTstar::draw_random_euclidean(
+    const TPS_RRTstar::DrawFreePoseParams& p)
+{
+    auto tle = mrpt::system::CTimeLoggerEntry(
+        profiler_, "draw_random_free_pose.euclidean");
+
+    auto& rng = mrpt::random::getRandomGenerator();
+
+    const auto obstacles = p.pi_.obstacles->obstacles();
+
+    // Pick a random pose until we find a collision-free one:
+    const auto& bbMin = p.pi_.worldBboxMin;
+    const auto& bbMax = p.pi_.worldBboxMax;
+
+    const size_t maxAttempts = 1000000;
+    for (size_t attempt = 0; attempt < maxAttempts; attempt++)
+    {
+        // tentative pose:
+        const auto q = mrpt::math::TPose2D(
+            rng.drawUniform(bbMin.x, bbMax.x),
+            rng.drawUniform(bbMin.y, bbMax.y),
+            rng.drawUniform(bbMin.phi, bbMax.phi));
+
+        // TODO: More flexible check? Variable no. of points?
+        mrpt::math::TPoint2D closestObs;
+        float                closestDistSqr;
+        obstacles->kdTreeClosestPoint2D({q.x, q.y}, closestObs, closestDistSqr);
+
+        const auto closestObsWrtRobot = q.inverseComposePoint(closestObs);
+
+        const bool isCollision =
+            selfdriving::obstaclePointCollides(closestObsWrtRobot, p.pi_.ptgs);
+
+        if (!isCollision) return q;
+    }
+    THROW_EXCEPTION("Could not draw collision-free random pose!");
+}
+
+mrpt::math::TPose2D TPS_RRTstar::draw_random_tps(
+    const TPS_RRTstar::DrawFreePoseParams& p)
+{
+    auto tle =
+        mrpt::system::CTimeLoggerEntry(profiler_, "draw_random_free_pose.tps");
+
+    auto& rng = mrpt::random::getRandomGenerator();
+
+    const auto obstacles = p.pi_.obstacles->obstacles();
+
+    const size_t maxAttempts = 1000000;
+    for (size_t attempt = 0; attempt < maxAttempts; attempt++)
+    {
+        // draw source node, then ptg index, then trajectory index, then
+        // distance:
+        const auto  nodeIdx = rng.drawUniform32bit() % p.tree_.nodes().size();
+        const auto& node    = p.tree_.nodes().at(nodeIdx);
+
+        const auto  ptgIdx = rng.drawUniform32bit() % p.pi_.ptgs.ptgs.size();
+        const auto& ptg    = p.pi_.ptgs.ptgs.at(ptgIdx);
+
+        const auto trajIdx =
+            rng.drawUniform32bit() % ptg->getAlphaValuesCount();
+        const auto trajDist =
+            rng.drawUniform(params_.minStepLength, params_.maxStepLength);
+
+        // Let the PTG know about the current local velocity:
+        ptg_t::TNavDynamicState ds;
+        (ds.curVelLocal = node.vel).rotate(-node.pose.phi);
+        ds.relTarget      = {1.0, 0, 0};
+        ds.targetRelSpeed = 1.0;
+        ptg->updateNavDynamicState(ds);
+
+        // Predict the path segment:
+        uint32_t ptg_step;
+        bool     stepOk = ptg->getPathStepForDist(trajIdx, trajDist, ptg_step);
+        if (!stepOk) continue;  // No solution with this ptg
+
+        const auto reconstrRelPose = ptg->getPathPose(trajIdx, ptg_step);
+
+        // tentative pose:
+        const auto q = node.pose + reconstrRelPose;
+
+        // TODO: More flexible check? Variable no. of points?
+        mrpt::math::TPoint2D closestObs;
+        float                closestDistSqr;
+        obstacles->kdTreeClosestPoint2D({q.x, q.y}, closestObs, closestDistSqr);
+
+        const auto closestObsWrtRobot = q.inverseComposePoint(closestObs);
+
+        const bool isCollision = ptg->isPointInsideRobotShape(
+            closestObsWrtRobot.x, closestObsWrtRobot.y);
+
+        if (!isCollision) return q;
+    }
+    THROW_EXCEPTION("Could not draw collision-free random pose!");
 }
 
 TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_nodes_within_ball(
