@@ -67,6 +67,10 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 
     auto& tree = po.motionTree;  // shortcut
 
+    // clipping dist for all ptgs:
+    MRPT_TODO("go over all ptgs");
+    const double MAX_XY_DIST = in.ptgs.ptgs.at(0)->getRefDistance();
+
     //  1  |  X_T ← {X_0 }    # Tree nodes (state space)
     // ------------------------------------------------------------------
     tree.root = tree.next_free_node_ID();
@@ -101,6 +105,9 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         MRPT_LOG_DEBUG_STREAM(
             "iter: " << rrtIter << ", " << closeNodes.size()
                      << " candidate nodes near qi=" << qi.asString());
+
+        // Check for CollisionFree and keep the smallest cost:
+        cached_local_obstacles(tree, nodeId, obstacles, MAX_XY_DIST);
 
         //  6  |   parent[x_i] ← x_best
         // ------------------------------------------------------------------
@@ -181,17 +188,16 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     MRPT_END
 }
 
-// Auxiliary function:
 void TPS_RRTstar::transform_pc_square_clipping(
-    const mrpt::maps::CPointsMap& in_map, mrpt::maps::CPointsMap& out_map,
-    const mrpt::poses::CPose2D& asSeenFrom, const double MAX_DIST_XY)
+    const mrpt::maps::CPointsMap& inMap, const mrpt::poses::CPose2D& asSeenFrom,
+    const double MAX_DIST_XY, mrpt::maps::CPointsMap& outMap)
 {
     size_t       nObs;
     const float *obs_xs, *obs_ys, *obs_zs;
-    in_map.getPointsBuffer(nObs, obs_xs, obs_ys, obs_zs);
+    inMap.getPointsBuffer(nObs, obs_xs, obs_ys, obs_zs);
 
-    out_map.clear();
-    out_map.reserve(nObs);  // Prealloc mem for speed-up
+    outMap.clear();
+    outMap.reserve(nObs);  // Prealloc mem for speed-up
 
     const mrpt::poses::CPose2D invPose = -asSeenFrom;
     // We can safely discard the rest of obstacles, since they cannot be
@@ -212,51 +218,13 @@ void TPS_RRTstar::transform_pc_square_clipping(
         double ox, oy;
         invPose.composePoint(gx, gy, ox, oy);
 
-        out_map.insertPointFast(ox, oy, 0);
+        outMap.insertPointFast(ox, oy, 0);
     }
 }
 
-std::vector<double> TPS_RRTstar::transform_to_tps(
-    const mrpt::maps::CSimplePointsMap& in_obstacles, const ptg_t& ptg,
-    const double MAX_DIST)
-{
-    MRPT_START
-
-    // Take "k_rand"s and "distances" such that the collision hits the
-    // obstacles
-    // in the "grid" of the given PT
-    // --------------------------------------------------------------------
-    size_t       nObs;
-    const float *obs_xs, *obs_ys, *obs_zs;
-    // = in_obstacles.getPointsCount();
-    in_obstacles.getPointsBuffer(nObs, obs_xs, obs_ys, obs_zs);
-
-    // Init obs ranges:
-    std::vector<double> out_TPObstacles;
-    ptg.initTPObstacles(out_TPObstacles);
-
-    for (size_t obs = 0; obs < nObs; obs++)
-    {
-        const float ox = obs_xs[obs];
-        const float oy = obs_ys[obs];
-
-        if (std::abs(ox) > MAX_DIST || std::abs(oy) > MAX_DIST)
-            continue;  // ignore this obstacle: anyway, I don't know how to
-        // map it to TP-Obs!
-
-        ptg.updateTPObstacle(ox, oy, out_TPObstacles);
-    }
-
-    // Leave distances in out_TPObstacles un-normalized ([0,1]), so they
-    // just represent real distances in meters.
-    return out_TPObstacles;
-    MRPT_END
-}
-
-double TPS_RRTstar::transform_to_tps_single_path(
-    const int                           tp_space_k_direction,
-    const mrpt::maps::CSimplePointsMap& in_obstacles, const ptg_t& ptg,
-    const double MAX_DIST)
+distance_t TPS_RRTstar::tp_obstacles_single_path(
+    const trajectory_index_t      tp_space_k_direction,
+    const mrpt::maps::CPointsMap& localObstacles, const ptg_t& ptg)
 {
     MRPT_START
     // Take "k_rand"s and "distances" such that the collision hits the
@@ -265,11 +233,10 @@ double TPS_RRTstar::transform_to_tps_single_path(
     // --------------------------------------------------------------------
     size_t       nObs;
     const float *obs_xs, *obs_ys, *obs_zs;
-    // = in_obstacles.getPointsCount();
-    in_obstacles.getPointsBuffer(nObs, obs_xs, obs_ys, obs_zs);
+    localObstacles.getPointsBuffer(nObs, obs_xs, obs_ys, obs_zs);
 
     // Init obs ranges:
-    double out_TPObstacle_k = 0;
+    normalized_distance_t out_TPObstacle_k = 0;
     ptg.initTPObstacleSingle(tp_space_k_direction, out_TPObstacle_k);
 
     for (size_t obs = 0; obs < nObs; obs++)
@@ -277,17 +244,12 @@ double TPS_RRTstar::transform_to_tps_single_path(
         const float ox = obs_xs[obs];
         const float oy = obs_ys[obs];
 
-        if (std::abs(ox) > MAX_DIST || std::abs(oy) > MAX_DIST)
-            continue;  // ignore this obstacle: anyway, I don't know how to
-        // map it to TP-Obs!
-
         ptg.updateTPObstacleSingle(
             ox, oy, tp_space_k_direction, out_TPObstacle_k);
     }
 
-    // Leave distances in out_TPObstacles un-normalized ([0,1]), so they
-    // just represent real distances in meters.
-    MRPT_TODO("check normalization?");
+    // Leave distances in out_TPObstacles un-normalized, so they
+    // just represent real distances in "pseudo-meters".
     return out_TPObstacle_k;
 
     MRPT_END
@@ -437,8 +399,10 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_nodes_within_ball(
     {
         const SE2_KinState& nodeState = node.second;
 
-        for (const auto& de : distEvaluators)
+        for (ptg_index_t ptgIdx = 0; ptgIdx < distEvaluators.size(); ptgIdx++)
         {
+            auto& de = distEvaluators.at(ptgIdx);
+
             // Skip the more expensive calculation of exact distance:
             if (de.cannotBeNearerThan(nodeState, query, maxDistance))
             {
@@ -461,8 +425,36 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_nodes_within_ball(
             }
             // Ok, accept it:
             closestNodes.emplace(
-                distance, std::make_pair(node.first, trajIndex));
+                distance, closest_nodes_list_t::mapped_type(
+                              node.first, ptgIdx, trajIndex, distance));
         }
     }
     return closestNodes;
+}
+
+mrpt::maps::CPointsMap::Ptr TPS_RRTstar::cached_local_obstacles(
+    const MotionPrimitivesTreeSE2& tree, const TNodeID nodeID,
+    const mrpt::maps::CPointsMap& globalObstacles, double MAX_XY_DIST)
+{
+    // reuse?
+    const auto& node = tree.nodes().at(nodeID);
+
+    auto itOc = local_obstacles_cache_.find(nodeID);
+    if (itOc != local_obstacles_cache_.end() &&
+        itOc->second.globalNodePose == node.pose)
+    {  // cache hit
+        return itOc->second.obs;
+    }
+
+    // create/update
+    auto& loc = local_obstacles_cache_[nodeID];
+
+    loc.globalNodePose = node.pose;
+    if (!loc.obs) loc.obs = mrpt::maps::CSimplePointsMap::Create();
+
+    transform_pc_square_clipping(
+        globalObstacles, mrpt::poses::CPose2D(node.pose), MAX_XY_DIST,
+        *loc.obs);
+
+    return loc.obs;
 }
