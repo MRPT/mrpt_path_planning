@@ -9,6 +9,7 @@
 #include <mrpt/graphs/TNodeID.h>
 #include <selfdriving/SE2_KinState.h>
 #include <selfdriving/ptg_t.h>
+
 #include <cstdint>
 
 namespace selfdriving
@@ -35,7 +36,7 @@ struct MoveEdgeSE2_TPS
     /** identify the trajectory number K of the type ptgIndex */
     int16_t ptgPathIndex = -1;
 
-    /** identify the PTG normalized distance [0,1] of the trajectory for this
+    /** identify the PTG "pseudometers" distance of the trajectory for this
      * motion segment */
     double ptgDist = std::numeric_limits<double>::max();
 
