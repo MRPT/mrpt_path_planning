@@ -36,6 +36,10 @@ using normalized_distance_t = double;
 /** Index of a trajectory in a PTG */
 using trajectory_index_t = int;
 
+using ptg_index_t = size_t;
+
+using cost_t = double;
+
 /** A tree with nodes being vehicle poses, and edges potential valid motion
  * primitives between them.
  *
@@ -66,18 +70,23 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
         /** Does not have value for the root, a valid ID otherwise */
         std::optional<mrpt::graphs::TNodeID> parentID_;
 
-        /** NULL for root, a valid edge otherwise */
-        EDGE_TYPE* edgeToParent_ = nullptr;
+        /** std::nullopt for root, a valid edge otherwise */
+        std::optional<const EDGE_TYPE*> edgeToParent_;
+
+        /** cost of reaching this node from the root (=0 for the root) */
+        cost_t cost_;
 
         node_t() = default;
         node_t(
             mrpt::graphs::TNodeID                       nodeID,
             const std::optional<mrpt::graphs::TNodeID>& parentID,
-            EDGE_TYPE* edgeToParent, const NODE_TYPE_DATA& data)
+            std::optional<const EDGE_TYPE*>             edgeToParent,
+            const NODE_TYPE_DATA& data, cost_t cost)
             : NODE_TYPE_DATA(data),
               nodeID_(nodeID),
               parentID_(parentID),
-              edgeToParent_(edgeToParent)
+              edgeToParent_(edgeToParent),
+              cost_(cost)
         {
         }
     };
@@ -93,32 +102,40 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     using path_t = std::vector<node_t>;
 
     void insert_node_and_edge(
-        const mrpt::graphs::TNodeID parent_id,
-        const mrpt::graphs::TNodeID new_child_id,
-        const NODE_TYPE_DATA&       new_child_node_data,
-        const EDGE_TYPE&            new_edge_data)
+        const mrpt::graphs::TNodeID parentId,
+        const mrpt::graphs::TNodeID newChildId,
+        const NODE_TYPE_DATA& newChildNodeData, const EDGE_TYPE& newEdgeData)
     {
         // edge:
-        typename base_t::TListEdges& edges_of_parent =
-            base_t::edges_to_children[parent_id];
-        edges_of_parent.push_back(typename base_t::TEdgeInfo(
-            new_child_id, false /*direction_child_to_parent*/, new_edge_data));
+        auto&       parentEdges      = base_t::edges_to_children[parentId];
+        const bool  dirChildToParent = false;
+        const auto& ned =
+            parentEdges.emplace_back(newChildId, dirChildToParent, newEdgeData)
+                .data;
+
+        const cost_t newCost = nodes_.at(parentId).cost_ + newEdgeData.cost;
+
         // node:
-        nodes_[new_child_id] = node_t(
-            new_child_id, parent_id, &edges_of_parent.back().data,
-            new_child_node_data);
+        nodes_[newChildId] =
+            node_t(newChildId, parentId, &ned, newChildNodeData, newCost);
     }
 
     /** Insert a node without edges (should be used only for a tree root node)
      */
-    void insert_node(
+    void insert_root_node(
         const mrpt::graphs::TNodeID node_id, const NODE_TYPE_DATA& node_data)
     {
-        nodes_[node_id] = node_t(node_id, INVALID_NODEID, nullptr, node_data);
+        ASSERTMSG_(
+            nodes_.empty(), "insert_root_node() called on a non-empty tree");
+        cost_t zeroCost = 0;
+        nodes_[node_id] = node_t(node_id, {}, {}, node_data, zeroCost);
     }
 
     mrpt::graphs::TNodeID next_free_node_ID() const { return nodes_.size(); }
 
+    /** read-only access to nodes.
+     * \sa  insert_node_and_edge, insert_node
+     */
     const node_map_t& nodes() const { return nodes_; }
 
     /** Builds the path (sequence of nodes, with info about next edge) up-tree

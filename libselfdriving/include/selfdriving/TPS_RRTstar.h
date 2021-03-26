@@ -37,8 +37,6 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
     mrpt::system::CTimeLogger profiler_{true, "TPS_RRTstar"};
 
    private:
-    using ptg_index_t = size_t;
-
     struct DrawFreePoseParams
     {
         DrawFreePoseParams(
@@ -90,6 +88,8 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
     };
 
     std::map<TNodeID, LocalObstaclesInfo> local_obstacles_cache_;
+
+    cost_t cost_path_segment(const MoveEdgeSE2_TPS& edge) const;
 };
 
 }  // namespace selfdriving

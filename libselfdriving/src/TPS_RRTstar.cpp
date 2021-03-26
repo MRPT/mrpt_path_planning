@@ -68,13 +68,15 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     auto& tree = po.motionTree;  // shortcut
 
     // clipping dist for all ptgs:
-    MRPT_TODO("go over all ptgs");
-    const double MAX_XY_DIST = in.ptgs.ptgs.at(0)->getRefDistance();
+    double MAX_XY_DIST = 0;
+    for (const auto& ptg : in.ptgs.ptgs)
+        mrpt::keep_max(MAX_XY_DIST, ptg->getRefDistance());
+    ASSERT_(MAX_XY_DIST > 0);
 
     //  1  |  X_T ← {X_0 }    # Tree nodes (state space)
     // ------------------------------------------------------------------
     tree.root = tree.next_free_node_ID();
-    tree.insert_node(tree.root, in.stateStart);
+    tree.insert_root_node(tree.root, in.stateStart);
 
     //  2  |  E T ← ∅         # Tree edges
     // ------------------------------------------------------------------
@@ -83,7 +85,11 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     // Prepare draw params:
     DrawFreePoseParams drawParams(in, tree);
 
+    // Dynamic search radius:
     double searchRadius = params_.initialSearchRadius;
+
+    // obstacles (TODO: dynamic over future time?):
+    const auto obstaclePoints = in.obstacles->obstacles();
 
     //  3  |  for i \in [1,N] do
     for (size_t rrtIter = 0; rrtIter < params_.maxIterations; rrtIter++)
@@ -99,36 +105,100 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         const closest_nodes_list_t closeNodes =
             find_nodes_within_ball(tree, qi, searchRadius, in.ptgs);
 
-        // No body around?
-        if (closeNodes.empty()) continue;
+        if (closeNodes.empty()) continue;  // No body around?
 
         MRPT_LOG_DEBUG_STREAM(
             "iter: " << rrtIter << ", " << closeNodes.size()
                      << " candidate nodes near qi=" << qi.asString());
 
         // Check for CollisionFree and keep the smallest cost:
-        cached_local_obstacles(tree, nodeId, obstacles, MAX_XY_DIST);
+        std::optional<MoveEdgeSE2_TPS> bestEdge;
+        std::optional<cost_t>          bestCost;
 
+        for (const auto& tupl : closeNodes)
+        {
+            // std::tuple<TNodeID, ptg_index_t, trajectory_index_t, distance_t>
+            const auto [nodeId, ptgIdx, trajIdx, trajDist] = tupl.second;
+
+            const auto& localObstacles = cached_local_obstacles(
+                tree, nodeId, *obstaclePoints, MAX_XY_DIST);
+
+            const auto&             srcNode = tree.nodes().at(nodeId);
+            auto&                   ptg     = *in.ptgs.ptgs.at(ptgIdx);
+            ptg_t::TNavDynamicState ds;
+            (ds.curVelLocal = srcNode.vel).rotate(-srcNode.pose.phi);
+            ds.relTarget      = {1.0, 0, 0};
+            ds.targetRelSpeed = 1.0;
+            ptg.updateNavDynamicState(ds);
+
+            const distance_t freeDistance =
+                tp_obstacles_single_path(trajIdx, *localObstacles, ptg);
+
+            if (trajDist >= freeDistance)
+            {
+                // we would need to move farther away than what is possible
+                // without colliding: discard this trajectory.
+                continue;
+            }
+
+            // Ok, accept this motion.
+            // Predict the path segment:
+            uint32_t ptg_step;
+            bool stepOk = ptg.getPathStepForDist(trajIdx, trajDist, ptg_step);
+            if (!stepOk) continue;  // No solution with this ptg
+
+            const auto reconstrRelPose = ptg.getPathPose(trajIdx, ptg_step);
+            const auto relTwist        = ptg.getPathTwist(trajIdx, ptg_step);
+
+            // new tentative node pose & velocity:
+            const auto   q_i = srcNode.pose + reconstrRelPose;
+            SE2_KinState x_i;
+            x_i.pose = q_i;
+            (x_i.vel = relTwist).rotate(q_i.phi);  // local to global coords
+
+            MoveEdgeSE2_TPS tentativeEdge;
+            tentativeEdge.parentId      = nodeId;
+            tentativeEdge.ptgDist       = trajDist;
+            tentativeEdge.ptgIndex      = ptgIdx;
+            tentativeEdge.ptgPathIndex  = trajIdx;
+            tentativeEdge.ptgSpeedScale = ds.targetRelSpeed;
+            tentativeEdge.stateFrom     = srcNode;
+            tentativeEdge.stateTo       = x_i;
+
+            // Let's compute its cost:
+            tentativeEdge.cost            = cost_path_segment(tentativeEdge);
+            const cost_t cost_x           = srcNode.cost_;
+            const cost_t newTentativeCost = cost_x + tentativeEdge.cost;
+
+            if (!bestCost.has_value() || newTentativeCost < *bestCost)
+            {
+                bestCost = newTentativeCost;
+                bestEdge = tentativeEdge;
+            }
+        }
+        if (!bestEdge)
+        {
+            MRPT_LOG_DEBUG_STREAM(
+                "iter: " << rrtIter << ", no valid edge found.");
+
+            continue;  // no valid edge found
+        }
+
+        // Extend graph:
         //  6  |   parent[x_i] ← x_best
-        // ------------------------------------------------------------------
-
         //  7  |   cost[x_i] ← cost[x_best] + cost[x_best, x_i]
-        // ------------------------------------------------------------------
-
-        //  8  |   for all {x ∈ Tree ∪ {x goal } | cost[x, x_i ] < r ∧ cost[x_i]
-        //  +cost[x_i,x]<cost[x] ∧ CollisionFree(pi(x,x_i)} do
-        // ------------------------------------------------------------------
-
-        //  9  |    cost[x] ← cost[x_i] + cost[x_i, x]
-        // ------------------------------------------------------------------
-
-        // 10  |    parent[x] ← x_i
-        // ------------------------------------------------------------------
-
         // 11  |   X_T ← X_T U { x_i }
-        // ------------------------------------------------------------------
-
         // 12  |   E_T ← E_T U { ( x_best, x_i ) }
+        // ------------------------------------------------------------------
+        const auto newNodeId = tree.next_free_node_ID();
+        tree.insert_node_and_edge(
+            bestEdge->parentId, newNodeId, bestEdge->stateTo, *bestEdge);
+
+        // Rewire graph:
+        //  8  |   for all {x ∈ Tree ∪ {x goal } | cost[x, x_i ] < r ∧ cost[x_i]
+        //         +cost[x_i,x]<cost[x] ∧ CollisionFree(pi(x,x_i)} do
+        //  9  |      cost[x] ← cost[x_i] + cost[x_i, x]
+        // 10  |      parent[x] ← x_i
         // ------------------------------------------------------------------
 
     }  // for each rrtIter
@@ -457,4 +527,9 @@ mrpt::maps::CPointsMap::Ptr TPS_RRTstar::cached_local_obstacles(
         *loc.obs);
 
     return loc.obs;
+}
+
+cost_t TPS_RRTstar::cost_path_segment(const MoveEdgeSE2_TPS& edge) const
+{
+    return edge.ptgDist;
 }
