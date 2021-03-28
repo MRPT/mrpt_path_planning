@@ -98,8 +98,11 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     using node_map_t = typename MAPS_IMPLEMENTATION::template map<
         mrpt::graphs::TNodeID, node_t>;
 
-    /** A topological path up-tree */
-    using path_t = std::vector<node_t>;
+    /** A topological path up-tree.
+     *
+     *  \note We use std::list since we need a container with `push_front()`.
+     */
+    using path_t = std::list<node_t>;
 
     void insert_node_and_edge(
         const mrpt::graphs::TNodeID parentId,

@@ -28,7 +28,10 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
         bool   drawInTPS           = true;
         double minStepLength       = 0.15;  //!< Between waypoints [m]
         double maxStepLength       = 3.0;  //!< Between waypoints [m]
-        size_t maxIterations       = 100000;
+        size_t maxIterations       = 10000;
+
+        size_t renderPathInterpolatedSegments   = 5;
+        size_t saveDebugVisualizationDecimation = 0;
     };
 
     Parameters params_;
