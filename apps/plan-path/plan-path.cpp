@@ -33,6 +33,10 @@ static TCLAP::ValueArg<double> arg_min_step_len(
     "", "min-step-length", "Minimum step length [meters]", false, 0.25, "0.25",
     cmd);
 
+static TCLAP::ValueArg<double> argSaveDebugVisualizationDecimation(
+    "", "save-debug-visualization", "RRT* step frequency to save 3Dscene files",
+    false, 0, "100", cmd);
+
 static void do_plan_path()
 {
     // Load obstacles:
@@ -87,6 +91,8 @@ static void do_plan_path()
 
     // Set planner required params:
     planner.params_.minStepLength = arg_min_step_len.getValue();
+    planner.params_.saveDebugVisualizationDecimation =
+        argSaveDebugVisualizationDecimation.getValue();
 
     // PTGs config file:
     mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
@@ -111,7 +117,8 @@ int main(int argc, char** argv)
 {
     try
     {
-        cmd.parse(argc, argv);
+        if (!cmd.parse(argc, argv)) return 1;
+
         do_plan_path();
         return 0;
     }

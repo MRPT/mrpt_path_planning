@@ -6,9 +6,11 @@
 
 #include <mrpt/maps/COccupancyGridMap2D.h>
 #include <mrpt/maps/CSimplePointsMap.h>
+#include <mrpt/opengl/COpenGLScene.h>
 #include <mrpt/random/RandomGenerators.h>
 #include <selfdriving/TPS_RRTstar.h>
 #include <selfdriving/bestTrajectory.h>
+#include <selfdriving/render_tree.h>
 
 #include <iostream>
 
@@ -94,6 +96,8 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     //  3  |  for i \in [1,N] do
     for (size_t rrtIter = 0; rrtIter < params_.maxIterations; rrtIter++)
     {
+        mrpt::system::CTimeLoggerEntry tle1(profiler_, "plan.iter");
+
         // 4  |   q_i ← SAMPLE( Q_free )
         // ------------------------------------------------------------------
         // issue: What about dynamic obstacles that depend on time?
@@ -154,7 +158,8 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             const auto   q_i = srcNode.pose + reconstrRelPose;
             SE2_KinState x_i;
             x_i.pose = q_i;
-            (x_i.vel = relTwist).rotate(q_i.phi);  // local to global coords
+            // relTwist is relative to the *parent* (srcNode) frame:
+            (x_i.vel = relTwist).rotate(srcNode.pose.phi);
 
             MoveEdgeSE2_TPS tentativeEdge;
             tentativeEdge.parentId      = nodeId;
@@ -164,6 +169,20 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             tentativeEdge.ptgSpeedScale = ds.targetRelSpeed;
             tentativeEdge.stateFrom     = srcNode;
             tentativeEdge.stateTo       = x_i;
+            // interpolated path:
+            if (const auto nSeg = params_.renderPathInterpolatedSegments;
+                nSeg > 0)
+            {
+                auto& ip = tentativeEdge.interpolatedPath.emplace();
+                ip.emplace_back(0, 0, 0);  // fixed
+                // interpolated:
+                for (size_t i = 0; i < nSeg; i++)
+                {
+                    const auto iStep = ((i + 1) * ptg_step) / (nSeg + 2);
+                    ip.emplace_back(ptg.getPathPose(trajIdx, iStep));
+                }
+                ip.emplace_back(reconstrRelPose);  // already known
+            }
 
             // Let's compute its cost:
             tentativeEdge.cost            = cost_path_segment(tentativeEdge);
@@ -200,6 +219,20 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         //  9  |      cost[x] ← cost[x_i] + cost[x_i, x]
         // 10  |      parent[x] ← x_i
         // ------------------------------------------------------------------
+        MRPT_TODO("rewire part");
+
+        // Debug log files:
+        if (params_.saveDebugVisualizationDecimation > 0 &&
+            (rrtIter % params_.saveDebugVisualizationDecimation) == 0)
+        {
+            RenderOptions ro;
+            ro.highlight_path_to_node_id = newNodeId;
+            mrpt::opengl::COpenGLScene scene;
+            scene.insert(render_tree(tree, in, ro));
+            scene.saveToFile(mrpt::format(
+                "debug_rrtstar_%05u.3Dscene",
+                static_cast<unsigned int>(rrtIter)));
+        }
 
     }  // for each rrtIter
 
@@ -215,17 +248,6 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     // actions:
     SE2_KinState last_state;
     last_state = in.stateStart;
-
-    // Make sure PTGs are initialized
-    if (!in.ptgs.ptgs.empty())
-    {
-        mrpt::system::CTimeLoggerEntry tle(profiler_, "plan.init_PTGs");
-        for (auto& ptg : in.ptgs.ptgs)
-        {
-            ASSERT_(ptg);
-            ptg->initialize();
-        }
-    }
 
 #if 0
     for (const auto& p : path)
@@ -429,6 +451,15 @@ mrpt::math::TPose2D TPS_RRTstar::draw_random_tps(
         // tentative pose:
         const auto q = node.pose + reconstrRelPose;
 
+        // within bounding box?
+        if (q.x < p.pi_.worldBboxMin.x || q.y < p.pi_.worldBboxMin.y ||
+            q.phi < p.pi_.worldBboxMin.phi || q.x > p.pi_.worldBboxMax.x ||
+            q.y > p.pi_.worldBboxMax.y || q.phi > p.pi_.worldBboxMax.phi)
+        {
+            // Out of allowed space:
+            continue;
+        }
+
         // TODO: More flexible check? Variable no. of points?
         mrpt::math::TPoint2D closestObs;
         float                closestDistSqr;
@@ -488,6 +519,8 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_nodes_within_ball(
                 continue;
             }
             const auto [distance, trajIndex] = *ret;
+            ASSERTMSG_(distance > 0, "Repeated pose node in tree?");
+
             if (distance > maxDistance)
             {
                 // Too far, skip:

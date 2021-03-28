@@ -44,6 +44,12 @@ struct MoveEdgeSE2_TPS
     double estimatedExecTime = .0;
 
     ptg_t::TNavDynamicState getPTGDynState() const;
+
+    /** Subsampled path, in coordinates relative to "stateFrom", stored here
+     *  mainly for rendering purposes, and to avoid having to re-seed the PTG
+     *  with the initial velocity state while visualization.
+     */
+    std::optional<std::vector<mrpt::math::TPose2D>> interpolatedPath;
 };
 
 }  // namespace selfdriving
