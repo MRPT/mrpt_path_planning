@@ -8,6 +8,7 @@
 #include <mrpt/config/CConfigFile.h>
 #include <mrpt/core/exceptions.h>  // exception_to_str()
 #include <mrpt/maps/CSimplePointsMap.h>
+#include <mrpt/system/os.h>  // plugins
 #include <selfdriving/TPS_RRTstar.h>
 #include <selfdriving/viz.h>
 
@@ -23,6 +24,11 @@ static TCLAP::ValueArg<std::string> arg_ptgs_file(
     "p", "ptg-config", "Input .ini file with PTG definitions.", true, "",
     "ptgs.ini", cmd);
 
+static TCLAP::ValueArg<std::string> arg_config_file_section(
+    "", "config-section",
+    "If loading from an INI file, the name of the section to load", false,
+    "SelfDriving", "SelfDriving", cmd);
+
 static TCLAP::ValueArg<std::string> arg_start_pose(
     "s", "start-pose", "Start 2D pose", true, "", "\"[x y phi_deg]\"", cmd);
 
@@ -32,6 +38,11 @@ static TCLAP::ValueArg<std::string> arg_goal_pose(
 static TCLAP::ValueArg<double> arg_min_step_len(
     "", "min-step-length", "Minimum step length [meters]", false, 0.25, "0.25",
     cmd);
+
+static TCLAP::ValueArg<std::string> arg_plugins(
+    "", "plugins",
+    "Optional plug-in libraries to load, for externally-defined PTGs", false,
+    "", "mylib.so", cmd);
 
 static TCLAP::ValueArg<double> argSaveDebugVisualizationDecimation(
     "", "save-debug-visualization", "RRT* step frequency to save 3Dscene files",
@@ -96,7 +107,7 @@ static void do_plan_path()
 
     // PTGs config file:
     mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
-    pi.ptgs.initFromConfigFile(cfg, "SelfDriving");
+    pi.ptgs.initFromConfigFile(cfg, arg_config_file_section.getValue());
 
     const selfdriving::PlannerOutput plan = planner.plan(pi);
 
@@ -118,6 +129,17 @@ int main(int argc, char** argv)
     try
     {
         if (!cmd.parse(argc, argv)) return 1;
+
+        if (arg_plugins.isSet())
+        {
+            std::string loadErrors;
+            if (!mrpt::system::loadPluginModules(
+                    arg_plugins.getValue(), loadErrors))
+            {
+                std::cerr << "Could not load plugins, error: " << loadErrors;
+                return 1;
+            }
+        }
 
         do_plan_path();
         return 0;
