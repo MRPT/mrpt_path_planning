@@ -40,6 +40,8 @@ struct MoveEdgeSE2_TPS
      * motion segment */
     double ptgDist = std::numeric_limits<double>::max();
 
+    double targetRelSpeed = 1.0;
+
     double ptgSpeedScale     = 1.0;
     double estimatedExecTime = .0;
 

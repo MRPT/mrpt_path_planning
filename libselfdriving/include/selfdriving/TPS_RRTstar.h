@@ -61,8 +61,29 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
         distance_t,
         std::tuple<TNodeID, ptg_index_t, trajectory_index_t, distance_t>>;
 
-    closest_nodes_list_t find_nodes_within_ball(
+    /** Find all existing nodes "x" in the tree **from which** we can reach
+     * `query` (i.e. `other nodes` ==> `query`), and the motion primitives for
+     * such motions. Note that, at this point, `query` does not have a velocity
+     * state: it will be determined by the best motion primitive.
+     *
+     * This method is used in the EXTEND stage of RRT*.
+     *
+     * \sa find_reachable_nodes_from()
+     */
+    closest_nodes_list_t find_source_nodes_towards(
         const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
+        const double maxDistance, const TrajectoriesAndRobotShape& trs);
+
+    /** Find all existing nodes "x" in the tree that are **reachable from**
+     * `query` (i.e. `query` ==> `other nodes`), and the motion primitives for
+     * such motions. Here, `query` does includes a velocity state.
+     *
+     * This method is used in the REWIRE stage of RRT*.
+     *
+     * \sa find_source_nodes_towards()
+     */
+    closest_nodes_list_t find_reachable_nodes_from(
+        const MotionPrimitivesTreeSE2& tree, const TNodeID queryNodeId,
         const double maxDistance, const TrajectoriesAndRobotShape& trs);
 
     /** Returns local obstacles as seen from a given pose, clipped to a maximum
