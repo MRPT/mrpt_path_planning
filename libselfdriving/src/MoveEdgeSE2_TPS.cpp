@@ -17,8 +17,7 @@ ptg_t::TNavDynamicState MoveEdgeSE2_TPS::getPTGDynState() const
     // Global to local velocity:
     newDyn.curVelLocal.rotate(-stateFrom.pose.phi);
 
-    MRPT_TODO("Support stop at final pose?");
-    newDyn.targetRelSpeed = 1.0;
+    newDyn.targetRelSpeed = targetRelSpeed;
 
     return newDyn;
 }

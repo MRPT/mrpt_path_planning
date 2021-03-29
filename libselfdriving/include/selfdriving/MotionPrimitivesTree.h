@@ -123,6 +123,29 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
             node_t(newChildId, parentId, &ned, newChildNodeData, newCost);
     }
 
+    void rewire_node_parent(
+        const mrpt::graphs::TNodeID nodeId, const EDGE_TYPE& newEdgeFromParent)
+    {
+        // edge:
+        const mrpt::graphs::TNodeID parentId = newEdgeFromParent.parentId;
+        auto&       parentEdges      = base_t::edges_to_children[parentId];
+        const bool  dirChildToParent = false;
+        const auto& ned =
+            parentEdges
+                .emplace_back(nodeId, dirChildToParent, newEdgeFromParent)
+                .data;
+
+        const cost_t newCost =
+            nodes_.at(parentId).cost_ + newEdgeFromParent.cost;
+
+        // update existing node info:
+        auto& node = nodes_[nodeId];
+
+        node.parentID_     = parentId;
+        node.edgeToParent_ = &ned;
+        node.cost_         = newCost;
+    }
+
     /** Insert a node without edges (should be used only for a tree root node)
      */
     void insert_root_node(

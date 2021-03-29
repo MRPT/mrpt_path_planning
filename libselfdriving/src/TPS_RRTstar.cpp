@@ -107,7 +107,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         //  CollisionFree(pi(x,q_i)}( cost[x] + cost[x,x_i] )
         // ------------------------------------------------------------------
         const closest_nodes_list_t closeNodes =
-            find_nodes_within_ball(tree, qi, searchRadius, in.ptgs);
+            find_source_nodes_towards(tree, qi, searchRadius, in.ptgs);
 
         if (closeNodes.empty()) continue;  // No body around?
 
@@ -162,13 +162,13 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             (x_i.vel = relTwist).rotate(srcNode.pose.phi);
 
             MoveEdgeSE2_TPS tentativeEdge;
-            tentativeEdge.parentId      = nodeId;
-            tentativeEdge.ptgDist       = trajDist;
-            tentativeEdge.ptgIndex      = ptgIdx;
-            tentativeEdge.ptgPathIndex  = trajIdx;
-            tentativeEdge.ptgSpeedScale = ds.targetRelSpeed;
-            tentativeEdge.stateFrom     = srcNode;
-            tentativeEdge.stateTo       = x_i;
+            tentativeEdge.parentId       = nodeId;
+            tentativeEdge.ptgDist        = trajDist;
+            tentativeEdge.ptgIndex       = ptgIdx;
+            tentativeEdge.ptgPathIndex   = trajIdx;
+            tentativeEdge.targetRelSpeed = ds.targetRelSpeed;
+            tentativeEdge.stateFrom      = srcNode;
+            tentativeEdge.stateTo        = x_i;
             // interpolated path:
             if (const auto nSeg = params_.renderPathInterpolatedSegments;
                 nSeg > 0)
@@ -209,17 +209,113 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         // 11  |   X_T ← X_T U { x_i }
         // 12  |   E_T ← E_T U { ( x_best, x_i ) }
         // ------------------------------------------------------------------
-        const auto newNodeId = tree.next_free_node_ID();
+        const auto  newNodeId    = tree.next_free_node_ID();
+        const auto& newNodeState = bestEdge->stateTo;
         tree.insert_node_and_edge(
-            bestEdge->parentId, newNodeId, bestEdge->stateTo, *bestEdge);
+            bestEdge->parentId, newNodeId, newNodeState, *bestEdge);
 
         // Rewire graph:
-        //  8  |   for all {x ∈ Tree ∪ {x goal } | cost[x, x_i ] < r ∧ cost[x_i]
-        //         +cost[x_i,x]<cost[x] ∧ CollisionFree(pi(x,x_i)} do
-        //  9  |      cost[x] ← cost[x_i] + cost[x_i, x]
-        // 10  |      parent[x] ← x_i
+        //  8  |   for all {x ∈ Tree ∪ {x goal } |
+        //           cost[x, x_i ] < r ∧
+        //           cost[x_i]+cost[x_i,x]<cost[x] ∧ CollisionFree(pi(x,x_i)} do
+        //  9  |        cost[x] ← cost[x_i] + cost[x_i, x]
+        // 10  |        parent[x] ← x_i
         // ------------------------------------------------------------------
-        MRPT_TODO("rewire part");
+        const closest_nodes_list_t reachableNodes =
+            find_reachable_nodes_from(tree, newNodeId, searchRadius, in.ptgs);
+
+        // Check collisions:
+        const auto& localObstaclesNewNode = cached_local_obstacles(
+            tree, newNodeId, *obstaclePoints, MAX_XY_DIST);
+        const auto& newNode = tree.nodes().at(newNodeId);
+
+        for (const auto& tupl : reachableNodes)
+        {
+            // std::tuple<TNodeID, ptg_index_t, trajectory_index_t, distance_t>
+            const auto [nodeId, ptgIdx, trajIdx, trajDist] = tupl.second;
+
+            // We are checking edges: newNodeId ==> nodeId
+
+            auto&                   ptg = *in.ptgs.ptgs.at(ptgIdx);
+            ptg_t::TNavDynamicState ds;
+            (ds.curVelLocal = newNode.vel).rotate(-newNode.pose.phi);
+            MRPT_TODO("Include target node speed!");
+            ds.relTarget      = {1.0, 0, 0};
+            ds.targetRelSpeed = 1.0;
+            ptg.updateNavDynamicState(ds);
+
+            const distance_t freeDistance =
+                tp_obstacles_single_path(trajIdx, *localObstaclesNewNode, ptg);
+
+            if (trajDist >= freeDistance)
+            {
+                // we would need to move farther away than what is possible
+                // without colliding: discard this trajectory.
+                continue;
+            }
+
+            // Ok, accept this motion.
+            // Predict the path segment:
+            uint32_t ptg_step;
+            bool stepOk = ptg.getPathStepForDist(trajIdx, trajDist, ptg_step);
+            if (!stepOk) continue;  // No solution with this ptg
+
+            // Ensure the path reconstruction is consistent:
+            const auto reconstrRelPose = ptg.getPathPose(trajIdx, ptg_step);
+            {
+                const auto relTwist = ptg.getPathTwist(trajIdx, ptg_step);
+
+                // new tentative node pose & velocity:
+                const auto   q_i = newNode.pose + reconstrRelPose;
+                SE2_KinState x_i;
+                x_i.pose = q_i;
+                // relTwist is relative to the *parent* (srcNode) frame:
+                (x_i.vel = relTwist).rotate(newNode.pose.phi);
+
+                MRPT_TODO("Do the check here.");
+            }
+
+            const auto& trgNode = tree.nodes().at(nodeId);
+
+            MoveEdgeSE2_TPS rewiredEdge;
+            rewiredEdge.parentId       = newNodeId;
+            rewiredEdge.ptgDist        = trajDist;
+            rewiredEdge.ptgIndex       = ptgIdx;
+            rewiredEdge.ptgPathIndex   = trajIdx;
+            rewiredEdge.targetRelSpeed = ds.targetRelSpeed;
+            rewiredEdge.stateFrom      = newNodeState;
+            rewiredEdge.stateTo        = trgNode;
+            // interpolated path:
+            if (const auto nSeg = params_.renderPathInterpolatedSegments;
+                nSeg > 0)
+            {
+                auto& ip = rewiredEdge.interpolatedPath.emplace();
+                ip.emplace_back(0, 0, 0);  // fixed
+                // interpolated:
+                for (size_t i = 0; i < nSeg; i++)
+                {
+                    const auto iStep = ((i + 1) * ptg_step) / (nSeg + 2);
+                    ip.emplace_back(ptg.getPathPose(trajIdx, iStep));
+                }
+                ip.emplace_back(reconstrRelPose);  // already known
+            }
+
+            // Let's compute the tentative cost of rewiring the tree
+            // such that `srcNode` is more easily reachable from `newNode`:
+            rewiredEdge.cost              = cost_path_segment(rewiredEdge);
+            const cost_t curCost          = trgNode.cost_;
+            const cost_t newTentativeCost = newNode.cost_ + rewiredEdge.cost;
+
+            if (newTentativeCost < curCost)
+            {
+                // Yes, do rewire:
+                // MRPT_LOG_DEBUG_STREAM("Rewiring node " << nodeId<< "
+                // newCost=" << newTentativeCost << " < "<< "curCost=" <<
+                // curCost);
+
+                tree.rewire_node_parent(nodeId, rewiredEdge);
+            }
+        }
 
         // Debug log files:
         if (params_.saveDebugVisualizationDecimation > 0 &&
@@ -475,12 +571,13 @@ mrpt::math::TPose2D TPS_RRTstar::draw_random_tps(
     THROW_EXCEPTION("Could not draw collision-free random pose!");
 }
 
-TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_nodes_within_ball(
+// See docs in .h
+TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
     const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
     const double maxDistance, const TrajectoriesAndRobotShape& trs)
 {
     auto tle =
-        mrpt::system::CTimeLoggerEntry(profiler_, "find_nodes_within_ball");
+        mrpt::system::CTimeLoggerEntry(profiler_, "find_source_nodes_towards");
 
     const auto& nodes = tree.nodes();
     ASSERT_(!nodes.empty());
@@ -513,6 +610,77 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_nodes_within_ball(
 
             // Exact look up in the PTG manifold of poses:
             const auto ret = de.distance(nodeState, query);
+            if (!ret.has_value())
+            {
+                // No exact solution with this ptg, skip:
+                continue;
+            }
+            const auto [distance, trajIndex] = *ret;
+            ASSERTMSG_(distance > 0, "Repeated pose node in tree?");
+
+            if (distance > maxDistance)
+            {
+                // Too far, skip:
+                continue;
+            }
+            // Ok, accept it:
+            closestNodes.emplace(
+                distance, closest_nodes_list_t::mapped_type(
+                              node.first, ptgIdx, trajIndex, distance));
+        }
+    }
+    return closestNodes;
+}
+
+// See docs in .h
+// This is mostly similar to find_source_nodes_towards(), but with reversed
+// order between source and target states.
+TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
+    const MotionPrimitivesTreeSE2& tree, const TNodeID queryNodeId,
+    const double maxDistance, const TrajectoriesAndRobotShape& trs)
+{
+    auto tle =
+        mrpt::system::CTimeLoggerEntry(profiler_, "find_reachable_nodes_from");
+
+    const auto& nodes = tree.nodes();
+    ASSERT_(!nodes.empty());
+
+    const auto& query = nodes.at(queryNodeId);
+
+    MRPT_TODO("Build list of nearby nodes once between these two methods");
+
+    // Prepare distance evaluators for each PTG:
+    const auto nPTGs = trs.ptgs.size();
+    ASSERT_(nPTGs >= 1);
+
+    std::vector<PoseDistanceMetric<SE2_KinState>> distEvaluators;
+    for (auto& ptg : trs.ptgs) distEvaluators.emplace_back(*ptg);
+
+    closest_nodes_list_t closestNodes;
+
+    // TODO: Use KD-tree with nanoflann!
+
+    for (const auto& node : nodes)
+    {
+        const SE2_KinState& nodeState = node.second;
+
+        // Don't rewire to myself ;-)
+        if (node.first == queryNodeId) continue;
+
+        for (ptg_index_t ptgIdx = 0; ptgIdx < distEvaluators.size(); ptgIdx++)
+        {
+            auto& de = distEvaluators.at(ptgIdx);
+
+            // Skip the more expensive calculation of exact distance:
+            if (de.cannotBeNearerThan(query, nodeState.pose, maxDistance))
+            {
+                // It's too far, skip:
+                continue;
+            }
+
+            // Exact look up in the PTG manifold of poses:
+            MRPT_TODO("Target velocity not accounted for!!!");
+            const auto ret = de.distance(query, nodeState.pose);
             if (!ret.has_value())
             {
                 // No exact solution with this ptg, skip:
