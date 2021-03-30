@@ -226,10 +226,10 @@ struct PoseDistanceMetric<SE2_KinState>
     std::optional<std::tuple<distance_t, trajectory_index_t>> distance(
         const SE2_KinState& src, const mrpt::math::TPose2D& dst) const
     {
-        double             d;
-        trajectory_index_t k;
-        const auto         relPose     = dst - src.pose;
-        auto               localSrcVel = src.vel;
+        normalized_distance_t normDist;
+        trajectory_index_t    k;
+        const auto            relPose     = dst - src.pose;
+        auto                  localSrcVel = src.vel;
         localSrcVel.rotate(-src.pose.phi);
 
         ptg_t::TNavDynamicState dynState;
@@ -240,11 +240,34 @@ struct PoseDistanceMetric<SE2_KinState>
         m_ptg.updateNavDynamicState(dynState);
 
         bool tp_point_is_exact =
-            m_ptg.inverseMap_WS2TP(relPose.x, relPose.y, k, d);
+            m_ptg.inverseMap_WS2TP(relPose.x, relPose.y, k, normDist);
+
+        distance_t d = normDist * m_ptg.getRefDistance();
+
+        if (tp_point_is_exact)
+        {
+            uint32_t ptg_step;
+            m_ptg.getPathStepForDist(k, d, ptg_step);
+            const auto   reconsRelPose = m_ptg.getPathPose(k, ptg_step);
+            const double headingError  = std::abs(
+                mrpt::math::angDistance(reconsRelPose.phi, relPose.phi));
+
+            if (headingError > mrpt::DEG2RAD(2.0)) tp_point_is_exact = false;
+        }
+
         if (tp_point_is_exact)
         {
             // de-normalize distance
-            return {{d * m_ptg.getRefDistance(), k}};
+            if (d == 0 &&
+                (relPose.x != 0 || relPose.y != 0 || relPose.phi != 0))
+            {
+                // Due to the discrete nature of PTG paths, in rare cases
+                // we have d=0 despite the target is actually not exactly, but
+                // very close to the origin:
+                d = relPose.norm() +
+                    std::abs(relPose.phi) * m_ptg.getRefDistance();
+            }
+            return {{d, k}};
         }
         else
         {
