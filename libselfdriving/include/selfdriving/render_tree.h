@@ -40,8 +40,11 @@ struct RenderOptions
     /// A scale factor to all XYZ corners (default=auto from vehicle shape)
     std::optional<double> xyzcorners_scale;
 
-    //!< 0:disable, not assigned: auto
+    /// 0:disable, not assigned: auto
     std::optional<double> ground_xy_grid_frequency;
+
+    /// If !=0, represent different headings as different heights:
+    double phi2z_scale = 1.0;
 
     // RGB + A colors:
     mrpt::img::TColor color_vehicle{0xff0000, 0xff};

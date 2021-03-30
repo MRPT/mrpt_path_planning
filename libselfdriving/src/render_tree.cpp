@@ -26,6 +26,27 @@ auto selfdriving::render_tree(
     auto  ret   = mrpt::opengl::CSetOfObjects::Create();
     auto& scene = *ret;
 
+    const auto poseHeight = [&ro](const mrpt::poses::CPose3D& p) {
+        if (ro.phi2z_scale == 0)
+            return p;
+        else
+        {
+            auto r = p;
+            r.z(ro.phi2z_scale * r.yaw());
+            return r;
+        }
+    };
+    const auto poseHeightT = [&ro](const mrpt::math::TPose3D& p) {
+        if (ro.phi2z_scale == 0)
+            return p;
+        else
+        {
+            auto r = p;
+            r.z    = ro.phi2z_scale * r.yaw;
+            return r;
+        }
+    };
+
     // Build a model of the vehicle shape:
     auto   gl_veh_shape = mrpt::opengl::CSetOfLines::Create();
     double xyzcorners_scale;
@@ -74,7 +95,7 @@ auto selfdriving::render_tree(
             THROW_EXCEPTION("Invalid vehicle shape variant<> type.");
         }
 
-        xyzcorners_scale = max_veh_radius * 0.5;
+        xyzcorners_scale = max_veh_radius * 0.20;
     }
 
     // Override with user scale?
@@ -112,7 +133,7 @@ auto selfdriving::render_tree(
         auto obj = CornerXYZ(xyzcorners_scale * 1.0);
         obj->setName("X_rand");
         obj->enableShowName();
-        obj->setPose(mrpt::poses::CPose3D(*ro.x_rand_pose));
+        obj->setPose(poseHeight(mrpt::poses::CPose3D(*ro.x_rand_pose)));
         scene.insert(obj);
     }
 
@@ -122,7 +143,7 @@ auto selfdriving::render_tree(
         auto obj = CornerXYZ(xyzcorners_scale * 1.0);
         obj->setName("X_near");
         obj->enableShowName();
-        obj->setPose(mrpt::poses::CPose3D(*ro.x_nearest_pose));
+        obj->setPose(poseHeight(mrpt::poses::CPose3D(*ro.x_nearest_pose)));
         scene.insert(obj);
     }
 
@@ -167,7 +188,7 @@ auto selfdriving::render_tree(
         auto vehShape  = mrpt::opengl::CSetOfLines::Create(*gl_veh_shape);
         auto shapePose = mrpt::math::TPose3D(pi.stateStart.pose);
         shapePose.z += ro.vehicle_shape_z;
-        vehShape->setPose(shapePose);
+        vehShape->setPose(poseHeightT(shapePose));
         scene.insert(vehShape);
     }
 
@@ -196,7 +217,7 @@ auto selfdriving::render_tree(
                 xyzcorners_scale * (isLastNode ? 1.5f : 1.0f);
 
             auto obj = CornerXYZSimple(corner_scale);
-            obj->setPose(mrpt::poses::CPose3D(poseNode));
+            obj->setPose(poseHeight(mrpt::poses::CPose3D(poseNode)));
             scene.insert(obj);
 
             // Insert vehicle shapes along optimal path:
@@ -206,7 +227,7 @@ auto selfdriving::render_tree(
                     mrpt::opengl::CSetOfLines::Create(*gl_veh_shape);
                 auto shapePose = mrpt::math::TPose3D(poseNode);
                 shapePose.z += ro.vehicle_shape_z;
-                vehShape->setPose(shapePose);
+                vehShape->setPose(poseHeightT(shapePose));
                 scene.insert(vehShape);
             }
             if (drawTwistState)
@@ -221,7 +242,8 @@ auto selfdriving::render_tree(
                     glLinVel->setSmallRadius(ro.twistArrowsRadius);
                     glLinVel->setLargeRadius(ro.twistArrowsRadius * 1.5);
                     glLinVel->setColor_u8(0xff, 0x00, 0x00);
-                    glLinVel->setLocation(poseNode.x, poseNode.y, .0);
+                    glLinVel->setLocation(
+                        poseNode.x, poseNode.y, ro.phi2z_scale * poseNode.phi);
                     scene.insert(glLinVel);
                 }
 
@@ -233,7 +255,8 @@ auto selfdriving::render_tree(
                     glAngVel->setSmallRadius(ro.twistArrowsRadius);
                     glAngVel->setLargeRadius(ro.twistArrowsRadius * 1.5);
                     glAngVel->setColor_u8(0x00, 0xff, 0x00);
-                    glAngVel->setLocation(poseNode.x, poseNode.y, .0);
+                    glAngVel->setLocation(
+                        poseNode.x, poseNode.y, ro.phi2z_scale * poseNode.phi);
                     scene.insert(glAngVel);
                 }
             }
@@ -244,7 +267,7 @@ auto selfdriving::render_tree(
         {
             // Create the path shape, in relative coords to the parent node:
             auto obj = mrpt::opengl::CSetOfLines::Create();
-            obj->setPose(mrpt::poses::CPose3D(poseParent));
+            obj->setPose(poseHeight(mrpt::poses::CPose3D(poseParent)));
 
             // Avoid having to update PTG's dynamic state and calling to
             // ptg->renderPathAsSimpleLine():
@@ -254,14 +277,18 @@ auto selfdriving::render_tree(
                 obj->appendLine(0, 0, 0, 0, 0, 0);
                 const auto& ip = etp->interpolatedPath.value();
                 for (const auto& relPose : ip)
-                { obj->appendLineStrip(relPose.x, relPose.y, 0); }
+                {
+                    obj->appendLineStrip(
+                        relPose.x, relPose.y, ro.phi2z_scale * relPose.phi);
+                }
             }
             else
             {
                 // gross approximation with one single segment:
                 const auto pIncr = etp->stateTo.pose - etp->stateFrom.pose;
 
-                obj->appendLine(0, 0, 0, pIncr.x, pIncr.y, .0);
+                obj->appendLine(
+                    0, 0, 0, pIncr.x, pIncr.y, ro.phi2z_scale * pIncr.phi);
             }
 
             if (isLastNode && ro.highlight_last_added_edge)
@@ -292,7 +319,7 @@ auto selfdriving::render_tree(
         auto obj = CornerXYZ(xyzcorners_scale * 1.2);
         obj->setName("X_new");
         obj->enableShowName();
-        obj->setPose(mrpt::poses::CPose3D(*ro.new_state));
+        obj->setPose(poseHeight(mrpt::poses::CPose3D(*ro.new_state)));
         scene.insert(obj);
     }
 
@@ -332,7 +359,7 @@ auto selfdriving::render_tree(
         obj->setName("START");
         obj->enableShowName();
         obj->setColor_u8(ro.color_start);
-        obj->setPose(pi.stateStart.pose);
+        obj->setPose(poseHeightT(pi.stateStart.pose));
         scene.insert(obj);
     }
 
@@ -342,7 +369,7 @@ auto selfdriving::render_tree(
         obj->setName("GOAL");
         obj->enableShowName();
         obj->setColor_u8(ro.color_goal);
-        obj->setPose(pi.stateGoal.pose);
+        obj->setPose(poseHeightT(pi.stateGoal.pose));
         scene.insert(obj);
     }
 

@@ -23,14 +23,17 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
 
     struct Parameters
     {
-        double goalBias            = 0.02;
-        double initialSearchRadius = 1.0;
-        bool   drawInTPS           = true;
+        double initialSearchRadius = 3.0;  //!< [m]
         double minStepLength       = 0.15;  //!< Between waypoints [m]
-        double maxStepLength       = 3.0;  //!< Between waypoints [m]
+        double maxStepLength       = 3.00;  //!< Between waypoints [m]
         size_t maxIterations       = 10000;
 
-        size_t renderPathInterpolatedSegments   = 5;
+        bool drawInTPS = true;  //!< Draw samples in TPS vs Euclidean
+
+        /** Required to smooth interpolation of rendered paths, evaluation of
+         * path cost, etc. */
+        size_t pathInterpolatedSegments = 5;
+
         size_t saveDebugVisualizationDecimation = 0;
     };
 
@@ -43,13 +46,19 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
     struct DrawFreePoseParams
     {
         DrawFreePoseParams(
-            const PlannerInput& pi, const MotionPrimitivesTreeSE2& tree)
-            : pi_(pi), tree_(tree)
+            const PlannerInput& pi, const MotionPrimitivesTreeSE2& tree,
+            const distance_t& searchRadius, const TNodeID goalNodeId)
+            : pi_(pi),
+              tree_(tree),
+              searchRadius_(searchRadius),
+              goalNodeId_(goalNodeId)
         {
         }
 
         const PlannerInput&            pi_;
         const MotionPrimitivesTreeSE2& tree_;
+        const distance_t&              searchRadius_;
+        const TNodeID                  goalNodeId_;
     };
 
     mrpt::math::TPose2D draw_random_free_pose(const DrawFreePoseParams& p);
@@ -72,7 +81,8 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
      */
     closest_nodes_list_t find_source_nodes_towards(
         const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
-        const double maxDistance, const TrajectoriesAndRobotShape& trs);
+        const double maxDistance, const TrajectoriesAndRobotShape& trs,
+        const TNodeID goalNodeToIgnore);
 
     /** Find all existing nodes "x" in the tree that are **reachable from**
      * `query` (i.e. `query` ==> `other nodes`), and the motion primitives for
