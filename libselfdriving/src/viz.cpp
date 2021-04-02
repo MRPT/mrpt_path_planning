@@ -11,37 +11,12 @@
 #include <mrpt/opengl/CSetOfLines.h>
 #include <mrpt/opengl/CSetOfObjects.h>
 #include <mrpt/opengl/stock_objects.h>
+#include <selfdriving/render_tree.h>
 #include <selfdriving/viz.h>
 
 using namespace selfdriving;
 
 static std::vector<mrpt::gui::CDisplayWindow3D::Ptr> nonmodal_wins;
-
-static mrpt::opengl::CRenderizable::Ptr getRobotShapeViz(
-    const TrajectoriesAndRobotShape& r)
-{
-    MRPT_TODO("Replace by calls to ptg->add_robotShape_to_setOfLines()");
-
-    if (std::holds_alternative<double>(r.robotShape))
-    {
-#if 0
-        return mrpt::opengl::CCylinder::Create(
-            r.robot_radius, r.robot_radius, 0.10f /*height*/, 20 /*slices*/,
-            2 /*stacks*/);
-#else
-        const double R = std::get<double>(r.robotShape);
-
-        auto obj = mrpt::opengl::CCylinder::Create(
-            R, R, 0.05f /*height*/, 20 /*slices*/);
-        obj->setHasBases(false, false);
-        return obj;
-#endif
-    }
-    else
-    {
-        THROW_EXCEPTION("TO DO!");
-    }
-}
 
 void selfdriving::viz_nav_plan(
     const selfdriving::PlannerOutput&        plan,
@@ -57,76 +32,9 @@ void selfdriving::viz_nav_plan(
     {
         mrpt::gui::CDisplayWindow3DLocker dwl(*win, scene);
 
-        scene->insert(mrpt::opengl::CGridPlaneXY::Create(
-            -10.f, 10.0f, -10.f, 10.f, 0.0f, 1.0f));
-
-        // Goal pose:
-        {
-            auto gl_group = mrpt::opengl::CSetOfObjects::Create();
-            auto gl_obj =
-                mrpt::opengl::stock_objects::CornerXYZSimple(1.0f, 6.0f);
-            gl_group->insert(gl_obj);
-            gl_group->insert(getRobotShapeViz(plan.originalInput.ptgs));
-
-            gl_group->setLocation(
-                plan.originalInput.stateGoal.pose.x,
-                plan.originalInput.stateGoal.pose.y, 0);
-
-            scene->insert(gl_group);
-        }
-        // TODO: Rewrite after rewrite as a real tree.
-        // TODO: Add option to render whole tree vs just optimal path.
-#if 0        
-        // Intermediary poses:
-        int stepCount = -1;
-        for (const auto& p : plan.actions)
-        {
-            auto gl_group = mrpt::opengl::CSetOfObjects::Create();
-            auto gl_obj =
-                mrpt::opengl::stock_objects::CornerXYZSimple(0.25f, 3.0f);
-            gl_group->insert(gl_obj);
-
-            if (stepCount == -1 || ++stepCount >= opts.show_robot_shape_every_N)
-            {
-                stepCount = 0;
-                gl_group->insert(
-                    getRobotShapeViz(plan.originalInput.robot_shape));
-            }
-
-            // PTG path:
-            if (opts.show_ptg_path_segments &&
-                !plan.originalInput.ptgs.ptgs.empty() && p.ptgIndex != -1)
-            {
-                auto& ptg = plan.originalInput.ptgs.ptgs.at(p.ptgIndex);
-                ptg->updateNavDynamicState(p.getPTGDynState());
-
-                auto gl_path_seg = mrpt::opengl::CSetOfLines::Create();
-
-                ptg->renderPathAsSimpleLine(
-                    p.ptgPathIndex, *gl_path_seg, 0.05, p.ptgDist);
-
-                gl_path_seg->setLineWidth(4.0f);
-                gl_path_seg->setColor_u8(0x20, 0x20, 0x20);
-                gl_group->insert(gl_path_seg);
-            }
-
-            gl_group->setPose(p.stateFrom.pose);
-            scene->insert(gl_group);
-        }
-#endif
-        // Obstacles:
-        auto obs = plan.originalInput.obstacles->obstacles();
-        if (obs)
-        {
-            obs->renderOptions.color.R    = 1;
-            obs->renderOptions.color.G    = 0;
-            obs->renderOptions.color.B    = 0;
-            obs->renderOptions.point_size = 5.0f;
-
-            auto gl_obs = mrpt::opengl::CSetOfObjects::Create();
-            obs->getAs3DObject(gl_obs);
-            scene->insert(gl_obs);
-        }
+        auto glTree = render_tree(
+            plan.motionTree, plan.originalInput, opts.renderOptions);
+        scene->insert(glTree);
     }
 
     // Camera:
