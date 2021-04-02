@@ -131,9 +131,11 @@ static void do_plan_path()
               << " nodes\n";
 
     // Visualize:
-    selfdriving::NavPlanRenderOptions renderOptions;
+    selfdriving::VisualizationOptions vizOpts;
 
-    selfdriving::viz_nav_plan(plan, renderOptions);
+    vizOpts.renderOptions.highlight_path_to_node_id = plan.goalNodeId;
+
+    selfdriving::viz_nav_plan(plan, vizOpts);
 }
 
 int main(int argc, char** argv)

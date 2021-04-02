@@ -17,6 +17,7 @@
 #include <selfdriving/ptg_t.h>
 
 #include <cstdint>
+#include <deque>
 #include <list>
 #include <set>
 
@@ -53,11 +54,7 @@ using cost_t = double;
  *  - 21/JAN/2015: Refactoring (JLBC)
  *  - 2020-2021: Adapted to TPS-RRT* (JLBC)
  */
-template <
-    class NODE_TYPE_DATA, class EDGE_TYPE,
-    class MAPS_IMPLEMENTATION = mrpt::containers::map_traits_map_as_vector
-    /* Use std::map<> vs. std::vector<>*/
-    >
+template <class NODE_TYPE_DATA, class EDGE_TYPE>
 class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
 {
    public:
@@ -70,9 +67,6 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
         /** Does not have value for the root, a valid ID otherwise */
         std::optional<mrpt::graphs::TNodeID> parentID_;
 
-        /** std::nullopt for root, a valid edge otherwise */
-        std::optional<const EDGE_TYPE*> edgeToParent_;
-
         /** cost of reaching this node from the root (=0 for the root) */
         cost_t cost_;
 
@@ -80,12 +74,10 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
         node_t(
             mrpt::graphs::TNodeID                       nodeID,
             const std::optional<mrpt::graphs::TNodeID>& parentID,
-            std::optional<const EDGE_TYPE*>             edgeToParent,
             const NODE_TYPE_DATA& data, cost_t cost)
             : NODE_TYPE_DATA(data),
               nodeID_(nodeID),
               parentID_(parentID),
-              edgeToParent_(edgeToParent),
               cost_(cost)
         {
         }
@@ -94,8 +86,16 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     using base_t = mrpt::graphs::CDirectedTree<EDGE_TYPE>;
     using edge_t = EDGE_TYPE;
 
+    /**  Use deque to reduce memory reallocs. */
+    struct map_traits_map_as_deque
+    {
+        template <class KEY, class VALUE>
+        using map = mrpt::containers::map_as_vector<
+            KEY, VALUE, typename std::deque<std::pair<KEY, VALUE>>>;
+    };
+
     /** Map: TNode_ID => Node info */
-    using node_map_t = typename MAPS_IMPLEMENTATION::template map<
+    using node_map_t = typename map_traits_map_as_deque::template map<
         mrpt::graphs::TNodeID, node_t>;
 
     /** A topological path up-tree.
@@ -110,40 +110,72 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
         const NODE_TYPE_DATA& newChildNodeData, const EDGE_TYPE& newEdgeData)
     {
         // edge:
-        auto&       parentEdges      = base_t::edges_to_children[parentId];
-        const bool  dirChildToParent = false;
-        const auto& ned =
-            parentEdges.emplace_back(newChildId, dirChildToParent, newEdgeData)
-                .data;
+        auto&      parentEdges      = base_t::edges_to_children[parentId];
+        const bool dirChildToParent = false;
+
+        parentEdges.emplace_back(newChildId, dirChildToParent, newEdgeData);
 
         const cost_t newCost = nodes_.at(parentId).cost_ + newEdgeData.cost;
 
         // node:
         nodes_[newChildId] =
-            node_t(newChildId, parentId, &ned, newChildNodeData, newCost);
+            node_t(newChildId, parentId, newChildNodeData, newCost);
     }
 
     void rewire_node_parent(
         const mrpt::graphs::TNodeID nodeId, const EDGE_TYPE& newEdgeFromParent)
     {
-        // edge:
-        const mrpt::graphs::TNodeID parentId = newEdgeFromParent.parentId;
-        auto&       parentEdges      = base_t::edges_to_children[parentId];
-        const bool  dirChildToParent = false;
-        const auto& ned =
-            parentEdges
-                .emplace_back(nodeId, dirChildToParent, newEdgeFromParent)
-                .data;
+        auto& node = nodes_[nodeId];
+
+        // Remove old edge:
+        const auto oldParentId    = *node.parentID_;
+        auto&      oldParentEdges = base_t::edges_to_children[oldParentId];
+        bool       deletionDone   = false;
+        for (auto it = oldParentEdges.begin(); it != oldParentEdges.end(); ++it)
+        {
+            if (it->id == nodeId)
+            {
+                oldParentEdges.erase(it);
+                deletionDone = true;
+                break;
+            }
+        }
+        if (!deletionDone)
+        {
+            THROW_EXCEPTION_FMT(
+                "[rewire_node_parent] Error: Could not find edge from former "
+                "parent #%s -> node #%s",
+                std::to_string(oldParentId).c_str(),
+                std::to_string(nodeId).c_str());
+        }
+
+        // add edge:
+        const mrpt::graphs::TNodeID  parentId = newEdgeFromParent.parentId;
+        typename base_t::TListEdges& parentEdges =
+            base_t::edges_to_children[parentId];
+        const bool dirChildToParent = false;
+        parentEdges.emplace_back(nodeId, dirChildToParent, newEdgeFromParent);
 
         const cost_t newCost =
             nodes_.at(parentId).cost_ + newEdgeFromParent.cost;
 
         // update existing node info:
-        auto& node = nodes_[nodeId];
 
-        node.parentID_     = parentId;
-        node.edgeToParent_ = &ned;
-        node.cost_         = newCost;
+        node.parentID_ = parentId;
+        node.cost_     = newCost;
+    }
+
+    const EDGE_TYPE& edge_to_parent(const mrpt::graphs::TNodeID nodeId) const
+    {
+        auto&       node        = nodes_.at(nodeId);
+        const auto& parentEdges = base_t::edges_to_children.at(*node.parentID_);
+        for (const auto& edge : parentEdges)
+        {
+            if (edge.id == nodeId) return edge.data;
+        }
+        THROW_EXCEPTION_FMT(
+            "Could not find edge to parent for node #%s",
+            std::to_string(nodeId).c_str());
     }
 
     /** Insert a node without edges (should be used only for a tree root node)
@@ -154,7 +186,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
         ASSERTMSG_(
             nodes_.empty(), "insert_root_node() called on a non-empty tree");
         cost_t zeroCost = 0;
-        nodes_[node_id] = node_t(node_id, {}, {}, node_data, zeroCost);
+        nodes_[node_id] = node_t(node_id, {}, node_data, zeroCost);
     }
 
     mrpt::graphs::TNodeID next_free_node_ID() const { return nodes_.size(); }

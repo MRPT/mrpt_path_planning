@@ -20,7 +20,7 @@ static std::vector<mrpt::gui::CDisplayWindow3D::Ptr> nonmodal_wins;
 
 void selfdriving::viz_nav_plan(
     const selfdriving::PlannerOutput&        plan,
-    const selfdriving::NavPlanRenderOptions& opts)
+    const selfdriving::VisualizationOptions& opts)
 {
     MRPT_START
     //

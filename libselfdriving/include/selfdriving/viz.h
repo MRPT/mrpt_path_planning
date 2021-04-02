@@ -11,7 +11,7 @@
 
 namespace selfdriving
 {
-struct NavPlanRenderOptions
+struct VisualizationOptions
 {
     /** dont return viz_nav_plan() until user closes the window */
     bool gui_modal = true;
@@ -21,6 +21,6 @@ struct NavPlanRenderOptions
 
 void viz_nav_plan(
     const PlannerOutput&        plan,
-    const NavPlanRenderOptions& opts = NavPlanRenderOptions());
+    const VisualizationOptions& opts = VisualizationOptions());
 
 }  // namespace selfdriving
