@@ -84,6 +84,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     // picked in find_reachable_nodes_from() (i.e. "tree U x_goal")
     //
     const TNodeID goalNodeId = tree.next_free_node_ID();
+    po.goalNodeId            = goalNodeId;
     {
         MoveEdgeSE2_TPS dummyEdge;
         dummyEdge.cost      = std::numeric_limits<cost_t>::max();
@@ -373,45 +374,22 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 
     }  // for each rrtIter
 
-    // ----------
+    // RRT ended, now collect the result:
+    // ----------------------------------------
+    const auto foundPath      = tree.backtrack_path(goalNodeId);
+    bool       foundPathValid = true;
 
-    if (0)
+    for (const auto& step : foundPath)
     {
-        po.success = false;
-        return po;
-    }
-
-    // Go thru the list of points and convert them into a sequence of PTG
-    // actions:
-    SE2_KinState last_state;
-    last_state = in.stateStart;
-
-#if 0
-    for (const auto& p : path)
-    {
-        NavPlanAction act;
-        act.stateFrom    = last_state;
-        act.stateTo.pose = mrpt::math::TPose2D(p.x, p.y, 0);
-
-        // Compute PTG actions (trajectory segments):
-        if (!in.ptgs.ptgs.empty())
+        if (step.cost_ == std::numeric_limits<cost_t>::max())
         {
-            mrpt::system::CTimeLoggerEntry tle(
-                profiler_, "plan.bestTrajectory");
-
-            // This finds the best PTG segments for the from/to poses.
-            selfdriving::bestTrajectory(act, in.ptgs);
+            foundPathValid = false;
+            break;
         }
-
-        // for the next iter:
-        // Note that "stateTo" may have been modified by bestTrajectory().
-        last_state = act.stateTo;
-
-        ret.actions.push_back(std::move(act));
     }
+    po.success = foundPathValid;
 
-    ret.success = true;
-#endif
+    po.pathCost = tree.nodes().at(goalNodeId).cost_;
 
     return po;
     MRPT_END

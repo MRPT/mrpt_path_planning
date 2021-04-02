@@ -36,11 +36,7 @@ struct PlannerOutput
     double pathCost = std::numeric_limits<double>::max();
 
     /** The ID of the best target node in the tree */
-    TNodeID best_goal_node_id = INVALID_NODEID;
-
-    /** The set of target nodes within an acceptable distance to target
-     * (including `best_goal_node_id` and others) */
-    std::set<TNodeID> acceptable_goal_node_ids;
+    TNodeID goalNodeId = INVALID_NODEID;
 
     /** The generated motion tree that explores free space starting at "start"
      */

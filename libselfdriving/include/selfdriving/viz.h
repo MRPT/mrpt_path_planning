@@ -6,18 +6,17 @@
 
 #pragma once
 
-#include "PlannerOutput.h"
+#include <selfdriving/PlannerOutput.h>
+#include <selfdriving/RenderOptions.h>
 
 namespace selfdriving
 {
 struct NavPlanRenderOptions
 {
     /** dont return viz_nav_plan() until user closes the window */
-    bool gui_modal                = true;
-    int  show_robot_shape_every_N = 1;
+    bool gui_modal = true;
 
-    /** Render the PTG path segments between key poses */
-    bool show_ptg_path_segments = true;
+    RenderOptions renderOptions;
 };
 
 void viz_nav_plan(

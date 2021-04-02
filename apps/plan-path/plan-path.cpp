@@ -8,6 +8,7 @@
 #include <mrpt/config/CConfigFile.h>
 #include <mrpt/core/exceptions.h>  // exception_to_str()
 #include <mrpt/maps/CSimplePointsMap.h>
+#include <mrpt/random/RandomGenerators.h>
 #include <mrpt/system/os.h>  // plugins
 #include <selfdriving/TPS_RRTstar.h>
 #include <selfdriving/viz.h>
@@ -38,6 +39,13 @@ static TCLAP::ValueArg<std::string> arg_goal_pose(
 static TCLAP::ValueArg<double> arg_min_step_len(
     "", "min-step-length", "Minimum step length [meters]", false, 0.25, "0.25",
     cmd);
+
+static TCLAP::ValueArg<size_t> argMaxIterations(
+    "", "max-iterations", "Maximum RRT iterations", false, 1000, "1000", cmd);
+
+static TCLAP::ValueArg<unsigned int> argRandomSeed(
+    "", "random-seed", "Pseudorandom generator seed (default: from time)",
+    false, 0, "0", cmd);
 
 static TCLAP::ValueArg<std::string> arg_plugins(
     "", "plugins",
@@ -101,9 +109,14 @@ static void do_plan_path()
     planner.setMinLoggingLevel(mrpt::system::LVL_DEBUG);
 
     // Set planner required params:
-    planner.params_.minStepLength = arg_min_step_len.getValue();
     planner.params_.saveDebugVisualizationDecimation =
         argSaveDebugVisualizationDecimation.getValue();
+
+    if (arg_min_step_len.isSet())
+        planner.params_.minStepLength = arg_min_step_len.getValue();
+
+    if (argMaxIterations.isSet())
+        planner.params_.maxIterations = argMaxIterations.getValue();
 
     // PTGs config file:
     mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
@@ -119,7 +132,6 @@ static void do_plan_path()
 
     // Visualize:
     selfdriving::NavPlanRenderOptions renderOptions;
-    renderOptions.show_robot_shape_every_N = 10;
 
     selfdriving::viz_nav_plan(plan, renderOptions);
 }
@@ -139,6 +151,12 @@ int main(int argc, char** argv)
                 std::cerr << "Could not load plugins, error: " << loadErrors;
                 return 1;
             }
+        }
+
+        if (argRandomSeed.isSet())
+        {
+            mrpt::random::getRandomGenerator().randomize(
+                argRandomSeed.getValue());
         }
 
         do_plan_path();
