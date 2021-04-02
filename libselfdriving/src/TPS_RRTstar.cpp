@@ -49,8 +49,8 @@ static bool within_bbox(
     const mrpt::math::TPose2D& p, const mrpt::math::TPose2D& max,
     const mrpt::math::TPose2D& min)
 {
-    return p.x < max.x && p.y < max.y && p.phi < max.phi &&  //
-           p.x > min.x && p.y > min.y && p.phi > min.phi;
+    return p.x < max.x && p.y < max.y && p.phi < max.phi + 1e-6 &&  //
+           p.x > min.x && p.y > min.y && p.phi > min.phi - 1e-6;
 }
 
 PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
@@ -155,7 +155,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             auto&                   ptg     = *in.ptgs.ptgs.at(ptgIdx);
             ptg_t::TNavDynamicState ds;
             (ds.curVelLocal = srcNode.vel).rotate(-srcNode.pose.phi);
-            ds.relTarget      = {1.0, 0, 0};
+            ds.relTarget      = qi - srcNode.pose;
             ds.targetRelSpeed = 1.0;
             ptg.updateNavDynamicState(ds);
 

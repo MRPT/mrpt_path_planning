@@ -23,9 +23,9 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
 
     struct Parameters
     {
-        double initialSearchRadius = 3.0;  //!< [m]
-        double minStepLength       = 0.15;  //!< Between waypoints [m]
-        double maxStepLength       = 3.00;  //!< Between waypoints [m]
+        double initialSearchRadius = 4.0;  //!< [m]
+        double minStepLength       = 0.30;  //!< Between waypoints [m]
+        double maxStepLength       = 4.00;  //!< Between waypoints [m]
         size_t maxIterations       = 10000;
 
         bool drawInTPS = true;  //!< Draw samples in TPS vs Euclidean
