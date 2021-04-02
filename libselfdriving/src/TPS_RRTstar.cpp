@@ -80,6 +80,10 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     tree.root = tree.next_free_node_ID();
     tree.insert_root_node(tree.root, in.stateStart);
 
+    //  2  |  E T ← ∅         # Tree edges
+    // ------------------------------------------------------------------
+    tree.edges_to_children.clear();
+
     // Insert a dummy edge between root -> goal, just to allow "goal" to be
     // picked in find_reachable_nodes_from() (i.e. "tree U x_goal")
     //
@@ -94,10 +98,6 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         tree.insert_node_and_edge(
             tree.root, goalNodeId, in.stateGoal, dummyEdge);
     }
-
-    //  2  |  E T ← ∅         # Tree edges
-    // ------------------------------------------------------------------
-    tree.edges_to_children.clear();
 
     // Dynamic search radius:
     double searchRadius = params_.initialSearchRadius;

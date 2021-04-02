@@ -152,32 +152,33 @@ auto selfdriving::render_tree(
     MotionPrimitivesTreeSE2::path_t best_path;
 
     if (ro.highlight_path_to_node_id)
-    { best_path = tree.backtrack_path(*ro.highlight_path_to_node_id); }
+        best_path = tree.backtrack_path(*ro.highlight_path_to_node_id);
 
     // make list of nodes in the way of the best path:
     std::set<const MotionPrimitivesTreeSE2::edge_t*> edges_best_path,
         edges_best_path_decim;
     if (!best_path.empty())
     {
-        auto it_end   = best_path.end();
-        auto it_end_1 = best_path.end();
-        std::advance(it_end_1, -1);
+        const auto it_end = best_path.end();
 
-        for (auto it = best_path.begin(); it != it_end; ++it)
-            if (it->edgeToParent_) edges_best_path.insert(*it->edgeToParent_);
-
-        // Decimate the path (always keeping the first and last entry):
         ASSERT_GT_(ro.draw_shape_decimation, 0);
-        for (auto it = best_path.begin(); it != it_end;)
-        {
-            if (it->edgeToParent_)
-                edges_best_path_decim.insert(*it->edgeToParent_);
 
-            if (it == it_end_1) break;
-            for (size_t k = 0; k < ro.draw_shape_decimation; k++)
-            {
-                if (it == it_end || it == it_end_1) break;
-                ++it;
+        size_t       pathIdx   = 0;
+        const size_t pathSteps = best_path.size();
+        for (auto it = best_path.begin(); it != it_end; ++it, ++pathIdx)
+        {
+            if (it->nodeID_ == tree.root)
+                continue;  // no edge-to-parent for the root!
+
+            // Decimate the path (always keeping the first and last entry):
+            const auto etp = &tree.edge_to_parent(it->nodeID_);
+
+            edges_best_path.insert(etp);
+
+            if (pathIdx == 0 || pathIdx + 1 == pathSteps ||
+                (pathIdx % ro.draw_shape_decimation) == 0)
+            {  // Decimated version:
+                edges_best_path_decim.insert(etp);
             }
         }
     }
@@ -202,12 +203,13 @@ auto selfdriving::render_tree(
 
         const mrpt::math::TPose2D& poseNode = node.pose;
 
+        const MotionPrimitivesTreeSE2::edge_t* etp = nullptr;
+        if (node.nodeID_ != tree.root) etp = &tree.edge_to_parent(node.nodeID_);
+
         const bool isLastNode = (idnode.first == tree.nodes().rbegin()->first);
-        const bool isBestPath = node.edgeToParent_ &&
-                                edges_best_path.count(*node.edgeToParent_) != 0;
+        const bool isBestPath = etp && edges_best_path.count(etp) != 0;
         const bool isBestPathAndDrawShape =
-            node.edgeToParent_ &&
-            edges_best_path_decim.count(*node.edgeToParent_) != 0;
+            etp && edges_best_path_decim.count(etp) != 0;
 
         const bool drawTwistState = isBestPathAndDrawShape && ro.draw_twist;
 
@@ -263,7 +265,7 @@ auto selfdriving::render_tree(
         }
 
         // Draw actual PTG path between parent and children nodes:
-        if (auto etp = node.edgeToParent_.value_or(nullptr); etp)
+        if (etp)
         {
             // Create the path shape, in relative coords to the parent node:
             auto obj = mrpt::opengl::CSetOfLines::Create();
