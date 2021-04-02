@@ -22,5 +22,5 @@ sudo apt install libmrpt-dev
 ## Demo runs
 
 ```
-bin/plan-path -g "[5.1 2.0 0]" -s "[-0.2 -0 0]" -p ../share/ptgs_holonomic_robot.ini -o ../share/obstacles_01.txt --min-step-length  0.25
+bin/plan-path -g "[3 1.5 45]" -s "[-0.5 -0 0]" -p ../share/ptgs_holonomic_robot.ini -o ../share/obstacles_01.txt --save-debug-visualization 0 --max-iterations 1000 --random-seed 3
 ```
