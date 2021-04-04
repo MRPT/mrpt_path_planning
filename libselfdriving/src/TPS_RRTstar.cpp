@@ -16,6 +16,45 @@
 
 using namespace selfdriving;
 
+mrpt::containers::yaml TPS_RRTstar_Parameters::as_yaml()
+{
+    mrpt::containers::yaml c = mrpt::containers::yaml::Map();
+
+    // TODO: Add comments
+    MCP_SAVE(c, initialSearchRadius);
+    MCP_SAVE(c, minStepLength);
+    MCP_SAVE(c, maxStepLength);
+    MCP_SAVE(c, maxIterations);
+    MCP_SAVE(c, drawInTPS);
+    MCP_SAVE_DEG(c, headingTolerance);
+    MCP_SAVE(c, pathInterpolatedSegments);
+    MCP_SAVE(c, saveDebugVisualizationDecimation);
+
+    return c;
+}
+
+void TPS_RRTstar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
+{
+    ASSERT_(c.isMap());
+
+    MCP_LOAD_OPT(c, initialSearchRadius);
+    MCP_LOAD_OPT(c, minStepLength);
+    MCP_LOAD_OPT(c, maxStepLength);
+    MCP_LOAD_OPT(c, maxIterations);
+    MCP_LOAD_OPT(c, drawInTPS);
+    MCP_LOAD_OPT_DEG(c, headingTolerance);
+    MCP_LOAD_OPT(c, pathInterpolatedSegments);
+    MCP_LOAD_OPT(c, saveDebugVisualizationDecimation);
+}
+
+TPS_RRTstar_Parameters TPS_RRTstar_Parameters::FromYAML(
+    const mrpt::containers::yaml& c)
+{
+    TPS_RRTstar_Parameters p;
+    p.load_from_yaml(c);
+    return p;
+}
+
 // clang-format off
 /* Algorithm:
  *
@@ -606,7 +645,8 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
     ASSERT_(nPTGs >= 1);
 
     std::vector<PoseDistanceMetric<SE2_KinState>> distEvaluators;
-    for (auto& ptg : trs.ptgs) distEvaluators.emplace_back(*ptg);
+    for (auto& ptg : trs.ptgs)
+        distEvaluators.emplace_back(*ptg, params_.headingTolerance);
 
     closest_nodes_list_t closestNodes;
 
@@ -681,7 +721,8 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
     ASSERT_(nPTGs >= 1);
 
     std::vector<PoseDistanceMetric<SE2_KinState>> distEvaluators;
-    for (auto& ptg : trs.ptgs) distEvaluators.emplace_back(*ptg);
+    for (auto& ptg : trs.ptgs)
+        distEvaluators.emplace_back(*ptg, params_.headingTolerance);
 
     closest_nodes_list_t closestNodes;
 

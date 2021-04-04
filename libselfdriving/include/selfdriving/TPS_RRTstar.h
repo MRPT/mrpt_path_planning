@@ -13,6 +13,30 @@
 
 namespace selfdriving
 {
+struct TPS_RRTstar_Parameters
+{
+    TPS_RRTstar_Parameters() = default;
+    static TPS_RRTstar_Parameters FromYAML(const mrpt::containers::yaml& c);
+
+    double initialSearchRadius = 4.0;  //!< [m]
+    double minStepLength       = 0.20;  //!< Between waypoints [m]
+    double maxStepLength       = 1.00;  //!< Between waypoints [m]
+    size_t maxIterations       = 10000;
+
+    bool drawInTPS = true;  //!< Draw samples in TPS vs Euclidean
+
+    double headingTolerance = mrpt::DEG2RAD(2.0);
+
+    /** Required to smooth interpolation of rendered paths, evaluation of
+     * path cost, etc. */
+    size_t pathInterpolatedSegments = 5;
+
+    size_t saveDebugVisualizationDecimation = 0;
+
+    mrpt::containers::yaml as_yaml();
+    void                   load_from_yaml(const mrpt::containers::yaml& c);
+};
+
 class TPS_RRTstar : public mrpt::system::COutputLogger
 {
    public:
@@ -21,23 +45,7 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
 
     PlannerOutput plan(const PlannerInput& in);
 
-    struct Parameters
-    {
-        double initialSearchRadius = 4.0;  //!< [m]
-        double minStepLength       = 0.30;  //!< Between waypoints [m]
-        double maxStepLength       = 4.00;  //!< Between waypoints [m]
-        size_t maxIterations       = 10000;
-
-        bool drawInTPS = true;  //!< Draw samples in TPS vs Euclidean
-
-        /** Required to smooth interpolation of rendered paths, evaluation of
-         * path cost, etc. */
-        size_t pathInterpolatedSegments = 5;
-
-        size_t saveDebugVisualizationDecimation = 0;
-    };
-
-    Parameters params_;
+    TPS_RRTstar_Parameters params_;
 
     /** Time profiler (Default: enabled)*/
     mrpt::system::CTimeLogger profiler_{true, "TPS_RRTstar"};
