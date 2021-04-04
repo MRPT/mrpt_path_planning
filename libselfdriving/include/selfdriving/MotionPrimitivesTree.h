@@ -25,7 +25,10 @@ namespace selfdriving
 {
 /** Generic base for metrics */
 template <class node_t>
-struct PoseDistanceMetric;
+struct PoseDistanceMetric_TPS;
+
+template <class node_t>
+struct PoseDistanceMetric_Lie;
 
 /** Distances measured by PoseDistanceMetric, or "pseudodistances" of PTGs, that
  * is, distances along SE(2), including a weighted distance for rotations */
@@ -240,10 +243,10 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
 /** Pose metric for SE(2) limited to a given PTG manifold. NOTE: This 'metric'
  * is NOT symmetric for all PTGs: d(a,b)!=d(b,a) */
 template <>
-struct PoseDistanceMetric<SE2_KinState>
+struct PoseDistanceMetric_TPS<SE2_KinState>
 {
     // Note: ptg is not const since we'll need to update its dynamic state
-    PoseDistanceMetric(ptg_t& ptg, const double headingTolerance)
+    PoseDistanceMetric_TPS(ptg_t& ptg, const double headingTolerance)
         : ptg_(ptg), headingTolerance_(headingTolerance)
     {
     }
@@ -314,6 +317,37 @@ struct PoseDistanceMetric<SE2_KinState>
    private:
     ptg_t&       ptg_;
     const double headingTolerance_;
+};
+
+/** Pose metric for SE(2) on the actual Lie group, i.e. NOT limited to a given
+ * PTG manifold, and ignoring velocities. */
+template <>
+struct PoseDistanceMetric_Lie<SE2_KinState>
+{
+    // Note: ptg is not const since we'll need to update its dynamic state
+    PoseDistanceMetric_Lie(const double phiWeight = 0.1) : phiWeight_(phiWeight)
+    {
+    }
+
+    bool cannotBeNearerThan(
+        const mrpt::math::TPose2D& a, const mrpt::math::TPose2D& b,
+        const distance_t d) const
+    {
+        if (std::abs(a.x - b.x) > d) return true;
+        if (std::abs(a.y - b.y) > d) return true;
+        if (std::abs(mrpt::math::angDistance(a.phi, b.phi)) > d) return true;
+        return false;
+    }
+
+    distance_t distance(
+        const mrpt::math::TPose2D& src, const mrpt::math::TPose2D& dst) const
+    {
+        const auto relPose = dst - src;
+        return relPose.norm() + phiWeight_ * std::abs(relPose.phi);
+    }
+
+   private:
+    double phiWeight_ = 0.1;
 };
 
 /** tree data structure for planning in SE2 within TP-Space manifolds */

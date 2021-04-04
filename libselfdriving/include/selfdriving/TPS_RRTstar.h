@@ -25,7 +25,8 @@ struct TPS_RRTstar_Parameters
 
     bool drawInTPS = true;  //!< Draw samples in TPS vs Euclidean
 
-    double headingTolerance = mrpt::DEG2RAD(2.0);
+    double headingToleranceGenerate = mrpt::DEG2RAD(90.0);
+    double headingToleranceMetric   = mrpt::DEG2RAD(2.0);
 
     /** Required to smooth interpolation of rendered paths, evaluation of
      * path cost, etc. */
