@@ -243,7 +243,10 @@ template <>
 struct PoseDistanceMetric<SE2_KinState>
 {
     // Note: ptg is not const since we'll need to update its dynamic state
-    PoseDistanceMetric(ptg_t& ptg) : m_ptg(ptg) {}
+    PoseDistanceMetric(ptg_t& ptg, const double headingTolerance)
+        : ptg_(ptg), headingTolerance_(headingTolerance)
+    {
+    }
 
     bool cannotBeNearerThan(
         const SE2_KinState& a, const mrpt::math::TPose2D& b,
@@ -269,22 +272,22 @@ struct PoseDistanceMetric<SE2_KinState>
         dynState.targetRelSpeed = 1.0;  // TODO! (?)
         dynState.curVelLocal    = localSrcVel;
 
-        m_ptg.updateNavDynamicState(dynState);
+        ptg_.updateNavDynamicState(dynState);
 
         bool tp_point_is_exact =
-            m_ptg.inverseMap_WS2TP(relPose.x, relPose.y, k, normDist);
+            ptg_.inverseMap_WS2TP(relPose.x, relPose.y, k, normDist);
 
-        distance_t d = normDist * m_ptg.getRefDistance();
+        distance_t d = normDist * ptg_.getRefDistance();
 
         if (tp_point_is_exact)
         {
             uint32_t ptg_step;
-            m_ptg.getPathStepForDist(k, d, ptg_step);
-            const auto   reconsRelPose = m_ptg.getPathPose(k, ptg_step);
+            ptg_.getPathStepForDist(k, d, ptg_step);
+            const auto   reconsRelPose = ptg_.getPathPose(k, ptg_step);
             const double headingError  = std::abs(
                 mrpt::math::angDistance(reconsRelPose.phi, relPose.phi));
 
-            if (headingError > mrpt::DEG2RAD(2.0)) tp_point_is_exact = false;
+            if (headingError > headingTolerance_) tp_point_is_exact = false;
         }
 
         if (tp_point_is_exact)
@@ -297,7 +300,7 @@ struct PoseDistanceMetric<SE2_KinState>
                 // we have d=0 despite the target is actually not exactly, but
                 // very close to the origin:
                 d = relPose.norm() +
-                    std::abs(relPose.phi) * m_ptg.getRefDistance();
+                    std::abs(relPose.phi) * ptg_.getRefDistance();
             }
             return {{d, k}};
         }
@@ -309,7 +312,8 @@ struct PoseDistanceMetric<SE2_KinState>
     }
 
    private:
-    ptg_t& m_ptg;
+    ptg_t&       ptg_;
+    const double headingTolerance_;
 };
 
 /** tree data structure for planning in SE2 within TP-Space manifolds */

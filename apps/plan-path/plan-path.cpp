@@ -9,10 +9,12 @@
 #include <mrpt/core/exceptions.h>  // exception_to_str()
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/random/RandomGenerators.h>
+#include <mrpt/system/filesystem.h>
 #include <mrpt/system/os.h>  // plugins
 #include <selfdriving/TPS_RRTstar.h>
 #include <selfdriving/viz.h>
 
+#include <fstream>
 #include <iostream>
 
 static TCLAP::CmdLine cmd("plan-path");
@@ -25,6 +27,15 @@ static TCLAP::ValueArg<std::string> arg_ptgs_file(
     "p", "ptg-config", "Input .ini file with PTG definitions.", true, "",
     "ptgs.ini", cmd);
 
+static TCLAP::ValueArg<std::string> arg_planner_yaml_file(
+    "", "planner-parameters", "Input .yaml file with planner parameters", false,
+    "", "tps-rrtstar.yaml", cmd);
+
+static TCLAP::ValueArg<std::string> arg_planner_yaml_output_file(
+    "", "write-planner-parameters",
+    "If defined, it will save default planner params to a .yaml file and exit.",
+    false, "", "tps-rrtstar.yaml", cmd);
+
 static TCLAP::ValueArg<std::string> arg_config_file_section(
     "", "config-section",
     "If loading from an INI file, the name of the section to load", false,
@@ -35,10 +46,6 @@ static TCLAP::ValueArg<std::string> arg_start_pose(
 
 static TCLAP::ValueArg<std::string> arg_goal_pose(
     "g", "goal-pose", "Goal 2D pose", true, "", "\"[x y phi_deg]\"", cmd);
-
-static TCLAP::ValueArg<double> arg_min_step_len(
-    "", "min-step-length", "Minimum step length [meters]", false, 0.25, "0.25",
-    cmd);
 
 static TCLAP::ValueArg<size_t> argMaxIterations(
     "", "max-iterations", "Maximum RRT iterations", false, 1000, "1000", cmd);
@@ -51,10 +58,6 @@ static TCLAP::ValueArg<std::string> arg_plugins(
     "", "plugins",
     "Optional plug-in libraries to load, for externally-defined PTGs", false,
     "", "mylib.so", cmd);
-
-static TCLAP::ValueArg<double> argSaveDebugVisualizationDecimation(
-    "", "save-debug-visualization", "RRT* step frequency to save 3Dscene files",
-    false, 0, "100", cmd);
 
 static void do_plan_path()
 {
@@ -109,11 +112,15 @@ static void do_plan_path()
     planner.setMinLoggingLevel(mrpt::system::LVL_DEBUG);
 
     // Set planner required params:
-    planner.params_.saveDebugVisualizationDecimation =
-        argSaveDebugVisualizationDecimation.getValue();
-
-    if (arg_min_step_len.isSet())
-        planner.params_.minStepLength = arg_min_step_len.getValue();
+    if (arg_planner_yaml_file.isSet())
+    {
+        const auto sFile = arg_planner_yaml_file.getValue();
+        ASSERT_FILE_EXISTS_(sFile);
+        const auto c = mrpt::containers::yaml::FromFile(sFile);
+        planner.params_.load_from_yaml(c);
+        std::cout << "Loaded these planner params:\n";
+        planner.params_.as_yaml().printAsYAML();
+    }
 
     if (argMaxIterations.isSet())
         planner.params_.maxIterations = argMaxIterations.getValue();
@@ -142,7 +149,21 @@ int main(int argc, char** argv)
 {
     try
     {
-        if (!cmd.parse(argc, argv)) return 1;
+        bool cmdsOk = cmd.parse(argc, argv);
+
+        if (arg_planner_yaml_output_file.isSet())
+        {
+            selfdriving::TPS_RRTstar_Parameters defaults;
+            const auto                          c = defaults.as_yaml();
+            const auto    sFile = arg_planner_yaml_output_file.getValue();
+            std::ofstream fileYaml(sFile);
+            ASSERT_(fileYaml.is_open());
+            c.printAsYAML(fileYaml);
+            std::cout << "Wrote file: " << sFile << std::endl;
+            return 0;
+        }
+
+        if (!cmdsOk) return 1;
 
         if (arg_plugins.isSet())
         {
