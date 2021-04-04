@@ -26,7 +26,8 @@ mrpt::containers::yaml TPS_RRTstar_Parameters::as_yaml()
     MCP_SAVE(c, maxStepLength);
     MCP_SAVE(c, maxIterations);
     MCP_SAVE(c, drawInTPS);
-    MCP_SAVE_DEG(c, headingTolerance);
+    MCP_SAVE_DEG(c, headingToleranceGenerate);
+    MCP_SAVE_DEG(c, headingToleranceMetric);
     MCP_SAVE(c, pathInterpolatedSegments);
     MCP_SAVE(c, saveDebugVisualizationDecimation);
 
@@ -42,7 +43,8 @@ void TPS_RRTstar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_OPT(c, maxStepLength);
     MCP_LOAD_OPT(c, maxIterations);
     MCP_LOAD_OPT(c, drawInTPS);
-    MCP_LOAD_OPT_DEG(c, headingTolerance);
+    MCP_LOAD_OPT_DEG(c, headingToleranceGenerate);
+    MCP_LOAD_OPT_DEG(c, headingToleranceMetric);
     MCP_LOAD_OPT(c, pathInterpolatedSegments);
     MCP_LOAD_OPT(c, saveDebugVisualizationDecimation);
 }
@@ -222,7 +224,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 
             const double headingError =
                 std::abs(mrpt::math::angDistance(q_i.phi, qi.phi));
-            if (headingError > mrpt::DEG2RAD(2.0))
+            if (headingError > params_.headingToleranceGenerate)
             {
                 // Too large error in heading, skip:
                 continue;
@@ -609,6 +611,36 @@ mrpt::math::TPose2D TPS_RRTstar::draw_random_tps(
             continue;
         }
 
+        // Check: minimum distance to any other pose:
+        // In this case, do NOT use TPS, but the real SE(2) metric space,
+        // to avoid the lack of existing paths to hide nodes that are really
+        // close to this tentative pose sample:
+        // TODO: Use KD-tree with nanoflann!
+
+        double minFoundDistance = params_.minStepLength;
+
+        PoseDistanceMetric_Lie<SE2_KinState> distEvaluator;
+
+        for (const auto& node : p.tree_.nodes())
+        {
+            const SE2_KinState& nodeState = node.second;
+            auto&               de        = distEvaluator;
+
+            // Skip the more expensive calculation of exact distance:
+            if (de.cannotBeNearerThan(q, nodeState.pose, minFoundDistance))
+            {
+                // It's too far, skip:
+                continue;
+            }
+
+            const auto d = de.distance(q, nodeState.pose);
+            mrpt::keep_min(minFoundDistance, d);
+        }
+
+        // We must ensure a minimum clearance:
+        if (minFoundDistance < params_.minStepLength) continue;
+
+        // Approximate check for collisions:
         // TODO: More flexible check? Variable no. of points?
         mrpt::math::TPoint2D closestObs;
         float                closestDistSqr;
@@ -644,9 +676,9 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
     const auto nPTGs = trs.ptgs.size();
     ASSERT_(nPTGs >= 1);
 
-    std::vector<PoseDistanceMetric<SE2_KinState>> distEvaluators;
+    std::vector<PoseDistanceMetric_TPS<SE2_KinState>> distEvaluators;
     for (auto& ptg : trs.ptgs)
-        distEvaluators.emplace_back(*ptg, params_.headingTolerance);
+        distEvaluators.emplace_back(*ptg, params_.headingToleranceMetric);
 
     closest_nodes_list_t closestNodes;
 
@@ -700,8 +732,8 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
 }
 
 // See docs in .h
-// This is mostly similar to find_source_nodes_towards(), but with reversed
-// order between source and target states.
+// This is mostly similar to find_source_nodes_towards(), but with
+// reversed order between source and target states.
 TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
     const MotionPrimitivesTreeSE2& tree, const TNodeID queryNodeId,
     const double maxDistance, const TrajectoriesAndRobotShape& trs)
@@ -720,9 +752,9 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
     const auto nPTGs = trs.ptgs.size();
     ASSERT_(nPTGs >= 1);
 
-    std::vector<PoseDistanceMetric<SE2_KinState>> distEvaluators;
+    std::vector<PoseDistanceMetric_TPS<SE2_KinState>> distEvaluators;
     for (auto& ptg : trs.ptgs)
-        distEvaluators.emplace_back(*ptg, params_.headingTolerance);
+        distEvaluators.emplace_back(*ptg, params_.headingToleranceMetric);
 
     closest_nodes_list_t closestNodes;
 
