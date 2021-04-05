@@ -157,13 +157,13 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         // 4  |   q_i ← SAMPLE( Q_free )
         // ------------------------------------------------------------------
         // issue: What about dynamic obstacles that depend on time?
-        const mrpt::math::TPose2D qi = draw_random_free_pose(drawParams);
+        const auto [qi, qiNearbyNodes] = draw_random_free_pose(drawParams);
 
         //  5  |   {x_best, x_i} ← argmin{x ∈ Tree | cost[x, q_i ] < r ∧
         //  CollisionFree(pi(x,q_i)}( cost[x] + cost[x,x_i] )
         // ------------------------------------------------------------------
-        const closest_nodes_list_t closeNodes = find_source_nodes_towards(
-            tree, qi, searchRadius, in.ptgs, goalNodeId);
+        const path_to_nodes_list_t closeNodes = find_source_nodes_towards(
+            tree, qi, searchRadius, in.ptgs, goalNodeId, qiNearbyNodes);
 
         if (closeNodes.empty()) continue;  // No body around?
 
@@ -298,8 +298,8 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         //  9  |        cost[x] ← cost[x_i] + cost[x_i, x]
         // 10  |        parent[x] ← x_i
         // ------------------------------------------------------------------
-        const closest_nodes_list_t reachableNodes =
-            find_reachable_nodes_from(tree, newNodeId, searchRadius, in.ptgs);
+        const path_to_nodes_list_t reachableNodes = find_reachable_nodes_from(
+            tree, newNodeId, searchRadius, in.ptgs, qiNearbyNodes);
 
         // Check collisions:
         const auto& localObstaclesNewNode = cached_local_obstacles(
@@ -394,11 +394,12 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             }
         }
 
-        MRPT_LOG_DEBUG_STREAM(
-            "iter: " << rrtIter << ", " << closeNodes.size()
-                     << " candidate nodes near qi=" << qi.asString() << ", "
-                     << nValidCandidateSourceNodes << " valid, rewired "
-                     << nRewired);
+        MRPT_LOG_DEBUG_FMT(
+            "iter: %5u qi=%40s candidates/evaluated/rewired= %3u/%3u/%3u",
+            static_cast<unsigned int>(rrtIter), qi.asString().c_str(),
+            static_cast<unsigned int>(closeNodes.size()),
+            static_cast<unsigned int>(nValidCandidateSourceNodes),
+            static_cast<unsigned int>(nRewired));
 
         // Debug log files:
         if (params_.saveDebugVisualizationDecimation > 0 &&
@@ -503,7 +504,7 @@ distance_t TPS_RRTstar::tp_obstacles_single_path(
     MRPT_END
 }
 
-mrpt::math::TPose2D TPS_RRTstar::draw_random_free_pose(
+TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_free_pose(
     const TPS_RRTstar::DrawFreePoseParams& p)
 {
     auto tle =
@@ -515,7 +516,7 @@ mrpt::math::TPose2D TPS_RRTstar::draw_random_free_pose(
         return draw_random_euclidean(p);
 }
 
-mrpt::math::TPose2D TPS_RRTstar::draw_random_euclidean(
+TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_euclidean(
     const TPS_RRTstar::DrawFreePoseParams& p)
 {
     auto tle = mrpt::system::CTimeLoggerEntry(
@@ -538,6 +539,16 @@ mrpt::math::TPose2D TPS_RRTstar::draw_random_euclidean(
             rng.drawUniform(bbMin.y, bbMax.y),
             rng.drawUniform(bbMin.phi, bbMax.phi));
 
+        closest_lie_nodes_list_t closeNodes =
+            find_nearby_nodes(p.tree_, q, p.searchRadius_ * 1.2);
+
+        const double minFoundDistance = closeNodes.empty()
+                                            ? params_.minStepLength
+                                            : closeNodes.begin()->first;
+
+        // We must ensure a minimum clearance:
+        if (minFoundDistance < params_.minStepLength) continue;
+
         // TODO: More flexible check? Variable no. of points?
         mrpt::math::TPoint2D closestObs;
         float                closestDistSqr;
@@ -548,12 +559,12 @@ mrpt::math::TPose2D TPS_RRTstar::draw_random_euclidean(
         const bool isCollision =
             selfdriving::obstaclePointCollides(closestObsWrtRobot, p.pi_.ptgs);
 
-        if (!isCollision) return q;
+        if (!isCollision) return {q, closeNodes};
     }
     THROW_EXCEPTION("Could not draw collision-free random pose!");
 }
 
-mrpt::math::TPose2D TPS_RRTstar::draw_random_tps(
+TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_tps(
     const TPS_RRTstar::DrawFreePoseParams& p)
 {
     auto tle =
@@ -615,30 +626,17 @@ mrpt::math::TPose2D TPS_RRTstar::draw_random_tps(
         // In this case, do NOT use TPS, but the real SE(2) metric space,
         // to avoid the lack of existing paths to hide nodes that are really
         // close to this tentative pose sample:
-        // TODO: Use KD-tree with nanoflann!
 
-        double minFoundDistance = params_.minStepLength;
-
-        PoseDistanceMetric_Lie<SE2_KinState> distEvaluator;
-
-        for (const auto& node : p.tree_.nodes())
-        {
-            const SE2_KinState& nodeState = node.second;
-            auto&               de        = distEvaluator;
-
-            // Skip the more expensive calculation of exact distance:
-            if (de.cannotBeNearerThan(q, nodeState.pose, minFoundDistance))
-            {
-                // It's too far, skip:
-                continue;
-            }
-
-            const auto d = de.distance(q, nodeState.pose);
-            mrpt::keep_min(minFoundDistance, d);
-        }
+        const distance_t minFoundDistance = find_closest_node(p.tree_, q);
 
         // We must ensure a minimum clearance:
-        if (minFoundDistance < params_.minStepLength) continue;
+        if (minFoundDistance < params_.minStepLength)
+        {
+            MRPT_TODO("Return the ID of the existing node and rethink it.");
+            MRPT_LOG_DEBUG_FMT(
+                "Draw TPS pose: min. distance: %f", minFoundDistance);
+            continue;
+        }
 
         // Approximate check for collisions:
         // TODO: More flexible check? Variable no. of points?
@@ -654,17 +652,21 @@ mrpt::math::TPose2D TPS_RRTstar::draw_random_tps(
         if (!isCollision)
         {
             // Ok, good sample has been drawn:
-            return q;
+            closest_lie_nodes_list_t closeNodes =
+                find_nearby_nodes(p.tree_, q, p.searchRadius_ * 1.2);
+
+            return {q, closeNodes};
         }
     }
     THROW_EXCEPTION("Could not draw collision-free random pose!");
 }
 
 // See docs in .h
-TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
+TPS_RRTstar::path_to_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
     const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
     const double maxDistance, const TrajectoriesAndRobotShape& trs,
-    const TNodeID goalNodeToIgnore)
+    const TNodeID                   goalNodeToIgnore,
+    const closest_lie_nodes_list_t& hintCloseNodes)
 {
     auto tle =
         mrpt::system::CTimeLoggerEntry(profiler_, "find_source_nodes_towards");
@@ -680,15 +682,15 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
     for (auto& ptg : trs.ptgs)
         distEvaluators.emplace_back(*ptg, params_.headingToleranceMetric);
 
-    closest_nodes_list_t closestNodes;
+    path_to_nodes_list_t closestNodes;
 
-    // TODO: Use KD-tree with nanoflann!
-
-    for (const auto& node : nodes)
+    for (const auto& distNodeId : hintCloseNodes)
     {
-        if (node.first == goalNodeToIgnore) continue;  // ignore
+        const auto nodeId = distNodeId.second.get().nodeID_;
 
-        const SE2_KinState& nodeState = node.second;
+        if (nodeId == goalNodeToIgnore) continue;  // ignore
+
+        const SE2_KinState& nodeState = tree.nodes().at(nodeId);
 
         for (ptg_index_t ptgIdx = 0; ptgIdx < distEvaluators.size(); ptgIdx++)
         {
@@ -724,8 +726,8 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
             }
             // Ok, accept it:
             closestNodes.emplace(
-                distance, closest_nodes_list_t::mapped_type(
-                              node.first, ptgIdx, trajIndex, distance));
+                distance, path_to_nodes_list_t::mapped_type(
+                              nodeId, ptgIdx, trajIndex, distance));
         }
     }
     return closestNodes;
@@ -734,9 +736,10 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
 // See docs in .h
 // This is mostly similar to find_source_nodes_towards(), but with
 // reversed order between source and target states.
-TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
+TPS_RRTstar::path_to_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
     const MotionPrimitivesTreeSE2& tree, const TNodeID queryNodeId,
-    const double maxDistance, const TrajectoriesAndRobotShape& trs)
+    const double maxDistance, const TrajectoriesAndRobotShape& trs,
+    const closest_lie_nodes_list_t& hintCloseNodes)
 {
     auto tle =
         mrpt::system::CTimeLoggerEntry(profiler_, "find_reachable_nodes_from");
@@ -756,16 +759,17 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
     for (auto& ptg : trs.ptgs)
         distEvaluators.emplace_back(*ptg, params_.headingToleranceMetric);
 
-    closest_nodes_list_t closestNodes;
+    path_to_nodes_list_t closestNodes;
 
-    // TODO: Use KD-tree with nanoflann!
-
-    for (const auto& node : nodes)
+    for (const auto& distNodeId : hintCloseNodes)
     {
-        const SE2_KinState& nodeState = node.second;
+        const auto& node   = distNodeId.second.get();
+        const auto  nodeId = node.nodeID_;
+
+        const SE2_KinState& nodeState = node;
 
         // Don't rewire to myself ;-)
-        if (node.first == queryNodeId) continue;
+        if (nodeId == queryNodeId) continue;
 
         for (ptg_index_t ptgIdx = 0; ptgIdx < distEvaluators.size(); ptgIdx++)
         {
@@ -796,8 +800,8 @@ TPS_RRTstar::closest_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
             }
             // Ok, accept it:
             closestNodes.emplace(
-                distance, closest_nodes_list_t::mapped_type(
-                              node.first, ptgIdx, trajIndex, distance));
+                distance, path_to_nodes_list_t::mapped_type(
+                              nodeId, ptgIdx, trajIndex, distance));
         }
     }
     return closestNodes;
@@ -833,4 +837,50 @@ mrpt::maps::CPointsMap::Ptr TPS_RRTstar::cached_local_obstacles(
 cost_t TPS_RRTstar::cost_path_segment(const MoveEdgeSE2_TPS& edge) const
 {
     return edge.ptgDist;
+}
+
+TPS_RRTstar::closest_lie_nodes_list_t TPS_RRTstar::find_nearby_nodes(
+    const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
+    const double maxDistance)
+{
+    auto tle = mrpt::system::CTimeLoggerEntry(profiler_, "find_nearby_nodes");
+
+    closest_lie_nodes_list_t             out;
+    PoseDistanceMetric_Lie<SE2_KinState> de;
+
+    // TODO: Use KD-tree with nanoflann!
+    for (const auto& node : tree.nodes())
+    {
+        const SE2_KinState& nodeState = node.second;
+
+        // Skip the more expensive calculation of exact distance:
+        if (de.cannotBeNearerThan(query, nodeState.pose, maxDistance))
+            continue;  // It's too far, skip:
+
+        if (auto d = de.distance(query, nodeState.pose); d < maxDistance)
+            out.emplace(d, std::ref(node.second));
+    }
+    return out;
+}
+
+distance_t TPS_RRTstar::find_closest_node(
+    const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query) const
+{
+    ASSERT_(!tree.nodes().empty());
+
+    distance_t minDist = std::numeric_limits<distance_t>::max();
+    PoseDistanceMetric_Lie<SE2_KinState> de;
+
+    for (const auto& node : tree.nodes())
+    {
+        const SE2_KinState& nodeState = node.second;
+
+        // Skip the more expensive calculation of exact distance:
+        if (de.cannotBeNearerThan(query, nodeState.pose, minDist))
+            continue;  // It's too far, skip:
+
+        const auto d = de.distance(query, nodeState.pose);
+        mrpt::keep_min(minDist, d);
+    }
+    return minDist;
 }

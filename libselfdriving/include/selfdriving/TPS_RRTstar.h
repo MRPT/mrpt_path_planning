@@ -70,12 +70,18 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
         const TNodeID                  goalNodeId_;
     };
 
-    mrpt::math::TPose2D draw_random_free_pose(const DrawFreePoseParams& p);
+    using closest_lie_nodes_list_t = std::map<
+        distance_t,
+        std::reference_wrapper<const MotionPrimitivesTreeSE2::node_t>>;
 
-    mrpt::math::TPose2D draw_random_tps(const DrawFreePoseParams& p);
-    mrpt::math::TPose2D draw_random_euclidean(const DrawFreePoseParams& p);
+    using draw_pose_return_t =
+        std::tuple<mrpt::math::TPose2D, closest_lie_nodes_list_t>;
 
-    using closest_nodes_list_t = std::map<
+    draw_pose_return_t draw_random_free_pose(const DrawFreePoseParams& p);
+    draw_pose_return_t draw_random_tps(const DrawFreePoseParams& p);
+    draw_pose_return_t draw_random_euclidean(const DrawFreePoseParams& p);
+
+    using path_to_nodes_list_t = std::map<
         distance_t,
         std::tuple<TNodeID, ptg_index_t, trajectory_index_t, distance_t>>;
 
@@ -84,14 +90,30 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
      * such motions. Note that, at this point, `query` does not have a velocity
      * state: it will be determined by the best motion primitive.
      *
-     * This method is used in the EXTEND stage of RRT*.
+     * This method is used in the EXTEND stage of RRT*, and uses the TP-Space
+     * motion primitives (PTGs).
      *
-     * \sa find_reachable_nodes_from()
+     * \sa find_reachable_nodes_from(), find_nearby_nodes()
      */
-    closest_nodes_list_t find_source_nodes_towards(
+    path_to_nodes_list_t find_source_nodes_towards(
         const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
         const double maxDistance, const TrajectoriesAndRobotShape& trs,
-        const TNodeID goalNodeToIgnore);
+        const TNodeID                   goalNodeToIgnore,
+        const closest_lie_nodes_list_t& hintCloseNodes);
+
+    /** Find all existing nodes "x" in the tree within a given ball, given by
+     * the metric on the Lie group, i.e. *not* following any particular PTG
+     * trajectory.
+     *
+     * \sa find_reachable_nodes_from(), find_source_nodes_towards()
+     */
+    closest_lie_nodes_list_t find_nearby_nodes(
+        const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
+        const double maxDistance);
+
+    distance_t find_closest_node(
+        const MotionPrimitivesTreeSE2& tree,
+        const mrpt::math::TPose2D&     query) const;
 
     /** Find all existing nodes "x" in the tree that are **reachable from**
      * `query` (i.e. `query` ==> `other nodes`), and the motion primitives for
@@ -101,9 +123,10 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
      *
      * \sa find_source_nodes_towards()
      */
-    closest_nodes_list_t find_reachable_nodes_from(
+    path_to_nodes_list_t find_reachable_nodes_from(
         const MotionPrimitivesTreeSE2& tree, const TNodeID queryNodeId,
-        const double maxDistance, const TrajectoriesAndRobotShape& trs);
+        const double maxDistance, const TrajectoriesAndRobotShape& trs,
+        const closest_lie_nodes_list_t& hintCloseNodes);
 
     /** Returns local obstacles as seen from a given pose, clipped to a maximum
      * distance. */
