@@ -125,10 +125,44 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
             node_t(newChildId, parentId, newChildNodeData, newCost);
     }
 
+    void update_node_and_edge(
+        const mrpt::graphs::TNodeID parentId,
+        const mrpt::graphs::TNodeID childId, const EDGE_TYPE& newEdgeData)
+    {
+        // edge:
+        auto&      parentEdges      = base_t::edges_to_children[parentId];
+        const bool dirChildToParent = false;
+        bool       updateDone       = false;
+        for (auto& edge : parentEdges)
+        {
+            if (edge.id == childId)
+            {
+                edge.data  = newEdgeData;
+                updateDone = true;
+                break;
+            }
+        }
+        if (!updateDone)
+        {
+            THROW_EXCEPTION_FMT(
+                "[update_node_and_edge] Error: Could not find edge from "
+                "parent #%s -> node #%s",
+                std::to_string(parentId).c_str(),
+                std::to_string(childId).c_str());
+        }
+
+        const cost_t newCost = nodes_.at(parentId).cost_ + newEdgeData.cost;
+
+        // node:
+        auto& node     = nodes_.at(childId);
+        node.parentID_ = parentId;
+        node.cost_     = newCost;
+    }
+
     void rewire_node_parent(
         const mrpt::graphs::TNodeID nodeId, const EDGE_TYPE& newEdgeFromParent)
     {
-        auto& node = nodes_[nodeId];
+        auto& node = nodes_.at(nodeId);
 
         // Remove old edge:
         const auto oldParentId    = *node.parentID_;
@@ -163,6 +197,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
             nodes_.at(parentId).cost_ + newEdgeFromParent.cost;
 
         // update existing node info:
+        ASSERT_LE_(newCost, node.cost_);
 
         node.parentID_ = parentId;
         node.cost_     = newCost;

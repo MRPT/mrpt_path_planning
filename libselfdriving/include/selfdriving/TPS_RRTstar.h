@@ -27,6 +27,7 @@ struct TPS_RRTstar_Parameters
 
     double headingToleranceGenerate = mrpt::DEG2RAD(90.0);
     double headingToleranceMetric   = mrpt::DEG2RAD(2.0);
+    double metricDistanceEpsilon    = 0.01;
 
     /** Required to smooth interpolation of rendered paths, evaluation of
      * path cost, etc. */
@@ -74,8 +75,10 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
         distance_t,
         std::reference_wrapper<const MotionPrimitivesTreeSE2::node_t>>;
 
-    using draw_pose_return_t =
-        std::tuple<mrpt::math::TPose2D, closest_lie_nodes_list_t>;
+    using already_existing_node_t = std::optional<TNodeID>;
+
+    using draw_pose_return_t = std::tuple<
+        mrpt::math::TPose2D, already_existing_node_t, closest_lie_nodes_list_t>;
 
     draw_pose_return_t draw_random_free_pose(const DrawFreePoseParams& p);
     draw_pose_return_t draw_random_tps(const DrawFreePoseParams& p);
@@ -111,7 +114,7 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
         const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
         const double maxDistance);
 
-    distance_t find_closest_node(
+    std::tuple<distance_t, TNodeID> find_closest_node(
         const MotionPrimitivesTreeSE2& tree,
         const mrpt::math::TPose2D&     query) const;
 
