@@ -157,6 +157,8 @@ auto selfdriving::render_tree(
     // make list of nodes in the way of the best path:
     std::set<const MotionPrimitivesTreeSE2::edge_t*> edges_best_path,
         edges_best_path_decim;
+    std::set<mrpt::graphs::TNodeID> bestPathNodeIDs;
+
     if (!best_path.empty())
     {
         const auto it_end = best_path.end();
@@ -167,6 +169,8 @@ auto selfdriving::render_tree(
         const size_t pathSteps = best_path.size();
         for (auto it = best_path.begin(); it != it_end; ++it, ++pathIdx)
         {
+            bestPathNodeIDs.insert(it->nodeID_);
+
             if (it->nodeID_ == tree.root)
                 continue;  // no edge-to-parent for the root!
 
@@ -211,7 +215,8 @@ auto selfdriving::render_tree(
         const bool isBestPathAndDrawShape =
             etp && edges_best_path_decim.count(etp) != 0;
 
-        const bool drawTwistState = isBestPathAndDrawShape && ro.draw_twist;
+        const bool drawTwistState =
+            bestPathNodeIDs.count(node.nodeID_) && ro.draw_twist;
 
         // Draw children nodes:
         {

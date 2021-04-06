@@ -27,6 +27,7 @@ mrpt::containers::yaml TPS_RRTstar_Parameters::as_yaml()
     MCP_SAVE(c, maxIterations);
     MCP_SAVE(c, metricDistanceEpsilon);
     MCP_SAVE(c, drawInTPS);
+    MCP_SAVE(c, drawBiasTowardsGoal);
     MCP_SAVE_DEG(c, headingToleranceGenerate);
     MCP_SAVE_DEG(c, headingToleranceMetric);
     MCP_SAVE(c, pathInterpolatedSegments);
@@ -45,6 +46,7 @@ void TPS_RRTstar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_OPT(c, maxIterations);
     MCP_LOAD_OPT(c, metricDistanceEpsilon);
     MCP_LOAD_OPT(c, drawInTPS);
+    MCP_LOAD_OPT(c, drawBiasTowardsGoal);
     MCP_LOAD_OPT_DEG(c, headingToleranceGenerate);
     MCP_LOAD_OPT_DEG(c, headingToleranceMetric);
     MCP_LOAD_OPT(c, pathInterpolatedSegments);
@@ -614,18 +616,42 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_tps(
         const auto  ptgIdx = rng.drawUniform32bit() % p.pi_.ptgs.ptgs.size();
         const auto& ptg    = p.pi_.ptgs.ptgs.at(ptgIdx);
 
-        const auto trajIdx =
-            rng.drawUniform32bit() % ptg->getAlphaValuesCount();
-        const auto trajDist = rng.drawUniform(
-            params_.minStepLength,
-            std::min(params_.maxStepLength, p.searchRadius_));
-
         // Let the PTG know about the current local velocity:
         ptg_t::TNavDynamicState ds;
         (ds.curVelLocal = node.vel).rotate(-node.pose.phi);
         ds.relTarget      = {1.0, 0, 0};
         ds.targetRelSpeed = 1.0;
         ptg->updateNavDynamicState(ds);
+
+        // Select trajectory:
+        constexpr auto invalidTrajIdx =
+            std::numeric_limits<trajectory_index_t>::max();
+
+        trajectory_index_t trajIdx = invalidTrajIdx;
+
+        if (rng.drawUniform(0.0, 1.0) < params_.drawBiasTowardsGoal)
+        {
+            // Bias towards goal:
+            const auto relGoalPose = p.pi_.stateGoal.pose - node.pose;
+            int        relTrg_k;
+            double     relTrg_d;
+            if (ptg->inverseMap_WS2TP(
+                    relGoalPose.x, relGoalPose.y, relTrg_k, relTrg_d))
+            {
+                // valid:
+                trajIdx = relTrg_k;
+            }
+        }
+
+        if (trajIdx == invalidTrajIdx)
+        {
+            // Draw random direction:
+            trajIdx = rng.drawUniform32bit() % ptg->getAlphaValuesCount();
+        }
+
+        const auto trajDist = rng.drawUniform(
+            params_.minStepLength,
+            std::min(params_.maxStepLength, p.searchRadius_));
 
         // Predict the path segment:
         uint32_t ptg_step;
@@ -653,9 +679,6 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_tps(
 
         closest_lie_nodes_list_t closeNodes =
             find_nearby_nodes(p.tree_, q, p.searchRadius_);
-
-        //        const auto [minFoundDistance, closestNodeId]
-        //        =find_closest_node(p.tree_, q);
 
         // Match with existing node?
         if (!closeNodes.empty() &&
