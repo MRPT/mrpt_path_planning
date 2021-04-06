@@ -69,6 +69,10 @@ static TCLAP::ValueArg<std::string> arg_plugins(
     "Optional plug-in libraries to load, for externally-defined PTGs", false,
     "", "mylib.so", cmd);
 
+static TCLAP::SwitchArg arg_costMap(
+    "", "costmap", "Enable the default costmap from obstacle point clouds",
+    cmd);
+
 static void do_plan_path()
 {
     // Load obstacles:
@@ -124,16 +128,17 @@ static void do_plan_path()
     // Enable time profiler:
     planner.profiler_.enable(true);
 
-    // cost map:
-    selfdriving::CostMapParameters costmapParams;
-    costmapParams.maxCost                    = 10;
-    costmapParams.preferredClearanceDistance = 2.00;
+    MRPT_TODO("convert into class factory to avoid dangling refs!");
+    auto costmap =
+        selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(*obsPts);
 
-    auto costmap = selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-        *obsPts, costmapParams);
+    if (arg_costMap.isSet())
+    {
+        // cost map:
 
-    planner.costEvaluators_.push_back(
-        [&](const auto& e) { return costmap(e); });
+        planner.costEvaluators_.push_back(
+            [&](const auto& e) { return costmap(e); });
+    }
 
     // verbosity level:
     planner.setMinLoggingLevel(mrpt::system::LVL_DEBUG);
@@ -168,6 +173,7 @@ static void do_plan_path()
     selfdriving::VisualizationOptions vizOpts;
 
     vizOpts.renderOptions.highlight_path_to_node_id = plan.goalNodeId;
+    // vizOpts.renderOptions.showEdgeWeights           = true;
 
     selfdriving::viz_nav_plan(plan, vizOpts);
 }

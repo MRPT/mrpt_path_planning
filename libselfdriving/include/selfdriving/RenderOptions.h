@@ -6,10 +6,10 @@
 
 #pragma once
 
+#include <mrpt/graphs/TNodeID.h>
 #include <mrpt/img/TColor.h>
 #include <mrpt/maps/CPointsMap.h>
 #include <mrpt/math/TPoint3D.h>
-#include <mrpt/graphs/TNodeID.h>
 
 #include <optional>
 #include <string>
@@ -75,6 +75,8 @@ struct RenderOptions
     double linVelScale       = 0.25;
     double angVelScale       = 0.25;
     double twistArrowsRadius = 0.01;
+
+    bool showEdgeWeights = false;
 
     std::string          log_msg;
     mrpt::math::TPoint3D log_msg_position;

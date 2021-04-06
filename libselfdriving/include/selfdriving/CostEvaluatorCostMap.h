@@ -14,9 +14,9 @@ namespace selfdriving
 {
 struct CostMapParameters
 {
-    double resolution = 0.05;  //!< [m]
+    double resolution = 0.04;  //!< [m]
 
-    double preferredClearanceDistance = 1.0;  //!< [m]
+    double preferredClearanceDistance = 0.4;  //!< [m]
     double maxCost                    = 5.0;
 };
 
