@@ -25,6 +25,7 @@ mrpt::containers::yaml TPS_RRTstar_Parameters::as_yaml()
     MCP_SAVE(c, minStepLength);
     MCP_SAVE(c, maxStepLength);
     MCP_SAVE(c, maxIterations);
+    MCP_SAVE(c, metricDistanceEpsilon);
     MCP_SAVE(c, drawInTPS);
     MCP_SAVE_DEG(c, headingToleranceGenerate);
     MCP_SAVE_DEG(c, headingToleranceMetric);
@@ -42,6 +43,7 @@ void TPS_RRTstar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_OPT(c, minStepLength);
     MCP_LOAD_OPT(c, maxStepLength);
     MCP_LOAD_OPT(c, maxIterations);
+    MCP_LOAD_OPT(c, metricDistanceEpsilon);
     MCP_LOAD_OPT(c, drawInTPS);
     MCP_LOAD_OPT_DEG(c, headingToleranceGenerate);
     MCP_LOAD_OPT_DEG(c, headingToleranceMetric);
@@ -156,8 +158,9 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 
         // 4  |   q_i ← SAMPLE( Q_free )
         // ------------------------------------------------------------------
-        // issue: What about dynamic obstacles that depend on time?
-        const auto [qi, qiNearbyNodes] = draw_random_free_pose(drawParams);
+        // (TODO: What about dynamic obstacles that depend on time?)
+        const auto [qi, qiExistingID, qiNearbyNodes] =
+            draw_random_free_pose(drawParams);
 
         //  5  |   {x_best, x_i} ← argmin{x ∈ Tree | cost[x, q_i ] < r ∧
         //  CollisionFree(pi(x,q_i)}( cost[x] + cost[x,x_i] )
@@ -182,12 +185,10 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             if (nodeId == goalNodeId) continue;
 
             // Only nodes sufficiently apart from each other:
-            const distance_t dist = tupl.first;
-            if (dist < params_.minStepLength)
-            {
-                // do not even continue testing, draw a new q_i:
-                break;
-            }
+            // const distance_t dist = tupl.first;
+
+            // do not even continue testing, draw a new q_i:
+            // if (dist < params_.minStepLength)break;
 
             const auto& localObstacles = cached_local_obstacles(
                 tree, nodeId, *obstaclePoints, MAX_XY_DIST);
@@ -286,10 +287,28 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         // 11  |   X_T ← X_T U { x_i }
         // 12  |   E_T ← E_T U { ( x_best, x_i ) }
         // ------------------------------------------------------------------
-        const auto  newNodeId    = tree.next_free_node_ID();
-        const auto& newNodeState = bestEdge->stateTo;
-        tree.insert_node_and_edge(
-            bestEdge->parentId, newNodeId, newNodeState, *bestEdge);
+        size_t nRewired = 0;
+
+        const SE2_KinState& newNodeState = bestEdge->stateTo;
+        TNodeID             newNodeId;
+        if (!qiExistingID.has_value())
+        {
+            newNodeId = tree.next_free_node_ID();
+            tree.insert_node_and_edge(
+                bestEdge->parentId, newNodeId, newNodeState, *bestEdge);
+        }
+        else
+        {
+            newNodeId = qiExistingID.value();
+
+            if (const cost_t newCost =
+                    tree.nodes().at(bestEdge->parentId).cost_ + bestEdge->cost;
+                newCost < tree.nodes().at(newNodeId).cost_)
+            {
+                tree.rewire_node_parent(newNodeId, *bestEdge);
+                ++nRewired;
+            }
+        }
 
         // Rewire graph:
         //  8  |   for all {x ∈ Tree ∪ {x_goal } |
@@ -304,8 +323,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         // Check collisions:
         const auto& localObstaclesNewNode = cached_local_obstacles(
             tree, newNodeId, *obstaclePoints, MAX_XY_DIST);
-        const auto& newNode  = tree.nodes().at(newNodeId);
-        size_t      nRewired = 0;
+        const auto& newNode = tree.nodes().at(newNodeId);
 
         for (const auto& tupl : reachableNodes)
         {
@@ -543,11 +561,17 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_euclidean(
             find_nearby_nodes(p.tree_, q, p.searchRadius_ * 1.2);
 
         const double minFoundDistance = closeNodes.empty()
-                                            ? params_.minStepLength
+                                            ? params_.metricDistanceEpsilon
                                             : closeNodes.begin()->first;
 
-        // We must ensure a minimum clearance:
-        if (minFoundDistance < params_.minStepLength) continue;
+        // Do we have a match with an existing node ID?
+        if (minFoundDistance < params_.metricDistanceEpsilon)
+        {
+            // Return a match with an existing node ID:
+            const auto existingId = closeNodes.begin()->second.get().nodeID_;
+            closeNodes.erase(closeNodes.begin());
+            return {q, existingId, closeNodes};
+        }
 
         // TODO: More flexible check? Variable no. of points?
         mrpt::math::TPoint2D closestObs;
@@ -559,7 +583,7 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_euclidean(
         const bool isCollision =
             selfdriving::obstaclePointCollides(closestObsWrtRobot, p.pi_.ptgs);
 
-        if (!isCollision) return {q, closeNodes};
+        if (!isCollision) return {q, std::nullopt, closeNodes};
     }
     THROW_EXCEPTION("Could not draw collision-free random pose!");
 }
@@ -627,15 +651,21 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_tps(
         // to avoid the lack of existing paths to hide nodes that are really
         // close to this tentative pose sample:
 
-        const distance_t minFoundDistance = find_closest_node(p.tree_, q);
+        closest_lie_nodes_list_t closeNodes =
+            find_nearby_nodes(p.tree_, q, p.searchRadius_);
 
-        // We must ensure a minimum clearance:
-        if (minFoundDistance < params_.minStepLength)
+        //        const auto [minFoundDistance, closestNodeId]
+        //        =find_closest_node(p.tree_, q);
+
+        // Match with existing node?
+        if (!closeNodes.empty() &&
+            closeNodes.begin()->first < params_.metricDistanceEpsilon)
         {
-            MRPT_TODO("Return the ID of the existing node and rethink it.");
-            MRPT_LOG_DEBUG_FMT(
-                "Draw TPS pose: min. distance: %f", minFoundDistance);
-            continue;
+            // Return the ID of the existing node so we can reconsider it:
+            const auto closestNodeId = closeNodes.begin()->second.get().nodeID_;
+            closeNodes.erase(closeNodes.begin());
+
+            return {q, closestNodeId, closeNodes};
         }
 
         // Approximate check for collisions:
@@ -655,7 +685,7 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_tps(
             closest_lie_nodes_list_t closeNodes =
                 find_nearby_nodes(p.tree_, q, p.searchRadius_ * 1.2);
 
-            return {q, closeNodes};
+            return {q, std::nullopt, closeNodes};
         }
     }
     THROW_EXCEPTION("Could not draw collision-free random pose!");
@@ -689,6 +719,9 @@ TPS_RRTstar::path_to_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
         const auto nodeId = distNodeId.second.get().nodeID_;
 
         if (nodeId == goalNodeToIgnore) continue;  // ignore
+
+        // Don't take into account too short segments:
+        // if (distNodeId.first < params_.minStepLength) continue;
 
         const SE2_KinState& nodeState = tree.nodes().at(nodeId);
 
@@ -770,6 +803,9 @@ TPS_RRTstar::path_to_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
 
         // Don't rewire to myself ;-)
         if (nodeId == queryNodeId) continue;
+
+        // Don't take into account too short segments:
+        if (distNodeId.first < params_.minStepLength) continue;
 
         for (ptg_index_t ptgIdx = 0; ptgIdx < distEvaluators.size(); ptgIdx++)
         {
@@ -863,12 +899,13 @@ TPS_RRTstar::closest_lie_nodes_list_t TPS_RRTstar::find_nearby_nodes(
     return out;
 }
 
-distance_t TPS_RRTstar::find_closest_node(
+std::tuple<distance_t, TNodeID> TPS_RRTstar::find_closest_node(
     const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query) const
 {
     ASSERT_(!tree.nodes().empty());
 
     distance_t minDist = std::numeric_limits<distance_t>::max();
+    TNodeID    closestNodeId;
     PoseDistanceMetric_Lie<SE2_KinState> de;
 
     for (const auto& node : tree.nodes())
@@ -880,7 +917,11 @@ distance_t TPS_RRTstar::find_closest_node(
             continue;  // It's too far, skip:
 
         const auto d = de.distance(query, nodeState.pose);
-        mrpt::keep_min(minDist, d);
+        if (d < minDist)
+        {
+            closestNodeId = node.first;
+            minDist       = d;
+        }
     }
-    return minDist;
+    return {minDist, closestNodeId};
 }
