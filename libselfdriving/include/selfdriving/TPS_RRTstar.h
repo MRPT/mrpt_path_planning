@@ -23,7 +23,8 @@ struct TPS_RRTstar_Parameters
     double maxStepLength       = 1.00;  //!< Between waypoints [m]
     size_t maxIterations       = 10000;
 
-    bool drawInTPS = true;  //!< Draw samples in TPS vs Euclidean
+    bool   drawInTPS           = true;  //!< Draw samples in TPS vs Euclidean
+    double drawBiasTowardsGoal = 0.1;
 
     double headingToleranceGenerate = mrpt::DEG2RAD(90.0);
     double headingToleranceMetric   = mrpt::DEG2RAD(2.0);

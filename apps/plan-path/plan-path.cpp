@@ -44,8 +44,17 @@ static TCLAP::ValueArg<std::string> arg_config_file_section(
 static TCLAP::ValueArg<std::string> arg_start_pose(
     "s", "start-pose", "Start 2D pose", true, "", "\"[x y phi_deg]\"", cmd);
 
+static TCLAP::ValueArg<std::string> arg_start_vel(
+    "", "start-vel", "Start 2D velocity", false, "[0 0 0]",
+    "\"[vx vy omega_deg]\"", cmd);
+
 static TCLAP::ValueArg<std::string> arg_goal_pose(
-    "g", "goal-pose", "Goal 2D pose", true, "", "\"[x y phi_deg]\"", cmd);
+    "g", "goal-pose", "Goal 2D pose", true, "[0 0 0]", "\"[x y phi_deg]\"",
+    cmd);
+
+static TCLAP::ValueArg<std::string> arg_goal_vel(
+    "", "goal-vel", "Goal 2D velocity", false, "", "\"[vx vy omega_deg]\"",
+    cmd);
 
 static TCLAP::ValueArg<size_t> argMaxIterations(
     "", "max-iterations", "Maximum RRT iterations", false, 1000, "1000", cmd);
@@ -74,7 +83,13 @@ static void do_plan_path()
     selfdriving::PlannerInput pi;
 
     pi.stateStart.pose.fromString(arg_start_pose.getValue());
+    if (arg_start_vel.isSet())
+        pi.stateStart.vel.fromString(arg_start_vel.getValue());
+
     pi.stateGoal.pose.fromString(arg_goal_pose.getValue());
+    if (arg_goal_vel.isSet())
+        pi.stateGoal.vel.fromString(arg_goal_vel.getValue());
+
     pi.obstacles = obs;
 
     auto bbox = obs->obstacles()->boundingBox();
