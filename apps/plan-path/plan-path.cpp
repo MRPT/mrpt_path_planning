@@ -11,6 +11,7 @@
 #include <mrpt/random/RandomGenerators.h>
 #include <mrpt/system/filesystem.h>
 #include <mrpt/system/os.h>  // plugins
+#include <selfdriving/CostEvaluatorCostMap.h>
 #include <selfdriving/TPS_RRTstar.h>
 #include <selfdriving/viz.h>
 
@@ -122,6 +123,17 @@ static void do_plan_path()
 
     // Enable time profiler:
     planner.profiler_.enable(true);
+
+    // cost map:
+    selfdriving::CostMapParameters costmapParams;
+    costmapParams.maxCost                    = 10;
+    costmapParams.preferredClearanceDistance = 0.90;
+
+    auto costmap = selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
+        *obsPts, costmapParams);
+
+    planner.costEvaluators_.push_back(
+        [&](const auto& e) { return costmap(e); });
 
     // verbosity level:
     planner.setMinLoggingLevel(mrpt::system::LVL_DEBUG);

@@ -895,7 +895,13 @@ mrpt::maps::CPointsMap::Ptr TPS_RRTstar::cached_local_obstacles(
 
 cost_t TPS_RRTstar::cost_path_segment(const MoveEdgeSE2_TPS& edge) const
 {
-    return edge.ptgDist;
+    // Base cost: distance
+    cost_t c = edge.ptgDist;
+
+    // Additional optional cost evaluators:
+    for (const auto& ce : costEvaluators_) c += ce(edge);
+
+    return c;
 }
 
 TPS_RRTstar::closest_lie_nodes_list_t TPS_RRTstar::find_nearby_nodes(

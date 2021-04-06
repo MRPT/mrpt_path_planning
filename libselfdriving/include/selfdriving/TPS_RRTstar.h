@@ -8,6 +8,7 @@
 
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
+#include <selfdriving/CostEvaluator.h>
 #include <selfdriving/PlannerInput.h>
 #include <selfdriving/PlannerOutput.h>
 
@@ -48,7 +49,8 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
 
     PlannerOutput plan(const PlannerInput& in);
 
-    TPS_RRTstar_Parameters params_;
+    TPS_RRTstar_Parameters     params_;
+    std::vector<CostEvaluator> costEvaluators_;
 
     /** Time profiler (Default: enabled)*/
     mrpt::system::CTimeLogger profiler_{true, "TPS_RRTstar"};
