@@ -127,7 +127,7 @@ static void do_plan_path()
     // cost map:
     selfdriving::CostMapParameters costmapParams;
     costmapParams.maxCost                    = 10;
-    costmapParams.preferredClearanceDistance = 0.90;
+    costmapParams.preferredClearanceDistance = 2.00;
 
     auto costmap = selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
         *obsPts, costmapParams);
