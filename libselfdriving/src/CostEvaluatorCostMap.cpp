@@ -16,9 +16,15 @@ CostEvaluatorCostMap CostEvaluatorCostMap::FromStaticPointObstacles(
     CostEvaluatorCostMap cm;
     ASSERT_(!obsPts.empty());
 
+    const float D = p.preferredClearanceDistance;
+
     // Find out required area and fill in with zeros:
-    const auto bbox        = obsPts.boundingBox();
-    double     defaultCost = .0;
+    auto bbox = obsPts.boundingBox();
+
+    bbox.min -= {D, D, 0.f};
+    bbox.max += {D, D, 0.f};
+
+    double defaultCost = .0;
     cm.costmap_.setSize(
         bbox.min.x, bbox.max.x, bbox.min.y, bbox.max.y, p.resolution,
         &defaultCost);
@@ -33,11 +39,11 @@ CostEvaluatorCostMap CostEvaluatorCostMap::FromStaticPointObstacles(
         {
             const float x = g.idx2x(cx);
             const auto d = std::sqrt(obsPts.kdTreeClosestPoint2DsqrError(x, y));
-            if (d < p.preferredClearanceDistance)
+            if (d < D)
             {
                 const auto cost =
-                    p.maxCost *
-                    (1.0 - mrpt::square(d / p.preferredClearanceDistance));
+                    p.maxCost * std::pow(-0.99999 + 1. / (d / D), 0.1);
+                ASSERT_GE_(cost, .0);
 
                 double* cell = g.cellByIndex(cx, cy);
                 ASSERT_(cell);
@@ -58,28 +64,37 @@ CostEvaluatorCostMap CostEvaluatorCostMap::FromStaticPointObstacles(
 
 double CostEvaluatorCostMap::operator()(const MoveEdgeSE2_TPS& edge) const
 {
-    double maxCost = .0;
+    double cost = .0;
+    size_t n    = 0;
 
-    auto lambdaAddPose = [&](const mrpt::math::TPose2D& p) {
-        mrpt::keep_max(maxCost, eval_single_pose(p));
+    auto lambdaAddPose = [this, &cost, &n](const mrpt::math::TPose2D& p) {
+        const auto c = eval_single_pose(p);
+        ASSERT_GE_(c, .0);
+        cost += c;
+        ++n;
     };
 
-    // start:
-    lambdaAddPose(edge.stateFrom.pose);
-
-    // intermediary points:
+    // interpolated vs goal-end segments:
     if (edge.interpolatedPath.has_value())
-        for (const auto& p : *edge.interpolatedPath) lambdaAddPose(p);
+    {
+        for (const auto& p : *edge.interpolatedPath)
+            lambdaAddPose(edge.stateFrom.pose + p);
+    }
+    else
+    {
+        lambdaAddPose(edge.stateFrom.pose);
+        lambdaAddPose(edge.stateTo.pose);
+    }
 
-    // end
-    lambdaAddPose(edge.stateTo.pose);
-
-    return maxCost;
+    return cost / n;
 }
 
 double CostEvaluatorCostMap::eval_single_pose(
     const mrpt::math::TPose2D& p) const
 {
     const double* cell = costmap_.cellByPos(p.x, p.y);
-    return cell ? *cell : .0;
+    if (cell)
+        return *cell;
+    else
+        return .0;
 }

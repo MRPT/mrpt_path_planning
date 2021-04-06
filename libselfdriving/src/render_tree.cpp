@@ -316,6 +316,16 @@ auto selfdriving::render_tree(
                 obj->setLineWidth(ro.width_optimal_edge);
             }
 
+            if (ro.showEdgeWeights)
+            {
+                obj->setName(mrpt::format(
+                    "cost=%.01f(d=%.01f)", etp->cost,
+                    etp->ptgDist != std::numeric_limits<double>::max()
+                        ? etp->ptgDist
+                        : .0));
+                obj->enableShowName();
+            }
+
             scene.insert(obj);
         }
     }
