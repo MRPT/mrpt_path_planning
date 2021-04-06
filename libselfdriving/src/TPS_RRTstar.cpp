@@ -406,9 +406,9 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             if (newTentativeCost < curCost)
             {
                 // Yes, do rewire:
-                // MRPT_LOG_DEBUG_STREAM("Rewiring node " << nodeId<< "
-                // newCost=" << newTentativeCost << " < "<< "curCost=" <<
-                // curCost);
+                // MRPT_LOG_DEBUG_STREAM("Rewiring node " << nodeId << "newCost
+                // = " << newTentativeCost << " < " << " curCost =" << curCost);
+
                 ++nRewired;
                 tree.rewire_node_parent(nodeId, rewiredEdge);
             }

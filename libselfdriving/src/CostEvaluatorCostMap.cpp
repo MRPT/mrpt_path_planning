@@ -36,7 +36,8 @@ CostEvaluatorCostMap CostEvaluatorCostMap::FromStaticPointObstacles(
             if (d < p.preferredClearanceDistance)
             {
                 const auto cost =
-                    p.maxCost * (1.0 - d / p.preferredClearanceDistance);
+                    p.maxCost *
+                    (1.0 - mrpt::square(d / p.preferredClearanceDistance));
 
                 double* cell = g.cellByIndex(cx, cy);
                 ASSERT_(cell);
@@ -45,7 +46,7 @@ CostEvaluatorCostMap CostEvaluatorCostMap::FromStaticPointObstacles(
         }
     }
 
-    if (1)
+    if (0)
     {
         mrpt::math::CMatrixDouble CM;
         g.getAsMatrix(CM);
@@ -57,24 +58,23 @@ CostEvaluatorCostMap CostEvaluatorCostMap::FromStaticPointObstacles(
 
 double CostEvaluatorCostMap::operator()(const MoveEdgeSE2_TPS& edge) const
 {
-    size_t n    = 0;
-    double cost = .0;
+    double maxCost = .0;
 
-    // start and end:
-    cost += eval_single_pose(edge.stateFrom.pose);
-    cost += eval_single_pose(edge.stateTo.pose);
-    n += 2;
+    auto lambdaAddPose = [&](const mrpt::math::TPose2D& p) {
+        mrpt::keep_max(maxCost, eval_single_pose(p));
+    };
 
+    // start:
+    lambdaAddPose(edge.stateFrom.pose);
+
+    // intermediary points:
     if (edge.interpolatedPath.has_value())
-    {
-        for (const auto& p : *edge.interpolatedPath)
-        {
-            cost += eval_single_pose(p);
-            n++;
-        }
-    }
+        for (const auto& p : *edge.interpolatedPath) lambdaAddPose(p);
 
-    return cost / n;
+    // end
+    lambdaAddPose(edge.stateTo.pose);
+
+    return maxCost;
 }
 
 double CostEvaluatorCostMap::eval_single_pose(
