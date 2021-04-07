@@ -7,8 +7,11 @@
 #include <mrpt/3rdparty/tclap/CmdLine.h>
 #include <mrpt/config/CConfigFile.h>
 #include <mrpt/core/exceptions.h>  // exception_to_str()
+#include <mrpt/io/CFileGZInputStream.h>
+#include <mrpt/maps/COccupancyGridMap2D.h>
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/random/RandomGenerators.h>
+#include <mrpt/serialization/CArchive.h>
 #include <mrpt/system/filesystem.h>
 #include <mrpt/system/os.h>  // plugins
 #include <selfdriving/CostEvaluatorCostMap.h>
@@ -21,8 +24,17 @@
 static TCLAP::CmdLine cmd("path-planner-cli");
 
 static TCLAP::ValueArg<std::string> arg_obs_file(
-    "o", "obstacles", "Input .txt file with obstacle points.", true, "",
-    "obs.txt", cmd);
+    "o", "obstacles",
+    "Input obstacles: either (1) a .txt file with obstacle points (one 'x y' "
+    "pair per line), or (2) a .gridmap file, or a (3) png file with an "
+    "gray-scale occupancy grid (*.png, *.bmp)",
+    true, "", "obs.txt", cmd);
+
+static TCLAP::ValueArg<float> argObstaclesGridResolution(
+    "", "obstacles-gridimage-resolution",
+    "Only if --obstacles points to an image file, this sets the length of each "
+    "pixel in meters.",
+    false, 0.05, "0.05", cmd);
 
 static TCLAP::ValueArg<std::string> arg_ptgs_file(
     "p", "ptg-config", "Input .ini file with PTG definitions.", true, "",
@@ -73,15 +85,49 @@ static TCLAP::SwitchArg arg_costMap(
     "", "costmap", "Enable the default costmap from obstacle point clouds",
     cmd);
 
+static mrpt::maps::CPointsMap::Ptr load_obstacles()
+{
+    auto obsPts = mrpt::maps::CSimplePointsMap::Create();
+
+    const auto sFile = arg_obs_file.getValue();
+    ASSERT_FILE_EXISTS_(sFile);
+
+    const auto sExt =
+        mrpt::system::extractFileExtension(sFile, true /*ignore .gz*/);
+
+    if (mrpt::system::strCmpI(sExt, "txt") ||
+        mrpt::system::strCmpI(sExt, "pts"))
+    {
+        if (!obsPts->load2D_from_text_file(sFile))
+            THROW_EXCEPTION_FMT(
+                "Cannot read obstacle point cloud from: `%s`",
+                arg_obs_file.getValue().c_str());
+    }
+    else if (mrpt::system::strCmpI(sExt, "gridmap"))
+    {
+        mrpt::io::CFileGZInputStream f(sFile);
+        auto                         a = mrpt::serialization::archiveFrom(f);
+
+        mrpt::maps::COccupancyGridMap2D grid;
+        a >> grid;
+        grid.getAsPointCloud(*obsPts);
+    }
+    else if (
+        mrpt::system::strCmpI(sExt, "png") ||
+        mrpt::system::strCmpI(sExt, "bmp"))
+    {
+        mrpt::maps::COccupancyGridMap2D grid;
+        grid.loadFromBitmapFile(sFile, argObstaclesGridResolution.getValue());
+        grid.getAsPointCloud(*obsPts);
+    }
+
+    return obsPts;
+}
+
 static void do_plan_path()
 {
     // Load obstacles:
-    auto obsPts = mrpt::maps::CSimplePointsMap::Create();
-    if (!obsPts->load2D_from_text_file(arg_obs_file.getValue()))
-        THROW_EXCEPTION_FMT(
-            "Cannot read obstacle point cloud from: `%s`",
-            arg_obs_file.getValue().c_str());
-
+    mrpt::maps::CPointsMap::Ptr obsPts = load_obstacles();
     auto obs = selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
 
     // Prepare planner input data:

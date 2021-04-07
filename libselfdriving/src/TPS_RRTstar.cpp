@@ -416,12 +416,18 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             }
         }
 
+        const auto goalCost = tree.nodes().at(goalNodeId).cost_;
+
         MRPT_LOG_DEBUG_FMT(
-            "iter: %5u qi=%40s candidates/evaluated/rewired= %3u/%3u/%3u",
+            "iter: %5u qi=%40s candidates/evaluated/rewired= %3u/%3u/%3u "
+            "goal_cost=%s",
             static_cast<unsigned int>(rrtIter), qi.asString().c_str(),
             static_cast<unsigned int>(closeNodes.size()),
             static_cast<unsigned int>(nValidCandidateSourceNodes),
-            static_cast<unsigned int>(nRewired));
+            static_cast<unsigned int>(nRewired),
+            goalCost == std::numeric_limits<cost_t>::max()
+                ? "Inf"
+                : std::to_string(goalCost).c_str());
 
         // Debug log files:
         if (params_.saveDebugVisualizationDecimation > 0 &&
