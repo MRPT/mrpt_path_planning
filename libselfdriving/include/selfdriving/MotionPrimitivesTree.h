@@ -360,9 +360,7 @@ template <>
 struct PoseDistanceMetric_Lie<SE2_KinState>
 {
     // Note: ptg is not const since we'll need to update its dynamic state
-    PoseDistanceMetric_Lie(const double phiWeight = 0.1) : phiWeight_(phiWeight)
-    {
-    }
+    PoseDistanceMetric_Lie(const double phiWeight) : phiWeight_(phiWeight) {}
 
     bool cannotBeNearerThan(
         const mrpt::math::TPose2D& a, const mrpt::math::TPose2D& b,
@@ -370,7 +368,8 @@ struct PoseDistanceMetric_Lie<SE2_KinState>
     {
         if (std::abs(a.x - b.x) > d) return true;
         if (std::abs(a.y - b.y) > d) return true;
-        if (std::abs(mrpt::math::angDistance(a.phi, b.phi)) > d) return true;
+        if (phiWeight_ * std::abs(mrpt::math::angDistance(a.phi, b.phi)) > d)
+            return true;
         return false;
     }
 

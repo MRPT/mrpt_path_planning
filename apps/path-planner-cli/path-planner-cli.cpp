@@ -128,16 +128,14 @@ static void do_plan_path()
     // Enable time profiler:
     planner.profiler_.enable(true);
 
-    MRPT_TODO("convert into class factory to avoid dangling refs!");
-    auto costmap =
-        selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(*obsPts);
-
     if (arg_costMap.isSet())
     {
         // cost map:
+        auto costmap =
+            selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
+                *obsPts);
 
-        planner.costEvaluators_.push_back(
-            [&](const auto& e) { return costmap(e); });
+        planner.costEvaluators_.push_back(costmap);
     }
 
     // verbosity level:

@@ -31,6 +31,8 @@ struct TPS_RRTstar_Parameters
     double headingToleranceMetric   = mrpt::DEG2RAD(2.0);
     double metricDistanceEpsilon    = 0.01;
 
+    double SE2_metricAngleWeight = 1.0;
+
     /** Required to smooth interpolation of rendered paths, evaluation of
      * path cost, etc. */
     size_t pathInterpolatedSegments = 5;
@@ -49,8 +51,8 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
 
     PlannerOutput plan(const PlannerInput& in);
 
-    TPS_RRTstar_Parameters     params_;
-    std::vector<CostEvaluator> costEvaluators_;
+    TPS_RRTstar_Parameters          params_;
+    std::vector<CostEvaluator::Ptr> costEvaluators_;
 
     /** Time profiler (Default: enabled)*/
     mrpt::system::CTimeLogger profiler_{true, "TPS_RRTstar"};

@@ -6,11 +6,23 @@
 
 #pragma once
 
+#include <mrpt/rtti/CObject.h>
 #include <selfdriving/MoveEdgeSE2_TPS.h>
 
 #include <functional>
 
 namespace selfdriving
 {
-using CostEvaluator = std::function<double(const MoveEdgeSE2_TPS&)>;
+class CostEvaluator : public mrpt::rtti::CObject
+{
+    DEFINE_VIRTUAL_MRPT_OBJECT(CostEvaluator)
+
+   public:
+    CostEvaluator() = default;
+    virtual ~CostEvaluator();
+
+    /** Evaluate cost of move-tree edge */
+    virtual double operator()(const MoveEdgeSE2_TPS& edge) const = 0;
+};
+
 }  // namespace selfdriving
