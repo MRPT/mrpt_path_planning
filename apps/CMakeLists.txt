@@ -1,1 +1,1 @@
-add_subdirectory(plan-path)
+add_subdirectory(path-planner-cli)

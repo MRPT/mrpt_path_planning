@@ -18,7 +18,7 @@
 #include <fstream>
 #include <iostream>
 
-static TCLAP::CmdLine cmd("plan-path");
+static TCLAP::CmdLine cmd("path-planner-cli");
 
 static TCLAP::ValueArg<std::string> arg_obs_file(
     "o", "obstacles", "Input .txt file with obstacle points.", true, "",
