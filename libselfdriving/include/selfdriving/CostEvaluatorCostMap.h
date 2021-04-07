@@ -20,20 +20,24 @@ struct CostMapParameters
     double maxCost                    = 5.0;
 };
 
-class CostEvaluatorCostMap
+class CostEvaluatorCostMap : public CostEvaluator
 {
+    DEFINE_MRPT_OBJECT(CostEvaluatorCostMap, selfdriving)
+
    public:
     CostEvaluatorCostMap() = default;
     ~CostEvaluatorCostMap();
 
-    static CostEvaluatorCostMap FromStaticPointObstacles(
+    static CostEvaluatorCostMap::Ptr FromStaticPointObstacles(
         const mrpt::maps::CPointsMap& obsPts,
         const CostMapParameters&      p = CostMapParameters());
 
+    /** Evaluate cost of move-tree edge */
+    double operator()(const MoveEdgeSE2_TPS& edge) const override;
+
     using cost_gridmap_t = mrpt::containers::CDynamicGrid<double>;
 
-    /** Evaluate cost of move-tree edge */
-    double operator()(const MoveEdgeSE2_TPS& edge) const;
+    const cost_gridmap_t cost_gridmap() const { return costmap_; }
 
    private:
     cost_gridmap_t costmap_;

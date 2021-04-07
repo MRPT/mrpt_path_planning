@@ -26,6 +26,7 @@ mrpt::containers::yaml TPS_RRTstar_Parameters::as_yaml()
     MCP_SAVE(c, maxStepLength);
     MCP_SAVE(c, maxIterations);
     MCP_SAVE(c, metricDistanceEpsilon);
+    MCP_SAVE(c, SE2_metricAngleWeight);
     MCP_SAVE(c, drawInTPS);
     MCP_SAVE(c, drawBiasTowardsGoal);
     MCP_SAVE_DEG(c, headingToleranceGenerate);
@@ -45,6 +46,7 @@ void TPS_RRTstar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_OPT(c, maxStepLength);
     MCP_LOAD_OPT(c, maxIterations);
     MCP_LOAD_OPT(c, metricDistanceEpsilon);
+    MCP_LOAD_OPT(c, SE2_metricAngleWeight);
     MCP_LOAD_OPT(c, drawInTPS);
     MCP_LOAD_OPT(c, drawBiasTowardsGoal);
     MCP_LOAD_OPT_DEG(c, headingToleranceGenerate);
@@ -899,7 +901,11 @@ cost_t TPS_RRTstar::cost_path_segment(const MoveEdgeSE2_TPS& edge) const
     cost_t c = edge.ptgDist;
 
     // Additional optional cost evaluators:
-    for (const auto& ce : costEvaluators_) c += ce(edge);
+    for (const auto& ce : costEvaluators_)
+    {
+        ASSERT_(ce);
+        c += (*ce)(edge);
+    }
 
     return c;
 }
@@ -911,7 +917,7 @@ TPS_RRTstar::closest_lie_nodes_list_t TPS_RRTstar::find_nearby_nodes(
     auto tle = mrpt::system::CTimeLoggerEntry(profiler_, "find_nearby_nodes");
 
     closest_lie_nodes_list_t             out;
-    PoseDistanceMetric_Lie<SE2_KinState> de;
+    PoseDistanceMetric_Lie<SE2_KinState> de(params_.SE2_metricAngleWeight);
 
     // TODO: Use KD-tree with nanoflann!
     for (const auto& node : tree.nodes())
@@ -935,7 +941,7 @@ std::tuple<distance_t, TNodeID> TPS_RRTstar::find_closest_node(
 
     distance_t minDist = std::numeric_limits<distance_t>::max();
     TNodeID    closestNodeId;
-    PoseDistanceMetric_Lie<SE2_KinState> de;
+    PoseDistanceMetric_Lie<SE2_KinState> de(params_.SE2_metricAngleWeight);
 
     for (const auto& node : tree.nodes())
     {

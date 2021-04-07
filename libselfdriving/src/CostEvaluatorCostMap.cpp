@@ -8,12 +8,14 @@
 
 using namespace selfdriving;
 
+IMPLEMENTS_MRPT_OBJECT(CostEvaluatorCostMap, CostEvaluator, selfdriving)
+
 CostEvaluatorCostMap::~CostEvaluatorCostMap() = default;
 
-CostEvaluatorCostMap CostEvaluatorCostMap::FromStaticPointObstacles(
+CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
     const mrpt::maps::CPointsMap& obsPts, const CostMapParameters& p)
 {
-    CostEvaluatorCostMap cm;
+    auto cm = CostEvaluatorCostMap::Create();
     ASSERT_(!obsPts.empty());
 
     const float D = p.preferredClearanceDistance;
@@ -25,13 +27,13 @@ CostEvaluatorCostMap CostEvaluatorCostMap::FromStaticPointObstacles(
     bbox.max += {D, D, 0.f};
 
     double defaultCost = .0;
-    cm.costmap_.setSize(
+    cm->costmap_.setSize(
         bbox.min.x, bbox.max.x, bbox.min.y, bbox.max.y, p.resolution,
         &defaultCost);
 
     // simple approach: for each cell, eval cost according to closest obstacle,
     // searching in a kd-tree:
-    auto& g = cm.costmap_;
+    auto& g = cm->costmap_;
     for (unsigned int cy = 0; cy < g.getSizeY(); cy++)
     {
         const float y = g.idx2y(cy);
@@ -93,8 +95,5 @@ double CostEvaluatorCostMap::eval_single_pose(
     const mrpt::math::TPose2D& p) const
 {
     const double* cell = costmap_.cellByPos(p.x, p.y);
-    if (cell)
-        return *cell;
-    else
-        return .0;
+    return cell ? *cell : .0;
 }
