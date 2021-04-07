@@ -1,10 +1,10 @@
-project(plan-path LANGUAGES CXX)
+project(path-planner-cli LANGUAGES CXX)
 
 # find dependencies:
 find_package(MRPT REQUIRED COMPONENTS gui nav tclap)
 
 add_executable(${PROJECT_NAME}
-    plan-path.cpp
+    path-planner-cli.cpp
     )
 
 target_link_libraries(${PROJECT_NAME}
