@@ -22,5 +22,13 @@ sudo apt install libmrpt-dev
 ## Demo runs
 
 ```
-bin/plan-path -g "[3 1.5 45]" -s "[-0.5 -0 0]" -p ../share/ptgs_holonomic_robot.ini -o ../share/obstacles_01.txt --save-debug-visualization 0 --max-iterations 1000 --random-seed 3
+bin/path-planner-cli --write-planner-parameters tps-rrtstar.yaml
+bin/path-planner-cli -g "[4 2.5 45]" -s "[0.5 0 0]" \
+  -p ../share/ptgs_holonomic_robot.ini \
+  --obstacles ../share/obstacles_01.txt \
+  --planner-parameters tps-rrtstar.yaml \
+  --max-iterations 1000 \
+  --costmap \
+  --random-seed 3
+# Edit tps-rrtstar.yaml as desired and re-run
 ```
