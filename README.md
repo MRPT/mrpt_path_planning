@@ -2,11 +2,12 @@
 [![Documentation Status](https://readthedocs.org/projects/selfdriving/badge/?version=latest)](https://selfdriving.readthedocs.io/en/latest/?badge=latest)
 
 # selfdriving
-Self-driving (autonomous navigation) algorithms for 2D robots/vehicles based on mrpt-nav
+Self-driving (autonomous navigation) RRT* (RRT-star) algorithm for 2D robots/vehicles based on mrpt-nav, for vehicles with arbitrary shape and realistic kinematics and dynamics.
 
 ## Build requisites
 
-- MRPT (>=2.0.4)
+- [MRPT](https://github.com/MRPT/mrpt/) (>=2.0.4)
+- [mvsim](https://github.com/MRPT/mvsim/) (optional to run the live control simulator).
 
 In Ubuntu, they can installed with:
 
@@ -15,11 +16,12 @@ In Ubuntu, they can installed with:
 sudo add-apt-repository ppa:joseluisblancoc/mrpt
 sudo apt update
 sudo apt install libmrpt-dev
-
 ```
 
 
 ## Demo runs
+
+Command-line app to test the RRT* planner:
 
 ```
 bin/path-planner-cli --write-planner-parameters tps-rrtstar.yaml
@@ -31,4 +33,10 @@ bin/path-planner-cli -g "[4 2.5 45]" -s "[0.5 0 0]" \
   --costmap \
   --random-seed 3
 # Edit tps-rrtstar.yaml as desired and re-run
+```
+
+GUI with live navigation simulator:
+
+```
+TBD
 ```
