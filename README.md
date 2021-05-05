@@ -38,5 +38,5 @@ bin/path-planner-cli -g "[4 2.5 45]" -s "[0.5 0 0]" \
 GUI with live navigation simulator:
 
 ```
-TBD
+bin/selfdriving-simulator-gui -s ../share/mvsim-demo.xml -p ../share/ptgs_ackermann_vehicle.ini
 ```

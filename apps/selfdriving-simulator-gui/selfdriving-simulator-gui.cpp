@@ -6,7 +6,9 @@
 
 #include <mrpt/3rdparty/tclap/CmdLine.h>
 #include <mrpt/core/exceptions.h>
+#include <mrpt/core/lock_helper.h>
 #include <mrpt/system/os.h>  // plugins
+#include <mrpt/version.h>
 #include <mvsim/Comms/Server.h>
 #include <mvsim/World.h>
 
@@ -80,7 +82,7 @@ struct TThreadParams
    private:
     bool closing_ = false;
 };
-static void mvsim_server_thread_update_GUI(TThreadParams& thread_params);
+static void                mvsim_server_thread_update_GUI(TThreadParams& tp);
 mvsim::World::TGUIKeyEvent gui_key_events;
 std::mutex                 gui_key_events_mtx;
 std::string                msg2gui;
@@ -224,14 +226,45 @@ int launchSimulation()
     return 0;
 }
 
-void mvsim_server_thread_update_GUI(TThreadParams& thread_params)
+// Add selfdriving window
+void prepare_selfdriving_window(const mrpt::gui::CDisplayWindowGUI::Ptr& gui)
 {
-    while (!thread_params.isClosing())
+    auto lck = mrpt::lockHelper(gui->background_scene_mtx);
+
+    ASSERT_(gui);
+#if MRPT_VERSION >= 0x211
+    nanogui::Window* w = gui->createManagedSubWindow("SelfDriving");
+#else
+    nanogui::Window* w = new nanogui::Window(gui.get(), "SelfDriving");
+#endif
+
+    w->setPosition({5, 220});
+    w->setLayout(new nanogui::BoxLayout(
+        nanogui::Orientation::Vertical, nanogui::Alignment::Fill));
+    w->setFixedWidth(230);
+
+    w->add<nanogui::Label>("XXX");
+
+    gui->performLayout();
+}
+
+void mvsim_server_thread_update_GUI(TThreadParams& tp)
+{
+    while (!tp.isClosing())
     {
         mvsim::World::TUpdateGUIParams guiparams;
         guiparams.msg_lines = msg2gui;
 
-        thread_params.world->update_GUI(&guiparams);
+        tp.world->update_GUI(&guiparams);
+
+        static bool firstTime = true;
+        if (firstTime)
+        {
+            tp.world->enqueue_task_to_run_in_gui_thread([&tp]() {
+                prepare_selfdriving_window(tp.world->gui_window());
+            });
+            firstTime = false;
+        }
 
         // Send key-strokes to the main thread:
         if (guiparams.keyevent.keycode != 0)
