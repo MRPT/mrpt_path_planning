@@ -5,12 +5,19 @@
  * ------------------------------------------------------------------------- */
 
 #include <mrpt/3rdparty/tclap/CmdLine.h>
+#include <mrpt/config/CConfigFile.h>
 #include <mrpt/core/exceptions.h>
 #include <mrpt/core/lock_helper.h>
+#include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/system/os.h>  // plugins
 #include <mrpt/version.h>
 #include <mvsim/Comms/Server.h>
 #include <mvsim/World.h>
+#include <mvsim/WorldElements/OccupancyGridMap.h>
+#include <selfdriving/CostEvaluator.h>
+#include <selfdriving/CostEvaluatorCostMap.h>
+#include <selfdriving/TPS_RRTstar.h>
+#include <selfdriving/viz.h>
 
 #include <rapidxml_utils.hpp>
 #include <thread>
@@ -25,6 +32,11 @@ static TCLAP::ValueArg<std::string> argVerbosity(
 static TCLAP::ValueArg<std::string> argVerbosityMVSIM(
     "", "verbose-mvsim", "Verbosity level for the mvsim subsystem", false,
     "INFO", "ERROR|WARN|INFO|DEBUG", cmd);
+
+static TCLAP::ValueArg<std::string> arg_config_file_section(
+    "", "config-section",
+    "If loading from an INI file, the name of the section to load", false,
+    "SelfDriving", "SelfDriving", cmd);
 
 static TCLAP::ValueArg<std::string> argMvsimFile(
     "s", "simul-file", "MVSIM XML file", true, "xxx.xml", "World XML file",
@@ -60,8 +72,7 @@ void commonLaunchServer()
 }
 struct TThreadParams
 {
-    mvsim::World* world = nullptr;
-    std::mutex    closingMtx;
+    std::mutex closingMtx;
 
     TThreadParams() = default;
 
@@ -87,6 +98,8 @@ mvsim::World::TGUIKeyEvent gui_key_events;
 std::mutex                 gui_key_events_mtx;
 std::string                msg2gui;
 
+mvsim::World world;
+
 int launchSimulation()
 {
     using namespace mvsim;
@@ -95,8 +108,6 @@ int launchSimulation()
 
     // Start network server:
     commonLaunchServer();
-
-    mvsim::World world;
 
     world.setMinLoggingLevel(
         mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
@@ -111,7 +122,7 @@ int launchSimulation()
 
     // Launch GUI thread:
     TThreadParams thread_params;
-    thread_params.world = &world;
+
     std::thread thGUI =
         std::thread(&mvsim_server_thread_update_GUI, std::ref(thread_params));
 
@@ -217,6 +228,8 @@ int launchSimulation()
 
         msg2gui = txt2gui_tmp;  // send txt msgs to show in the GUI
 
+        if (thread_params.isClosing()) do_exit = true;
+
     }  // end while()
 
     thread_params.closing(true);
@@ -225,6 +238,22 @@ int launchSimulation()
 
     return 0;
 }
+
+struct SelfDrivingStatus
+{
+    SelfDrivingStatus() = default;
+
+    selfdriving::ObstacleSource::Ptr       obstacles;
+    selfdriving::CostEvaluatorCostMap::Ptr costMap;
+
+    selfdriving::PlannerInput                 pi;
+    selfdriving::TPS_RRTstar                  planner;
+    std::optional<selfdriving::PlannerOutput> po;
+
+    selfdriving::VisualizationOptions vizOpts;
+};
+
+SelfDrivingStatus sd;
 
 // Add selfdriving window
 void prepare_selfdriving_window(const mrpt::gui::CDisplayWindowGUI::Ptr& gui)
@@ -241,9 +270,155 @@ void prepare_selfdriving_window(const mrpt::gui::CDisplayWindowGUI::Ptr& gui)
     w->setPosition({5, 220});
     w->setLayout(new nanogui::BoxLayout(
         nanogui::Orientation::Vertical, nanogui::Alignment::Fill));
-    w->setFixedWidth(230);
+    w->setFixedWidth(260);
 
-    w->add<nanogui::Label>("XXX");
+    auto tab = w->add<nanogui::TabWidget>();
+
+    std::vector<nanogui::Widget*> tabs = {
+        tab->createTab("Planner"), tab->createTab("Viz")};
+
+    tab->setActiveTab(0);
+
+    for (auto t : tabs)
+        t->setLayout(new nanogui::BoxLayout(
+            nanogui::Orientation::Vertical, nanogui::Alignment::Fill, 3, 3));
+
+    const int pnWidth = 240, pnHeight = 190;
+
+    std::vector<nanogui::VScrollPanel*> vscrolls;
+    for (auto t : tabs) vscrolls.emplace_back(t->add<nanogui::VScrollPanel>());
+
+    // vscroll should only have *ONE* child.
+    // this is what `wrapper` is for
+    std::vector<nanogui::Widget*> wrappers;
+
+    for (auto vs : vscrolls)
+    {
+        vs->setFixedSize({pnWidth, pnHeight});
+        auto wr = vs->add<nanogui::Widget>();
+        wr->setLayout(new nanogui::GridLayout(
+            nanogui::Orientation::Horizontal, 1 /*columns */,
+            nanogui::Alignment::Fill, 3, 3));
+
+        wr->setFixedSize({pnWidth - 5, pnHeight});
+        wrappers.emplace_back(wr);
+    }
+
+    // Planner
+    // -------------------------------
+    auto pn0 = wrappers.at(0);
+    pn0->add<nanogui::Label>("Start pose:");
+    auto edStateStartPose =
+        pn0->add<nanogui::TextBox>(sd.pi.stateStart.pose.asString());
+    edStateStartPose->setEditable(true);
+
+    pn0->add<nanogui::Label>("Start global vel:");
+    auto edStateStartVel =
+        pn0->add<nanogui::TextBox>(sd.pi.stateStart.vel.asString());
+    edStateStartVel->setEditable(true);
+
+    pn0->add<nanogui::Label>("Goal pose:");
+    auto edStateGoalPose =
+        pn0->add<nanogui::TextBox>(sd.pi.stateGoal.pose.asString());
+    edStateGoalPose->setEditable(true);
+
+    pn0->add<nanogui::Label>("Goal global vel:");
+    auto edStateGoalVel =
+        pn0->add<nanogui::TextBox>(sd.pi.stateGoal.vel.asString());
+    edStateGoalVel->setEditable(true);
+
+    auto btnDoPlan = pn0->add<nanogui::Button>("Do path planning...");
+    btnDoPlan->setCallback([=]() {
+        // ############################
+        // BEGIN: Run path planning
+        // ############################
+        auto obsPts = mrpt::maps::CSimplePointsMap::Create();
+
+        world.runVisitorOnWorldElements([&](mvsim::WorldElementBase& we) {
+            auto grid = dynamic_cast<mvsim::OccupancyGridMap*>(&we);
+            if (!grid) return;
+            grid->getOccGrid().getAsPointCloud(*obsPts);
+        });
+
+        sd.obstacles =
+            selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
+
+        sd.pi.stateStart.pose.fromString(edStateStartPose->value());
+        sd.pi.stateStart.vel.fromString(edStateStartVel->value());
+
+        sd.pi.stateGoal.pose.fromString(edStateGoalPose->value());
+        sd.pi.stateGoal.vel.fromString(edStateGoalVel->value());
+
+        sd.pi.obstacles = sd.obstacles;
+
+        auto bbox = sd.pi.obstacles->obstacles()->boundingBox();
+
+        // Make sure goal and start are within bbox:
+        {
+            const auto bboxMargin = mrpt::math::TPoint3Df(1.0, 1.0, .0);
+            const auto ptStart    = mrpt::math::TPoint3Df(
+                sd.pi.stateStart.pose.x, sd.pi.stateStart.pose.y, 0);
+            const auto ptGoal = mrpt::math::TPoint3Df(
+                sd.pi.stateGoal.pose.x, sd.pi.stateGoal.pose.y, 0);
+            bbox.updateWithPoint(ptStart - bboxMargin);
+            bbox.updateWithPoint(ptStart + bboxMargin);
+            bbox.updateWithPoint(ptGoal - bboxMargin);
+            bbox.updateWithPoint(ptGoal + bboxMargin);
+        }
+
+        sd.pi.worldBboxMax = {bbox.max.x, bbox.max.y, M_PI};
+        sd.pi.worldBboxMin = {bbox.min.x, bbox.min.y, -M_PI};
+
+        std::cout << "Start pose: " << sd.pi.stateStart.pose.asString() << "\n";
+        std::cout << "Goal pose : " << sd.pi.stateGoal.pose.asString() << "\n";
+        std::cout << "Obstacles : " << sd.pi.obstacles->obstacles()->size()
+                  << " points\n";
+        std::cout << "World bbox: " << sd.pi.worldBboxMin.asString() << " - "
+                  << sd.pi.worldBboxMax.asString() << "\n";
+
+        // Enable time profiler:
+        sd.planner.profiler_.enable(true);
+
+        // if (arg_costMap.isSet())
+        {
+            // cost map:
+            auto costmap =
+                selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
+                    *obsPts);
+
+            sd.planner.costEvaluators_.push_back(costmap);
+        }
+
+        // Set planner required params:
+        if (0)
+        {
+            const auto sFile = arg_planner_yaml_file.getValue();
+            const auto c     = mrpt::containers::yaml::FromFile(sFile);
+            sd.planner.params_.load_from_yaml(c);
+            std::cout << "Loaded these planner params:\n";
+            sd.planner.params_.as_yaml().printAsYAML();
+        }
+
+        // sd.planner.params_.maxIterations = XX;
+
+        // verbosity level:
+        sd.planner.setMinLoggingLevel(mrpt::system::LVL_DEBUG);
+
+        // PTGs config file:
+        mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
+        sd.pi.ptgs.initFromConfigFile(cfg, arg_config_file_section.getValue());
+
+        const selfdriving::PlannerOutput plan = sd.planner.plan(sd.pi);
+
+        // ############################
+        // END: Run path planning
+        // ############################
+    });
+
+    // Viz
+    // -------------------------------
+    auto pn1 = wrappers.at(1);
+    pn1->add<nanogui::Label>("xx");
 
     gui->performLayout();
 }
@@ -255,14 +430,13 @@ void mvsim_server_thread_update_GUI(TThreadParams& tp)
         mvsim::World::TUpdateGUIParams guiparams;
         guiparams.msg_lines = msg2gui;
 
-        tp.world->update_GUI(&guiparams);
+        world.update_GUI(&guiparams);
 
         static bool firstTime = true;
         if (firstTime)
         {
-            tp.world->enqueue_task_to_run_in_gui_thread([&tp]() {
-                prepare_selfdriving_window(tp.world->gui_window());
-            });
+            world.enqueue_task_to_run_in_gui_thread(
+                [&tp]() { prepare_selfdriving_window(world.gui_window()); });
             firstTime = false;
         }
 
@@ -273,6 +447,8 @@ void mvsim_server_thread_update_GUI(TThreadParams& tp)
             gui_key_events = guiparams.keyevent;
             gui_key_events_mtx.unlock();
         }
+
+        if (!world.is_GUI_open()) tp.closing(true);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(25));
     }
