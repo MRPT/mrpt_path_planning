@@ -9,6 +9,9 @@
 #include <mrpt/core/exceptions.h>
 #include <mrpt/core/lock_helper.h>
 #include <mrpt/maps/CSimplePointsMap.h>
+#include <mrpt/math/TLine3D.h>
+#include <mrpt/math/TObject3D.h>
+#include <mrpt/opengl/CDisk.h>
 #include <mrpt/system/os.h>  // plugins
 #include <mrpt/version.h>
 #include <mvsim/Comms/Server.h>
@@ -74,6 +77,8 @@ struct TThreadParams
 {
     std::mutex closingMtx;
 
+    std::shared_ptr<mvsim::World> world;
+
     TThreadParams() = default;
 
     bool isClosing()
@@ -93,12 +98,11 @@ struct TThreadParams
    private:
     bool closing_ = false;
 };
+
 static void                mvsim_server_thread_update_GUI(TThreadParams& tp);
 mvsim::World::TGUIKeyEvent gui_key_events;
 std::mutex                 gui_key_events_mtx;
 std::string                msg2gui;
-
-mvsim::World world;
 
 int launchSimulation()
 {
@@ -109,19 +113,22 @@ int launchSimulation()
     // Start network server:
     commonLaunchServer();
 
-    world.setMinLoggingLevel(
+    auto world = std::make_shared<mvsim::World>();
+
+    world->setMinLoggingLevel(
         mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
             argVerbosityMVSIM.getValue()));
 
     // Load from XML:
     rapidxml::file<> fil_xml(sXMLfilename.c_str());
-    world.load_from_XML(fil_xml.data(), sXMLfilename.c_str());
+    world->load_from_XML(fil_xml.data(), sXMLfilename.c_str());
 
     // Attach world as a mvsim communications node:
-    world.connectToServer();
+    world->connectToServer();
 
     // Launch GUI thread:
     TThreadParams thread_params;
+    thread_params.world = world;
 
     std::thread thGUI =
         std::thread(&mvsim_server_thread_update_GUI, std::ref(thread_params));
@@ -142,12 +149,12 @@ int launchSimulation()
         double incr_time = REALTIME_FACTOR * (t_new - t_old);
 
         // Just in case the computer is *really fast*...
-        if (incr_time >= world.get_simul_timestep())
+        if (incr_time >= world->get_simul_timestep())
         {
             // Simulate:
-            world.run_simulation(incr_time);
+            world->run_simulation(incr_time);
 
-            // t_old_simul = world.get_simul_time();
+            // t_old_simul = world->get_simul_time();
             t_old = t_new;
         }
 
@@ -179,7 +186,7 @@ int launchSimulation()
         };
 
         {  // Test: Differential drive: Control raw forces
-            const World::VehicleList& vehs = world.getListOfVehicles();
+            const World::VehicleList& vehs = world->getListOfVehicles();
             txt2gui_tmp += mrpt::format(
                 "Selected vehicle: %u/%u\n",
                 static_cast<unsigned>(teleop_idx_veh + 1),
@@ -239,6 +246,7 @@ int launchSimulation()
     return 0;
 }
 
+// ======= Self Drive status ===================
 struct SelfDrivingStatus
 {
     SelfDrivingStatus() = default;
@@ -254,9 +262,31 @@ struct SelfDrivingStatus
 };
 
 SelfDrivingStatus sd;
+// ======= End Self Drive status ===================
+
+// ======= GUI status ===================
+struct MouseEvent
+{
+    MouseEvent() = default;
+
+    mrpt::math::TPoint3D pt{0, 0, 0};
+    bool                 leftBtnDown  = false;
+    bool                 rightBtnDown = false;
+    bool                 shiftDown    = false;
+    bool                 ctrlDown     = false;
+};
+
+using on_mouse_move_callback_t  = std::function<void(MouseEvent)>;
+using on_mouse_click_callback_t = std::function<void(MouseEvent)>;
+
+on_mouse_move_callback_t  activeActionMouseMove;
+on_mouse_click_callback_t activeActionMouseClick;
+// ======= end GUI status ==============
 
 // Add selfdriving window
-void prepare_selfdriving_window(const mrpt::gui::CDisplayWindowGUI::Ptr& gui)
+void prepare_selfdriving_window(
+    const mrpt::gui::CDisplayWindowGUI::Ptr& gui,
+    std::shared_ptr<mvsim::World>            world)
 {
     auto lck = mrpt::lockHelper(gui->background_scene_mtx);
 
@@ -283,7 +313,7 @@ void prepare_selfdriving_window(const mrpt::gui::CDisplayWindowGUI::Ptr& gui)
         t->setLayout(new nanogui::BoxLayout(
             nanogui::Orientation::Vertical, nanogui::Alignment::Fill, 3, 3));
 
-    const int pnWidth = 240, pnHeight = 190;
+    const int pnWidth = 240, pnHeight = 270;
 
     std::vector<nanogui::VScrollPanel*> vscrolls;
     for (auto t : tabs) vscrolls.emplace_back(t->add<nanogui::VScrollPanel>());
@@ -300,7 +330,7 @@ void prepare_selfdriving_window(const mrpt::gui::CDisplayWindowGUI::Ptr& gui)
             nanogui::Orientation::Horizontal, 1 /*columns */,
             nanogui::Alignment::Fill, 3, 3));
 
-        wr->setFixedSize({pnWidth - 5, pnHeight});
+        wr->setFixedSize({pnWidth - 7, pnHeight});
         wrappers.emplace_back(wr);
     }
 
@@ -317,10 +347,48 @@ void prepare_selfdriving_window(const mrpt::gui::CDisplayWindowGUI::Ptr& gui)
         pn0->add<nanogui::TextBox>(sd.pi.stateStart.vel.asString());
     edStateStartVel->setEditable(true);
 
-    pn0->add<nanogui::Label>("Goal pose:");
+    // custom 3D objects
+    auto glTargetSign = mrpt::opengl::CDisk::Create(1.0, 0.8);
+    glTargetSign->setColor_u8(0xff, 0x00, 0x00, 0xa0);
+    glTargetSign->setName("glTargetSign");
+    glTargetSign->setVisibility(false);
+
+    {
+        auto lckgui = mrpt::lockHelper(world->m_gui_msg_lines_mtx);
+        world->m_gui_user_objects = mrpt::opengl::CSetOfObjects::Create();
+
+        world->m_gui_user_objects->insert(glTargetSign);
+    }
+
+    nanogui::Button* pickBtn = nullptr;
+
+    {
+        auto subPn = pn0->add<nanogui::Widget>();
+        subPn->setLayout(new nanogui::GridLayout(
+            nanogui::Orientation::Horizontal, 2, nanogui::Alignment::Fill, 2,
+            2));
+
+        subPn->add<nanogui::Label>("Goal pose:");
+        pickBtn = subPn->add<nanogui::Button>("Pick");
+    }
     auto edStateGoalPose =
         pn0->add<nanogui::TextBox>(sd.pi.stateGoal.pose.asString());
     edStateGoalPose->setEditable(true);
+
+    pickBtn->setCallback([glTargetSign, edStateGoalPose]() {
+        activeActionMouseMove = [glTargetSign, edStateGoalPose](MouseEvent e) {
+            edStateGoalPose->setValue(e.pt.asString());
+            glTargetSign->setLocation(e.pt + mrpt::math::TVector3D(0, 0, 0.05));
+            glTargetSign->setVisibility(true);
+
+            // Click -> end mode:
+            if (e.leftBtnDown)
+            {
+                activeActionMouseMove = {};
+                glTargetSign->setVisibility(false);
+            }
+        };
+    });
 
     pn0->add<nanogui::Label>("Goal global vel:");
     auto edStateGoalVel =
@@ -334,7 +402,7 @@ void prepare_selfdriving_window(const mrpt::gui::CDisplayWindowGUI::Ptr& gui)
         // ############################
         auto obsPts = mrpt::maps::CSimplePointsMap::Create();
 
-        world.runVisitorOnWorldElements([&](mvsim::WorldElementBase& we) {
+        world->runVisitorOnWorldElements([&](mvsim::WorldElementBase& we) {
             auto grid = dynamic_cast<mvsim::OccupancyGridMap*>(&we);
             if (!grid) return;
             grid->getOccGrid().getAsPointCloud(*obsPts);
@@ -390,7 +458,7 @@ void prepare_selfdriving_window(const mrpt::gui::CDisplayWindowGUI::Ptr& gui)
         }
 
         // Set planner required params:
-        if (0)
+        if (arg_planner_yaml_file.isSet())
         {
             const auto sFile = arg_planner_yaml_file.getValue();
             const auto c     = mrpt::containers::yaml::FromFile(sFile);
@@ -420,6 +488,45 @@ void prepare_selfdriving_window(const mrpt::gui::CDisplayWindowGUI::Ptr& gui)
     auto pn1 = wrappers.at(1);
     pn1->add<nanogui::Label>("xx");
 
+    // Events
+    // ----------------------------------
+    const auto lambdaHandleMouseOperations = [gui, world]() {
+        MRPT_START
+
+        static mrpt::math::TPoint3D lastMousePt;
+        static bool                 lastLeftClick  = false;
+        static bool                 lastRightClick = false;
+
+        const auto& mousePt    = world->gui_mouse_point();
+        const auto  screen     = gui->screen();
+        const bool  leftClick  = screen->mouseState() & 0x01 != 0;
+        const bool  rightClick = screen->mouseState() & 0x02 != 0;
+
+        if (lastMousePt != mousePt || leftClick != lastLeftClick ||
+            rightClick != lastRightClick)
+        {
+            MouseEvent e;
+            e.pt           = mousePt;
+            e.leftBtnDown  = leftClick;
+            e.rightBtnDown = rightClick;
+
+            if (activeActionMouseMove)
+            {
+                // Make a copy, since the function can modify itself:
+                auto act = activeActionMouseMove;
+                act(e);
+            }
+        }
+
+        lastMousePt    = mousePt;
+        lastLeftClick  = leftClick;
+        lastRightClick = rightClick;
+
+        MRPT_END
+    };
+
+    gui->addLoopCallback(lambdaHandleMouseOperations);
+
     gui->performLayout();
 }
 
@@ -430,13 +537,14 @@ void mvsim_server_thread_update_GUI(TThreadParams& tp)
         mvsim::World::TUpdateGUIParams guiparams;
         guiparams.msg_lines = msg2gui;
 
-        world.update_GUI(&guiparams);
+        tp.world->update_GUI(&guiparams);
 
         static bool firstTime = true;
         if (firstTime)
         {
-            world.enqueue_task_to_run_in_gui_thread(
-                [&tp]() { prepare_selfdriving_window(world.gui_window()); });
+            tp.world->enqueue_task_to_run_in_gui_thread([&]() {
+                prepare_selfdriving_window(tp.world->gui_window(), tp.world);
+            });
             firstTime = false;
         }
 
@@ -448,7 +556,7 @@ void mvsim_server_thread_update_GUI(TThreadParams& tp)
             gui_key_events_mtx.unlock();
         }
 
-        if (!world.is_GUI_open()) tp.closing(true);
+        if (!tp.world->is_GUI_open()) tp.closing(true);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(25));
     }
