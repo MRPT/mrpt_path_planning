@@ -17,7 +17,8 @@ import subprocess
 
 # Build Doxygen main page: Doxygen header + README.md
 with open('../mainpage.md', 'w') as outfile:
-    outfile.write('\\mainpage MultiBody State Estimation (MBSE) C++ Library\n')
+    with open('mainpage.md.in') as infile:
+        outfile.write(infile.read())
     with open('../../README.md') as infile:
         outfile.write(infile.read())
 
