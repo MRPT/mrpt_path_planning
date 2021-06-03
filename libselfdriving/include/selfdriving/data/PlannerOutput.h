@@ -7,8 +7,8 @@
 #pragma once
 
 #include <mrpt/graphs/TNodeID.h>
-#include <selfdriving/MotionPrimitivesTree.h>
-#include <selfdriving/PlannerInput.h>
+#include <selfdriving/data/MotionPrimitivesTree.h>
+#include <selfdriving/data/PlannerInput.h>
 
 #include <set>
 

@@ -4,7 +4,7 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <selfdriving/TrajectoriesAndRobotShape.h>
+#include <selfdriving/data/TrajectoriesAndRobotShape.h>
 
 using namespace selfdriving;
 

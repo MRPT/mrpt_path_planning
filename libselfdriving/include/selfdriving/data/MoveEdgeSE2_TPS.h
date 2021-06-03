@@ -7,8 +7,8 @@
 #pragma once
 
 #include <mrpt/graphs/TNodeID.h>
-#include <selfdriving/SE2_KinState.h>
-#include <selfdriving/ptg_t.h>
+#include <selfdriving/data/SE2_KinState.h>
+#include <selfdriving/data/ptg_t.h>
 
 #include <cstdint>
 

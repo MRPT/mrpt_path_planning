@@ -8,7 +8,7 @@
 
 #include <mrpt/containers/CDynamicGrid.h>
 #include <mrpt/maps/CPointsMap.h>
-#include <selfdriving/CostEvaluator.h>
+#include <selfdriving/algos/CostEvaluator.h>
 
 namespace selfdriving
 {

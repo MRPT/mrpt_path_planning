@@ -6,21 +6,23 @@
 
 #pragma once
 
-#include <selfdriving/PlannerOutput.h>
-#include <selfdriving/RenderOptions.h>
+#include <mrpt/rtti/CObject.h>
+#include <selfdriving/data/MoveEdgeSE2_TPS.h>
+
+#include <functional>
 
 namespace selfdriving
 {
-struct VisualizationOptions
+class CostEvaluator : public mrpt::rtti::CObject
 {
-    /** dont return viz_nav_plan() until user closes the window */
-    bool gui_modal = true;
+    DEFINE_VIRTUAL_MRPT_OBJECT(CostEvaluator)
 
-    RenderOptions renderOptions;
+   public:
+    CostEvaluator() = default;
+    virtual ~CostEvaluator();
+
+    /** Evaluate cost of move-tree edge */
+    virtual double operator()(const MoveEdgeSE2_TPS& edge) const = 0;
 };
-
-void viz_nav_plan(
-    const PlannerOutput&        plan,
-    const VisualizationOptions& opts = VisualizationOptions());
 
 }  // namespace selfdriving

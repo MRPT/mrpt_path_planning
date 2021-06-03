@@ -4,7 +4,7 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <selfdriving/CostEvaluatorCostMap.h>
+#include <selfdriving/algos/CostEvaluatorCostMap.h>
 
 using namespace selfdriving;
 

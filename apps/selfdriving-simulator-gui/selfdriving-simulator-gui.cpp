@@ -17,10 +17,10 @@
 #include <mvsim/Comms/Server.h>
 #include <mvsim/World.h>
 #include <mvsim/WorldElements/OccupancyGridMap.h>
-#include <selfdriving/CostEvaluator.h>
-#include <selfdriving/CostEvaluatorCostMap.h>
-#include <selfdriving/TPS_RRTstar.h>
-#include <selfdriving/viz.h>
+#include <selfdriving/algos/CostEvaluator.h>
+#include <selfdriving/algos/CostEvaluatorCostMap.h>
+#include <selfdriving/algos/TPS_RRTstar.h>
+#include <selfdriving/algos/viz.h>
 
 #include <rapidxml_utils.hpp>
 #include <thread>

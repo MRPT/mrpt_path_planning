@@ -4,6 +4,4 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <selfdriving/PlannerOutput.h>
-
-using namespace selfdriving;
+#include <selfdriving/algos/WaypointSequencer.h>

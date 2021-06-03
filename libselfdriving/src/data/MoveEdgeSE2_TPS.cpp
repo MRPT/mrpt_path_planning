@@ -4,7 +4,7 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <selfdriving/MoveEdgeSE2_TPS.h>
+#include <selfdriving/data/MoveEdgeSE2_TPS.h>
 
 using namespace selfdriving;
 

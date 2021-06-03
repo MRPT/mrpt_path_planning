@@ -4,10 +4,14 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <selfdriving/CostEvaluator.h>
+#include <selfdriving/interfaces/ObstacleSource.h>
 
 using namespace selfdriving;
 
-IMPLEMENTS_VIRTUAL_MRPT_OBJECT(CostEvaluator, mrpt::rtti::CObject, selfdriving)
+ObstacleSource::~ObstacleSource() = default;
 
-CostEvaluator::~CostEvaluator() = default;
+ObstacleSource::Ptr ObstacleSource::FromStaticPointcloud(
+    const mrpt::maps::CPointsMap::Ptr& pc)
+{
+    return std::make_shared<ObstacleSourceStaticPointcloud>(pc);
+}

@@ -8,9 +8,9 @@
 
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
-#include <selfdriving/CostEvaluator.h>
-#include <selfdriving/PlannerInput.h>
-#include <selfdriving/PlannerOutput.h>
+#include <selfdriving/algos/CostEvaluator.h>
+#include <selfdriving/data/PlannerInput.h>
+#include <selfdriving/data/PlannerOutput.h>
 
 namespace selfdriving
 {

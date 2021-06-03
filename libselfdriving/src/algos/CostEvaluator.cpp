@@ -4,6 +4,10 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <selfdriving/PlannerInput.h>
+#include <selfdriving/algos/CostEvaluator.h>
 
 using namespace selfdriving;
+
+IMPLEMENTS_VIRTUAL_MRPT_OBJECT(CostEvaluator, mrpt::rtti::CObject, selfdriving)
+
+CostEvaluator::~CostEvaluator() = default;
