@@ -12,9 +12,9 @@
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
 #include <mrpt/poses/CPose2D.h>
-#include <selfdriving/MoveEdgeSE2_TPS.h>
-#include <selfdriving/SE2_KinState.h>
-#include <selfdriving/ptg_t.h>
+#include <selfdriving/data/MoveEdgeSE2_TPS.h>
+#include <selfdriving/data/SE2_KinState.h>
+#include <selfdriving/data/ptg_t.h>
 
 #include <cstdint>
 #include <deque>

@@ -7,9 +7,9 @@
 #pragma once
 
 #include <mrpt/opengl/opengl_frwds.h>
-#include <selfdriving/MotionPrimitivesTree.h>
-#include <selfdriving/PlannerInput.h>
-#include <selfdriving/RenderOptions.h>
+#include <selfdriving/data/MotionPrimitivesTree.h>
+#include <selfdriving/data/PlannerInput.h>
+#include <selfdriving/data/RenderOptions.h>
 
 #include <memory>
 

@@ -5,7 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <mrpt/core/initializer.h>
-#include <selfdriving/CostEvaluatorCostMap.h>
+#include <selfdriving/algos/CostEvaluatorCostMap.h>
 
 MRPT_INITIALIZER(selfdriving_register)
 {

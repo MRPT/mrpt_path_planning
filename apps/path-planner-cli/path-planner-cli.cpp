@@ -14,9 +14,9 @@
 #include <mrpt/serialization/CArchive.h>
 #include <mrpt/system/filesystem.h>
 #include <mrpt/system/os.h>  // plugins
-#include <selfdriving/CostEvaluatorCostMap.h>
-#include <selfdriving/TPS_RRTstar.h>
-#include <selfdriving/viz.h>
+#include <selfdriving/algos/CostEvaluatorCostMap.h>
+#include <selfdriving/algos/TPS_RRTstar.h>
+#include <selfdriving/algos/viz.h>
 
 #include <fstream>
 #include <iostream>

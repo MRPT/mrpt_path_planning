@@ -7,8 +7,8 @@
 #pragma once
 
 #include <mrpt/system/COutputLogger.h>
-#include <selfdriving/MoveEdgeSE2_TPS.h>
-#include <selfdriving/TrajectoriesAndRobotShape.h>
+#include <selfdriving/data/MoveEdgeSE2_TPS.h>
+#include <selfdriving/data/TrajectoriesAndRobotShape.h>
 
 #include <optional>
 

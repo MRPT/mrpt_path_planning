@@ -4,14 +4,6 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <selfdriving/ObstacleSource.h>
+#include <selfdriving/data/PlannerOutput.h>
 
 using namespace selfdriving;
-
-ObstacleSource::~ObstacleSource() = default;
-
-ObstacleSource::Ptr ObstacleSource::FromStaticPointcloud(
-    const mrpt::maps::CPointsMap::Ptr& pc)
-{
-    return std::make_shared<ObstacleSourceStaticPointcloud>(pc);
-}

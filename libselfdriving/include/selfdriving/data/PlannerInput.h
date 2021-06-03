@@ -7,9 +7,9 @@
 #pragma once
 
 #include <mrpt/math/TPose2D.h>
-#include <selfdriving/ObstacleSource.h>
-#include <selfdriving/SE2_KinState.h>
-#include <selfdriving/TrajectoriesAndRobotShape.h>
+#include <selfdriving/data/SE2_KinState.h>
+#include <selfdriving/data/TrajectoriesAndRobotShape.h>
+#include <selfdriving/interfaces/ObstacleSource.h>
 
 namespace selfdriving
 {

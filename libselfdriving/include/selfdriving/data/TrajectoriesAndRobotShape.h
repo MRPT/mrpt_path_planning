@@ -9,7 +9,7 @@
 #include <mrpt/config/CConfigFileBase.h>
 #include <mrpt/containers/yaml.h>
 #include <mrpt/math/TPolygon2D.h>
-#include <selfdriving/ptg_t.h>
+#include <selfdriving/data/ptg_t.h>
 
 #include <memory>
 #include <variant>

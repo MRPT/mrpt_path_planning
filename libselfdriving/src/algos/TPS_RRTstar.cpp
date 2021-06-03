@@ -8,9 +8,8 @@
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/opengl/COpenGLScene.h>
 #include <mrpt/random/RandomGenerators.h>
-#include <selfdriving/TPS_RRTstar.h>
-#include <selfdriving/bestTrajectory.h>
-#include <selfdriving/render_tree.h>
+#include <selfdriving/algos/TPS_RRTstar.h>
+#include <selfdriving/algos/render_tree.h>
 
 #include <iostream>
 

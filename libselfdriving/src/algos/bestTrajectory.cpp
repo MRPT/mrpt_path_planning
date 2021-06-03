@@ -5,7 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <mrpt/core/get_env.h>
-#include <selfdriving/bestTrajectory.h>
+#include <selfdriving/algos/bestTrajectory.h>
 
 using namespace selfdriving;
 

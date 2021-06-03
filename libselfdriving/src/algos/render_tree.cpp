@@ -12,7 +12,7 @@
 #include <mrpt/opengl/CSetOfObjects.h>
 #include <mrpt/opengl/CText3D.h>
 #include <mrpt/opengl/stock_objects.h>
-#include <selfdriving/render_tree.h>
+#include <selfdriving/algos/render_tree.h>
 
 using namespace selfdriving;
 
