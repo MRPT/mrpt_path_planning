@@ -61,5 +61,6 @@ html_theme = 'alabaster'
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+
 # copy doxygen files
-html_extra_path = ['../html']
+html_extra_path = ['../html', './images']
