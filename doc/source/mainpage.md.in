@@ -5,6 +5,5 @@ of Sphinx docs.
 
 \mainpage Self-driving RRT*-based C++ library
 
-[Git repository](https://github.com/jlblancoc/selfdriving)
-
-<img src="https://circleci.com/gh/jlblancoc/selfdriving.svg?style=svg" alt="circle-ci"/>
+- [Git repository](https://github.com/jlblancoc/selfdriving)
+- \ref overview_page

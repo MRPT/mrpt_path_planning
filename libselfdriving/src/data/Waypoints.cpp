@@ -60,8 +60,48 @@ std::string Waypoint::getAsText() const
     return s;
 }
 
+mrpt::containers::yaml Waypoint::asYAML() const
+{
+    mrpt::containers::yaml d = mrpt::containers::yaml::Map();
+
+    d["target"] = mrpt::containers::yaml::Sequence({target.x, target.y});
+    d["target"].node().printInShortFormat = true;
+
+    if (targetHeading) d["targetHeading"] = *targetHeading;
+
+    d["targetFrameId"]   = targetFrameId;
+    d["allowedDistance"] = allowedDistance;
+    d["speedRatio"]      = speedRatio;
+    d["allowSkip"]       = allowSkip;
+    d["preferNotToSkip"] = preferNotToSkip;
+
+    return d;
+}
+
+Waypoint Waypoint::FromYAML(const mrpt::containers::yaml& d)
+{
+    Waypoint wp;
+
+    const auto s = d["target"];
+    ASSERT_(s.isSequence());
+
+    wp.target = {
+        s.asSequence()[0].as<double>(), s.asSequence()[1].as<double>()};
+
+    if (d.has("targetHeading"))
+        wp.targetHeading = d["targetHeading"].as<bool>();
+
+    wp.targetFrameId   = d["targetFrameId"].as<std::string>();
+    wp.allowedDistance = d["allowedDistance"].as<double>();
+    wp.speedRatio      = d["speedRatio"].as<double>();
+    wp.allowSkip       = d["allowSkip"].as<bool>();
+    wp.preferNotToSkip = d["preferNotToSkip"].as<bool>();
+
+    return wp;
+}
+
 // WaypointSequence ==========
-WaypointSequence::WaypointSequence() = default;
+
 // Gets navigation params as a human-readable format:
 std::string WaypointSequence::getAsText() const
 {
@@ -79,11 +119,6 @@ std::string WaypointSequence::getAsText() const
 }
 
 // WaypointStatus ==========
-WaypointStatus& WaypointStatus::operator=(const Waypoint& wp)
-{
-    Waypoint::operator=(wp);
-    return *this;
-}
 std::string WaypointStatus::getAsText() const
 {
     std::string s = Waypoint::getAsText();
@@ -200,63 +235,22 @@ void WaypointStatusSequence::getAsOpenglVisualization(
     }
 }
 
-void WaypointSequence::save(
-    mrpt::config::CConfigFileBase& c, const std::string& s) const
+mrpt::containers::yaml WaypointSequence::asYAML() const
 {
-    const unsigned int N = waypoints.size();
-    c.write(s, "waypoint_count", N);
+    auto n = mrpt::containers::yaml::Sequence();
 
-    const int NP = 27;  // name padding
+    for (const auto& wp : waypoints) n.asSequence().emplace_back(wp.asYAML());
 
-    for (unsigned int i = 0; i < N; i++)
-    {
-        const auto& wp = waypoints[i];
-
-        c.write(
-            s, mrpt::format("wp%03u_allowed_distance", i), wp.allowedDistance,
-            NP);
-        c.write(s, mrpt::format("wp%03u_allowSkip", i), wp.allowSkip, NP);
-        c.write(s, mrpt::format("wp%03u_target_x", i), wp.target.x, NP);
-        c.write(s, mrpt::format("wp%03u_target_y", i), wp.target.y, NP);
-        c.write(
-            s, mrpt::format("wp%03u_target_frame_id", i), wp.targetFrameId, NP);
-        if (wp.targetHeading.has_value())
-            c.write(
-                s, mrpt::format("wp%03u_target_heading", i), *wp.targetHeading,
-                NP);
-        c.write(s, mrpt::format("wp%03u_speed_ratio", i), wp.speedRatio, NP);
-    }
+    return n;
 }
 
-void WaypointSequence::load(
-    const mrpt::config::CConfigFileBase& c, const std::string& s)
+WaypointSequence WaypointSequence::FromYAML(const mrpt::containers::yaml& d)
 {
-    this->clear();
+    WaypointSequence ws;
+    ASSERT_(d.isSequence());
 
-    const unsigned int N = c.read_int(s, "waypoint_count", 0, true);
-    waypoints.resize(N);
+    for (const auto& e : d.asSequence())
+        ws.waypoints.emplace_back(Waypoint::FromYAML(e));
 
-    for (unsigned int i = 0; i < N; i++)
-    {
-        auto& wp = waypoints[i];
-
-        wp.allowedDistance = c.read_double(
-            s, mrpt::format("wp%03u_allowed_distance", i), 0, true);
-        wp.allowSkip =
-            c.read_bool(s, mrpt::format("wp%03u_allowSkip", i), true, true);
-        wp.target.x =
-            c.read_double(s, mrpt::format("wp%03u_target_x", i), 0, true);
-        wp.target.y =
-            c.read_double(s, mrpt::format("wp%03u_target_y", i), 0, true);
-        wp.targetFrameId = c.read_string(
-            s, mrpt::format("wp%03u_target_frame_id", i), "map", false);
-
-        const auto sectHeading = mrpt::format("wp%03u_target_heading", i);
-        if (c.keyExists(s, sectHeading))
-            wp.targetHeading =
-                c.read_double(s, sectHeading, Waypoint::INVALID_NUM);
-
-        wp.speedRatio =
-            c.read_double(s, mrpt::format("wp%03u_speed_ratio", i), 1.0, false);
-    }
+    return ws;
 }

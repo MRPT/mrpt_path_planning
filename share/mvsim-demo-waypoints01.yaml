@@ -1,0 +1,37 @@
+%YAML 1.2
+---
+-
+  allowSkip: true
+  allowedDistance: 0.2
+  preferNotToSkip: true
+  speedRatio: 1
+  target: [3.0, 2.0]
+  targetFrameId: map
+-
+  allowSkip: true
+  allowedDistance: 0.2
+  preferNotToSkip: true
+  speedRatio: 1
+  target: [5.0, 5.0]
+  targetFrameId: map
+-
+  allowSkip: false
+  allowedDistance: 0.2
+  preferNotToSkip: true
+  speedRatio: 1
+  target: [9.0, 8.0]
+  targetFrameId: map
+-
+  allowSkip: true
+  allowedDistance: 0.2
+  preferNotToSkip: true
+  speedRatio: 1
+  target: [20.0, 7.0]
+  targetFrameId: map
+-
+  allowSkip: true
+  allowedDistance: 0.2
+  preferNotToSkip: true
+  speedRatio: 1
+  target: [26.0, 3.0]
+  targetFrameId: map

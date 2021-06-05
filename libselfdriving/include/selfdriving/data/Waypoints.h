@@ -8,7 +8,7 @@
    +------------------------------------------------------------------------+ */
 #pragma once
 
-#include <mrpt/config/CConfigFileBase.h>
+#include <mrpt/containers/yaml.h>
 #include <mrpt/img/TColor.h>
 #include <mrpt/math/TPoint2D.h>
 #include <mrpt/math/TPose2D.h>
@@ -52,7 +52,7 @@ struct Waypoint
 
     /** [Must be set by the user] How close should the robot get to this
      * waypoint for it to be considered reached. */
-    double allowedDistance{INVALID_NUM};
+    double allowedDistance = INVALID_NUM;
 
     /** (Default=1.0) Desired robot speed at the target, as a ratio of the full
      * robot speed. That is: speed_ratio=1 means that the user wants the robot
@@ -69,16 +69,18 @@ struct Waypoint
      * This value is ignored for the last waypoint in a sequence, since it is
      * always considered to be the
      * ultimate goal and hence not subject to be skipped.
+     *
+     * \sa preferNotToSkip
      */
     bool allowSkip = true;
 
     /**
-     * This modifies the behavior of mrpt::nav::TWaypoint::allow_skip according
+     * This modifies the behavior of TWaypoint::allowSkip according
      * to:
      *
      * \verbatim
      * +------------+-----------------+---------------------------+
-     * | allow_skip | preferNotToSkip |    Waypoint obstructed    |
+     * | allowSkip  | preferNotToSkip |    Waypoint obstructed    |
      * |            |                 |      with obstacles?      |
      * |            |                 +------------+--------------+
      * |            |                 |     Yes    |      No      |
@@ -103,6 +105,12 @@ struct Waypoint
     /** get in human-readable format */
     std::string getAsText() const;
 
+    /** Save waypoint as YAML */
+    mrpt::containers::yaml asYAML() const;
+
+    /** Load waypoint from YAML  */
+    static Waypoint FromYAML(const mrpt::containers::yaml& d);
+
     /** The default value of fields (used to detect non-set values) */
     static constexpr int INVALID_NUM{-100000};
 };
@@ -121,7 +129,6 @@ struct WaypointsRenderingParams
 };
 
 /** The struct for requesting navigation requests for a sequence of waypoints.
- * Used in CWaypointsNavigator::navigateWaypoints().
  * Users can directly fill in the list of waypoints manipulating the public
  * field `waypoints`.
  */
@@ -130,7 +137,7 @@ struct WaypointSequence
     std::vector<Waypoint> waypoints;
 
     /** Ctor with default values */
-    WaypointSequence();
+    WaypointSequence() = default;
 
     void clear() { waypoints.clear(); }
 
@@ -143,11 +150,11 @@ struct WaypointSequence
         mrpt::opengl::CSetOfObjects&    obj,
         const WaypointsRenderingParams& params = {}) const;
 
-    /** Saves waypoints to a config file section */
-    void save(mrpt::config::CConfigFileBase& c, const std::string& s) const;
+    /** Save waypoints as YAML */
+    mrpt::containers::yaml asYAML() const;
 
-    /** Loads waypoints to a config file section */
-    void load(const mrpt::config::CConfigFileBase& c, const std::string& s);
+    /** Load waypoints from YAML  */
+    static WaypointSequence FromYAML(const mrpt::containers::yaml& d);
 };
 
 /** A waypoint with an execution status. \ingroup nav_reactive */
@@ -172,19 +179,12 @@ struct WaypointStatus : public Waypoint
      * seen as "reachable" before it being the current active waypoint. */
     int counter_seen_reachable{0};
 
-    /** Any user-stored custom status data */
-    std::any user_status_data;
-
-    /** Only copies the base class Waypoint data fields */
-    WaypointStatus& operator=(const Waypoint& wp);
-
     /** Gets navigation params as a human-readable format */
     std::string getAsText() const;
 };
 
-/** The struct for querying the status of waypoints navigation. Used in
- * CWaypointsNavigator::getWaypointNavStatus().
- *  \ingroup nav_reactive */
+/** The struct for querying the status of waypoints navigation.
+ */
 struct WaypointStatusSequence
 {
     WaypointStatusSequence() = default;
