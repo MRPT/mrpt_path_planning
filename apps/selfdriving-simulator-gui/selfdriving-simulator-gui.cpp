@@ -20,6 +20,7 @@
 #include <selfdriving/algos/CostEvaluator.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/TPS_RRTstar.h>
+#include <selfdriving/algos/WaypointSequencer.h>
 #include <selfdriving/algos/viz.h>
 #include <selfdriving/data/Waypoints.h>
 
@@ -125,6 +126,7 @@ struct SelfDrivingStatus
 
     selfdriving::WaypointSequence       waypts;
     selfdriving::WaypointStatusSequence wayptsStatus;
+    selfdriving::WaypointSequencer      navigator;
 };
 
 SelfDrivingStatus sd;
@@ -138,6 +140,11 @@ void prepare_selfdriving()
             mrpt::containers::yaml::FromFile(
                 arg_waypoints_yaml_file.getValue()));
     }
+
+    // initialize the WaypointSequencer
+    // sd.navigator.config_.multitarget_look_ahead = 2;
+
+    sd.navigator.initialize();
 }
 
 int launchSimulation()
@@ -294,11 +301,9 @@ struct MouseEvent
     bool                 ctrlDown     = false;
 };
 
-using on_mouse_move_callback_t  = std::function<void(MouseEvent)>;
-using on_mouse_click_callback_t = std::function<void(MouseEvent)>;
+using on_mouse_event_callback_t = std::function<void(MouseEvent)>;
 
-on_mouse_move_callback_t  activeActionMouseMove;
-on_mouse_click_callback_t activeActionMouseClick;
+on_mouse_event_callback_t activeActionMouseHandler;
 // ======= end GUI status ==============
 
 // Add selfdriving window
@@ -347,7 +352,7 @@ void prepare_selfdriving_window(
         auto wr = vs->add<nanogui::Widget>();
         wr->setLayout(new nanogui::GridLayout(
             nanogui::Orientation::Horizontal, 1 /*columns */,
-            nanogui::Alignment::Fill, 3, 3));
+            nanogui::Alignment::Minimum, 3, 3));
 
         wr->setFixedSize({pnWidth - 7, pnHeight});
         wrappers.emplace_back(wr);
@@ -363,20 +368,18 @@ void prepare_selfdriving_window(
     // High-level waypoints-based navigator
     // -----------------------------------------
     {
-        auto pnNav = wrappers.at(0);
-        pnNav->add<nanogui::Label>("Waypoints:");
-        auto edWps = pnNav->add<nanogui::TextBox>();
-        edWps->setEditable(true);
-        edWps->setHeight(100);
-        edWps->setFixedHeight(100);
+        auto pnNav        = wrappers.at(0);
+        auto lbWaypsCount = pnNav->add<nanogui::Label>("");
 
-        edWps->setValue("aaa\nasas\naa");
+        lbWaypsCount->setCaption(mrpt::format(
+            "Number of wps: %u",
+            static_cast<unsigned int>(sd.waypts.waypoints.size())));
 
         // custom 3D objects
         auto glWaypoints = mrpt::opengl::CSetOfObjects::Create();
         glWaypoints->setLocation(0, 0, 0.01);
         selfdriving::WaypointsRenderingParams rp;
-        // rp
+        // rp.xx = x;
 
         sd.waypts.getAsOpenglVisualization(*glWaypoints, rp);
         std::cout << "Waypoints:\n" << sd.waypts.getAsText() << std::endl;
@@ -385,6 +388,12 @@ void prepare_selfdriving_window(
             auto lckgui = mrpt::lockHelper(world->m_gui_msg_lines_mtx);
             world->m_gui_user_objects->insert(glWaypoints);
         }
+
+        auto btn = pnNav->add<nanogui::Button>("START");
+
+        btn->setCallback([]() {
+            // XX
+        });
     }
 
     // -------------------------------
@@ -429,8 +438,8 @@ void prepare_selfdriving_window(
         edStateGoalPose->setEditable(true);
 
         pickBtn->setCallback([glTargetSign, edStateGoalPose]() {
-            activeActionMouseMove = [glTargetSign,
-                                     edStateGoalPose](MouseEvent e) {
+            activeActionMouseHandler = [glTargetSign,
+                                        edStateGoalPose](MouseEvent e) {
                 edStateGoalPose->setValue(e.pt.asString());
                 glTargetSign->setLocation(
                     e.pt + mrpt::math::TVector3D(0, 0, 0.05));
@@ -439,7 +448,7 @@ void prepare_selfdriving_window(
                 // Click -> end mode:
                 if (e.leftBtnDown)
                 {
-                    activeActionMouseMove = {};
+                    activeActionMouseHandler = {};
                     glTargetSign->setVisibility(false);
                 }
             };
@@ -562,8 +571,8 @@ void prepare_selfdriving_window(
 
         const auto& mousePt    = world->gui_mouse_point();
         const auto  screen     = gui->screen();
-        const bool  leftClick  = screen->mouseState() & 0x01 != 0;
-        const bool  rightClick = screen->mouseState() & 0x02 != 0;
+        const bool  leftClick  = (screen->mouseState() & 0x01) != 0;
+        const bool  rightClick = (screen->mouseState() & 0x02) != 0;
 
         if (lastMousePt != mousePt || leftClick != lastLeftClick ||
             rightClick != lastRightClick)
@@ -573,10 +582,10 @@ void prepare_selfdriving_window(
             e.leftBtnDown  = leftClick;
             e.rightBtnDown = rightClick;
 
-            if (activeActionMouseMove)
+            if (activeActionMouseHandler)
             {
                 // Make a copy, since the function can modify itself:
-                auto act = activeActionMouseMove;
+                auto act = activeActionMouseHandler;
                 act(e);
             }
         }
