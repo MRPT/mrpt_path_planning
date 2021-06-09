@@ -8,6 +8,8 @@
 
 #include <mrpt/nav/reactive/CAbstractNavigator.h>
 #include <selfdriving/data/Waypoints.h>
+#include <selfdriving/interfaces/ObstacleSource.h>
+#include <selfdriving/interfaces/VehicleMotionInterface.h>
 
 namespace selfdriving
 {
@@ -81,6 +83,17 @@ class WaypointSequencer
     {
         Configuration() = default;
 
+        /** @name Interfaces (fill all these members before initialize() )
+         *  @{ */
+        VehicleMotionInterface::Ptr vehicleMotionInterface;
+
+        ObstacleSource::Ptr obstacleSource;
+
+        /** @} */
+
+        /** @name Parameters
+         *  @{ */
+
         /** In meters. Not present: unlimited */
         std::optional<double> max_distance_to_allow_skip_waypoint;
 
@@ -111,6 +124,8 @@ class WaypointSequencer
         /** (Default=3) How many steps should the condition for
          * dist_check_target_is_blocked be fulfilled to raise an event */
         int hysteresis_check_target_is_blocked{3};
+
+        /** @} */
     };
 
     /** Must be called before any other navigation command, and after filling in
