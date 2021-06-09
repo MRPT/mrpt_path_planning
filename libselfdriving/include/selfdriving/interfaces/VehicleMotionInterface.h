@@ -44,6 +44,8 @@ using mrpt::kinematics::CVehicleVelCmd;
 class VehicleMotionInterface
 {
    public:
+    using Ptr = std::shared_ptr<VehicleMotionInterface>;
+
     VehicleMotionInterface()          = default;
     virtual ~VehicleMotionInterface() = default;
 
@@ -112,7 +114,6 @@ class VehicleMotionInterface
     virtual bool motion_execute(
         const std::optional<CVehicleVelCmd::Ptr>& immediate,
         const std::optional<EnqueuedMotionCmd>&   next) = 0;
-
 };
 
 }  // namespace selfdriving
