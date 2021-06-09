@@ -6,10 +6,15 @@
 
 #pragma once
 
-#include <mrpt/nav/reactive/CAbstractNavigator.h>
+#include <mrpt/poses/CPose2DInterpolator.h>
+#include <mrpt/system/COutputLogger.h>
+#include <mrpt/system/CTimeLogger.h>
 #include <selfdriving/data/Waypoints.h>
 #include <selfdriving/interfaces/ObstacleSource.h>
 #include <selfdriving/interfaces/VehicleMotionInterface.h>
+
+#include <functional>
+#include <list>
 
 namespace selfdriving
 {
@@ -66,12 +71,16 @@ struct NavErrorReason
  *  }
  *  \enddot
  *
+ * All methods are thread-safe, in the sense that mutexes are internally used
+ * to ensure no undefined navigation state is possible if invoking an object of
+ * this class from more than one thread.
+ *
  */
-class WaypointSequencer
+class WaypointSequencer : public mrpt::system::COutputLogger
 {
    public:
     /** ctor */
-    WaypointSequencer() = default;
+    WaypointSequencer() : mrpt::system::COutputLogger("WaypointSequencer") {}
 
     /** dtor */
     virtual ~WaypointSequencer();
@@ -162,7 +171,7 @@ class WaypointSequencer
     virtual void resetNavError();
 
     /** Returns the current navigator state. */
-    inline NavState getCurrentState() const { return m_navigationState; }
+    inline NavState getCurrentState() const { return navigationState_; }
 
     /** In case of state=NAV_ERROR, this returns the reason for the error.
      * Error state is reseted every time a new navigation starts with
@@ -191,7 +200,7 @@ class WaypointSequencer
     void endWaypointsAccess() { m_nav_waypoints_cs.unlock(); }
 
     /** Publicly available time profiling object. Default: disabled */
-    mrpt::system::CTimeLogger m_navProfiler{
+    mrpt::system::CTimeLogger navProfiler_{
         true /*enabled*/, "WaypointSequencer"};
 
     /** @}*/
@@ -208,9 +217,11 @@ class WaypointSequencer
 
    protected:
     /** Current and last internal state of navigator: */
-    NavState       m_navigationState     = NavState::IDLE;
-    NavState       m_lastNavigationState = NavState::IDLE;
+    NavState       navigationState_     = NavState::IDLE;
+    NavState       lastNavigationState_ = NavState::IDLE;
     NavErrorReason m_navErrorReason;
+
+    bool initialized_ = false;
 
     /** mutex for all navigation methods */
     std::recursive_mutex m_nav_cs;
@@ -245,7 +256,7 @@ class WaypointSequencer
     /** Events generated during navigationStep(), enqueued to be called at the
      * end of the method execution to avoid user code to change the navigator
      * state. */
-    std::list<std::function<void(void)>> m_pending_events;
+    std::list<std::function<void(void)>> pendingEvents_;
 
     void dispatchPendingNavEvents();
 
@@ -262,8 +273,7 @@ class WaypointSequencer
      * `call_virtual_nav_method` can be set to false to avoid calling the
      * virtual method performNavigationStep()
      */
-    virtual void performNavigationStepNavigating(
-        bool call_virtual_nav_method = true);
+    virtual void performNavigationStepNavigating();
 
     /** Will be false until the navigation end is sent, and it is reset with
      * each new command */
@@ -283,6 +293,8 @@ class WaypointSequencer
      * missing information, the point is out of range, etc. */
     //    virtual bool impl_waypoint_is_reachable(
     //        const mrpt::math::TPoint2D& wp_local_wrt_robot) const = 0;
+
+    void internal_on_start_new_navigation();
 
 #if 0
     bool checkHasReachedTarget(const double targetDist) const override;

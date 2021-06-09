@@ -141,8 +141,11 @@ std::string WaypointStatusSequence::getAsText() const
         s += "\n";
     }
     s += mrpt::format(
-        " final_goal_reached:%s  waypoint_index_current_goal=%d\n",
-        (final_goal_reached ? "YES" : "NO "), waypoint_index_current_goal);
+        " final_goal_reached:%s  waypoint_index_current_goal=%s\n",
+        (final_goal_reached ? "YES" : "NO "),
+        waypoint_index_current_goal
+            ? std::to_string(*waypoint_index_current_goal).c_str()
+            : "(Not started)");
     return s;
 }
 
