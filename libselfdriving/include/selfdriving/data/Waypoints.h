@@ -196,13 +196,13 @@ struct WaypointStatusSequence
     mrpt::system::TTimeStamp timestamp_nav_started = INVALID_TIMESTAMP;
 
     /** Whether the final waypoint has been reached successfuly. */
-    bool final_goal_reached{false};
+    bool final_goal_reached = false;
 
     /** Index in `waypoints` of the waypoint the navigator is currently trying
      * to reach.
      * This will point to the last waypoint after navigation ends successfully.
-     * Its value is `-1` if navigation has not started yet */
-    int waypoint_index_current_goal{-1};
+     * It has no value if navigation has not started yet */
+    std::optional<size_t> waypoint_index_current_goal;
 
     /** Robot pose at last time step (has INVALID_NUM fields upon
      * initialization) */

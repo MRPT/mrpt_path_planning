@@ -7,13 +7,20 @@
 #pragma once
 
 #include <mrpt/kinematics/CVehicleVelCmd.h>
-#include <selfdriving/EnqueuedMotionCmd.h>
-#include <selfdriving/VehicleLocalizationState.h>
-#include <selfdriving/VehicleOdometryState.h>
+#include <mrpt/system/COutputLogger.h>
+#include <selfdriving/data/EnqueuedMotionCmd.h>
+#include <selfdriving/data/VehicleLocalizationState.h>
+#include <selfdriving/data/VehicleOdometryState.h>
 
 namespace selfdriving
 {
 using mrpt::kinematics::CVehicleVelCmd;
+
+enum class STOP_TYPE : uint8_t
+{
+    REGULAR = 0,
+    EMERGENCY
+};
 
 /** The virtual interface between a path follower / plan executor and a real
  * mobile platform (vehicle, robot), regarding controlling its motion.
@@ -41,12 +48,15 @@ using mrpt::kinematics::CVehicleVelCmd;
  *
  *
  */
-class VehicleMotionInterface
+class VehicleMotionInterface : public mrpt::system::COutputLogger
 {
    public:
     using Ptr = std::shared_ptr<VehicleMotionInterface>;
 
-    VehicleMotionInterface()          = default;
+    VehicleMotionInterface()
+        : mrpt::system::COutputLogger("VehicleMotionInterface")
+    {
+    }
     virtual ~VehicleMotionInterface() = default;
 
     /** Provides access to the vehicle localization data.
@@ -114,6 +124,36 @@ class VehicleMotionInterface
     virtual bool motion_execute(
         const std::optional<CVehicleVelCmd::Ptr>& immediate,
         const std::optional<EnqueuedMotionCmd>&   next) = 0;
+
+    /** Stops the vehicle. Different levels of abruptness in the stop can be
+     * considered given the emergency condition or not of the command.
+     */
+    virtual void stop(const STOP_TYPE stopType) = 0;
+
+    virtual void stop_watchdog()
+    {
+        MRPT_LOG_INFO("Default stop_watchdog() called.");
+    }
+    virtual void start_watchdog([
+        [maybe_unused]] const size_t periodMilliseconds)
+    {
+        MRPT_LOG_INFO("Default start_watchdog() called.");
+    }
+
+    /** @name Event callbacks
+     *  @{ */
+
+    virtual void on_nav_end_due_to_error()
+    {
+        MRPT_LOG_WARN("Default on_nav_end_due_to_error() called.");
+    }
+
+    virtual void on_nav_start()
+    {
+        MRPT_LOG_WARN("Default on_nav_start() event handler called.");
+    }
+
+    /** @} */
 };
 
 }  // namespace selfdriving
