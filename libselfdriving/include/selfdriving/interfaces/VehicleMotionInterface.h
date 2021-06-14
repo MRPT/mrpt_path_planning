@@ -140,6 +140,10 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger
         MRPT_LOG_INFO("Default start_watchdog() called.");
     }
 
+    /** Returns clockwall time (UNIX timestamp as double) for real robots
+     * [default], simulated time in simulators. */
+    virtual double robot_time() const { return mrpt::Clock::nowDouble(); }
+
     /** @name Event callbacks
      *  @{ */
 

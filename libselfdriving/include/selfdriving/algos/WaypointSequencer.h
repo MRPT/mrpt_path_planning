@@ -9,6 +9,7 @@
 #include <mrpt/poses/CPose2DInterpolator.h>
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
+#include <selfdriving/data/TrajectoriesAndRobotShape.h>
 #include <selfdriving/data/Waypoints.h>
 #include <selfdriving/interfaces/ObstacleSource.h>
 #include <selfdriving/interfaces/VehicleMotionInterface.h>
@@ -92,11 +93,13 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     {
         Configuration() = default;
 
-        /** @name Interfaces (fill all these members before initialize() )
+        /** @name Mandatory configuration fields; must fill before initialize()
          *  @{ */
         VehicleMotionInterface::Ptr vehicleMotionInterface;
 
         ObstacleSource::Ptr obstacleSource;
+
+        TrajectoriesAndRobotShape ptgs;
 
         /** @} */
 
@@ -226,27 +229,13 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     /** mutex for all navigation methods */
     std::recursive_mutex m_nav_cs;
 
-    struct RobotPoseVel
-    {
-        mrpt::math::TPose2D  pose;
-        mrpt::math::TTwist2D velGlobal, velLocal;
-        /** raw odometry (frame does not match to "pose", but is expected to be
-         * smoother in the short term). */
-        mrpt::math::TPose2D      rawOdometry;
-        mrpt::system::TTimeStamp timestamp;
-        /** map frame ID for `pose` */
-        std::string pose_frame_id;
-
-        RobotPoseVel() = default;
-    };
-
-    /** Current robot pose (updated in CAbstractNavigator::navigationStep() ) */
-    RobotPoseVel            m_curPoseVel;
-    mrpt::Clock::time_point m_last_curPoseVelUpdate_robot_time;
-    // std::string             m_last_curPoseVelUpdate_pose_frame_id;
+    /** Current robot pose (updated in navigationStep() ) */
+    VehicleLocalizationState lastVehicleLocalization_;
+    VehicleOdometryState     lastVehicleOdometry_;
+    double                   lastVehiclePosRobotTime_ = 0;
 
     /** Latest robot poses (updated in CAbstractNavigator::navigationStep() ) */
-    mrpt::poses::CPose2DInterpolator m_latestPoses, m_latestOdomPoses;
+    mrpt::poses::CPose2DInterpolator latestPoses_, latestOdomPoses_;
 
     /** For sending an alarm (error event) when it seems that we are not
      * approaching toward the target in a while... */
