@@ -12,6 +12,7 @@
 #include <mrpt/math/TLine3D.h>
 #include <mrpt/math/TObject3D.h>
 #include <mrpt/opengl/CDisk.h>
+#include <mrpt/system/CRateTimer.h>
 #include <mrpt/system/os.h>  // plugins
 #include <mrpt/version.h>
 #include <mvsim/Comms/Server.h>
@@ -23,6 +24,7 @@
 #include <selfdriving/algos/WaypointSequencer.h>
 #include <selfdriving/algos/viz.h>
 #include <selfdriving/data/Waypoints.h>
+#include <selfdriving/interfaces/MVSIM_VehicleInterface.h>
 
 #include <rapidxml_utils.hpp>
 #include <thread>
@@ -79,13 +81,10 @@ void commonLaunchServer()
 
     server->start();
 }
-struct TThreadParams
+
+struct CommonThreadParams
 {
     std::mutex closingMtx;
-
-    std::shared_ptr<mvsim::World> world;
-
-    TThreadParams() = default;
 
     bool isClosing()
     {
@@ -105,18 +104,27 @@ struct TThreadParams
     bool closing_ = false;
 };
 
-static void                mvsim_server_thread_update_GUI(TThreadParams& tp);
+struct GUI_ThreadParams : public CommonThreadParams
+{
+    std::shared_ptr<mvsim::World> world;
+};
+
+static void                mvsim_server_thread_update_GUI(GUI_ThreadParams& tp);
 mvsim::World::TGUIKeyEvent gui_key_events;
 std::mutex                 gui_key_events_mtx;
 std::string                msg2gui;
 
 // ======= Self Drive status ===================
+struct SelfDrivingThreadParams : public CommonThreadParams
+{
+};
+
 struct SelfDrivingStatus
 {
     SelfDrivingStatus() = default;
 
-    selfdriving::ObstacleSource::Ptr       obstacles;
-    selfdriving::CostEvaluatorCostMap::Ptr costMap;
+    // selfdriving::ObstacleSource::Ptr       obstacles;
+    // selfdriving::CostEvaluatorCostMap::Ptr costMap;
 
     selfdriving::PlannerInput                 pi;
     selfdriving::TPS_RRTstar                  planner;
@@ -127,24 +135,65 @@ struct SelfDrivingStatus
     selfdriving::WaypointSequence       waypts;
     selfdriving::WaypointStatusSequence wayptsStatus;
     selfdriving::WaypointSequencer      navigator;
+
+    std::shared_ptr<selfdriving::MVSIM_VehicleInterface> mvsimVehicleInterface;
+
+    SelfDrivingThreadParams sdThreadParams;
+    std::thread             selfDrivingThread;
 };
 
 SelfDrivingStatus sd;
+
+static void selfdriving_run_thread(SelfDrivingThreadParams& params);
+
 // ======= End Self Drive status ===================
 
-void prepare_selfdriving()
+void prepare_selfdriving(mvsim::World& world)
 {
+    // initialize the WaypointSequencer
+    // --------------------------------------------------------
+    // sd.navigator.config_.multitarget_look_ahead = 2;
+
+    // Load PTGs:
+    {
+        mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
+        sd.navigator.config_.ptgs.initFromConfigFile(
+            cfg, arg_config_file_section.getValue());
+    }
+
+    // Obstacle source:
+    auto obsPts = mrpt::maps::CSimplePointsMap::Create();
+
+    world.runVisitorOnWorldElements([&](mvsim::WorldElementBase& we) {
+        auto grid = dynamic_cast<mvsim::OccupancyGridMap*>(&we);
+        if (!grid) return;
+        grid->getOccGrid().getAsPointCloud(*obsPts);
+    });
+
+    sd.navigator.config_.obstacleSource =
+        selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
+
+    // Vehicle interface:
+    sd.mvsimVehicleInterface =
+        std::make_shared<selfdriving::MVSIM_VehicleInterface>();
+    sd.mvsimVehicleInterface->connect();
+
+    sd.navigator.config_.vehicleMotionInterface = sd.mvsimVehicleInterface;
+
+    // all mandaroty fields filled in now:
+    sd.navigator.initialize();
+
+    sd.selfDrivingThread =
+        std::thread(&selfdriving_run_thread, std::ref(sd.sdThreadParams));
+
+    // Load example/test waypoints?
+    // --------------------------------------------------------
     if (arg_waypoints_yaml_file.isSet())
     {
         sd.waypts = selfdriving::WaypointSequence::FromYAML(
             mrpt::containers::yaml::FromFile(
                 arg_waypoints_yaml_file.getValue()));
     }
-
-    // initialize the WaypointSequencer
-    // sd.navigator.config_.multitarget_look_ahead = 2;
-
-    sd.navigator.initialize();
 }
 
 int launchSimulation()
@@ -169,8 +218,11 @@ int launchSimulation()
     // Attach world as a mvsim communications node:
     world->connectToServer();
 
+    // Prepare selfdriving classes, now that we have the world initialized:
+    prepare_selfdriving(*world);
+
     // Launch GUI thread:
-    TThreadParams thread_params;
+    GUI_ThreadParams thread_params;
     thread_params.world = world;
 
     std::thread thGUI =
@@ -282,9 +334,13 @@ int launchSimulation()
 
     }  // end while()
 
+    // Close GUI thread:
     thread_params.closing(true);
+    if (thGUI.joinable()) thGUI.join();
 
-    thGUI.join();  // TODO: It could break smth
+    // Close selfdriving thread:
+    sd.sdThreadParams.closing(true);
+    if (sd.selfDrivingThread.joinable()) sd.selfDrivingThread.join();
 
     return 0;
 }
@@ -390,10 +446,7 @@ void prepare_selfdriving_window(
         }
 
         auto btn = pnNav->add<nanogui::Button>("START");
-
-        btn->setCallback([]() {
-            // XX
-        });
+        btn->setCallback([]() { sd.navigator.requestNavigation(sd.waypts); });
     }
 
     // -------------------------------
@@ -472,7 +525,7 @@ void prepare_selfdriving_window(
                 grid->getOccGrid().getAsPointCloud(*obsPts);
             });
 
-            sd.obstacles =
+            auto obstacles =
                 selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
 
             sd.pi.stateStart.pose.fromString(edStateStartPose->value());
@@ -481,7 +534,7 @@ void prepare_selfdriving_window(
             sd.pi.stateGoal.pose.fromString(edStateGoalPose->value());
             sd.pi.stateGoal.vel.fromString(edStateGoalVel->value());
 
-            sd.pi.obstacles = sd.obstacles;
+            sd.pi.obstacles = obstacles;
 
             auto bbox = sd.pi.obstacles->obstacles()->boundingBox();
 
@@ -602,7 +655,7 @@ void prepare_selfdriving_window(
     gui->performLayout();
 }
 
-void mvsim_server_thread_update_GUI(TThreadParams& tp)
+void mvsim_server_thread_update_GUI(GUI_ThreadParams& tp)
 {
     while (!tp.isClosing())
     {
@@ -634,6 +687,29 @@ void mvsim_server_thread_update_GUI(TThreadParams& tp)
     }
 }
 
+void selfdriving_run_thread(SelfDrivingThreadParams& params)
+{
+    double rateHz = 10.0;
+
+    mrpt::system::CRateTimer rate(rateHz);
+
+    while (!params.isClosing())
+    {
+        try
+        {
+            sd.navigator.navigationStep();
+            rate.sleep();
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "[selfdriving_run_thread] Exception:" << e.what()
+                      << std::endl;
+            params.closing(true);
+            return;
+        }
+    }
+}
+
 int main(int argc, char** argv)
 {
     try
@@ -650,8 +726,6 @@ int main(int argc, char** argv)
                 return 1;
             }
         }
-
-        prepare_selfdriving();
 
         launchSimulation();
     }

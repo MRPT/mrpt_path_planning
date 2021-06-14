@@ -10,6 +10,9 @@
 
 using namespace selfdriving;
 
+constexpr double MIN_TIME_BETWEEN_POSE_UPDATES = 20e-3;  // [s]
+constexpr double PREVIOUS_POSES_MAX_AGE        = 20;  // [s]
+
 WaypointSequencer::~WaypointSequencer()
 {
     // stop vehicle, etc.
@@ -23,8 +26,7 @@ void WaypointSequencer::initialize()
     // Check that config_ holds all the required fields:
     ASSERT_(config_.vehicleMotionInterface);
     ASSERT_(config_.obstacleSource);
-
-    // Initialize PTGs...
+    ASSERT_(config_.ptgs.initialized());
 
     initialized_ = true;
 
@@ -211,11 +213,82 @@ void WaypointSequencer::dispatchPendingNavEvents()
     pendingEvents_.clear();
 }
 
-void WaypointSequencer::updateCurrentPoseAndSpeeds() {}
+void WaypointSequencer::updateCurrentPoseAndSpeeds()
+{
+    // Ignore calls too-close in time, e.g. from the navigationStep()
+    // methods of AbstractNavigator and a derived, overriding class.
+
+    // this is clockwall time for real robots, simulated time in simulators.
+    const double robotTime = config_.vehicleMotionInterface->robot_time();
+
+    if (lastVehiclePosRobotTime_ >= .0)
+    {
+        const double lastCallAge = robotTime - lastVehiclePosRobotTime_;
+        if (lastCallAge < MIN_TIME_BETWEEN_POSE_UPDATES)
+        {
+            MRPT_LOG_THROTTLE_DEBUG_FMT(
+                5.0,
+                "updateCurrentPoseAndSpeeds: ignoring call, since last call "
+                "was only %f ms ago.",
+                lastCallAge * 1e3);
+            // previous data is still valid: don't query the robot again
+            return;
+        }
+    }
+
+    {
+        mrpt::system::CTimeLoggerEntry tle(
+            navProfiler_, "updateCurrentPoseAndSpeeds()");
+
+        lastVehicleLocalization_ =
+            config_.vehicleMotionInterface->get_localization();
+
+        lastVehicleOdometry_ = config_.vehicleMotionInterface->get_odometry();
+
+        if (!lastVehicleLocalization_.valid)
+        {
+            navigationState_            = NavState::NAV_ERROR;
+            m_navErrorReason.error_code = NavError::EMERGENCY_STOP;
+            m_navErrorReason.error_msg  = std::string(
+                "ERROR: get_localization() failed, stopping robot "
+                "and finishing navigation");
+            try
+            {
+                config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
+            }
+            catch (...)
+            {
+            }
+            MRPT_LOG_ERROR(m_navErrorReason.error_msg);
+            throw std::runtime_error(m_navErrorReason.error_msg);
+        }
+    }
+    lastVehiclePosRobotTime_ = robotTime;
+
+    // TODO: Detect a change if frame_id and clear m_latestPoses,
+    // m_latestOdomPoses.
+
+    // Append to list of past poses:
+    latestPoses_.insert(
+        lastVehicleLocalization_.timestamp, lastVehicleLocalization_.pose);
+    latestOdomPoses_.insert(
+        lastVehicleOdometry_.timestamp, lastVehicleOdometry_.odometry);
+
+    // Purge old ones:
+    while (latestPoses_.size() > 1 &&
+           mrpt::system::timeDifference(
+               latestPoses_.begin()->first, latestPoses_.rbegin()->first) >
+               PREVIOUS_POSES_MAX_AGE)
+    { latestPoses_.erase(latestPoses_.begin()); }
+    while (latestOdomPoses_.size() > 1 &&
+           mrpt::system::timeDifference(
+               latestOdomPoses_.begin()->first,
+               latestOdomPoses_.rbegin()->first) > PREVIOUS_POSES_MAX_AGE)
+    { latestOdomPoses_.erase(latestOdomPoses_.begin()); }
+}
 
 void WaypointSequencer::performNavigationStepNavigating()
 {
-    const auto prevState = navigationState_;
     try
     {
         if (lastNavigationState_ != NavState::NAVIGATING)
@@ -263,8 +336,6 @@ void WaypointSequencer::performNavigationStepNavigating()
         // Not useful here?
         // if (m_rethrow_exceptions) throw;
     }
-
-    navigationState_ = prevState;
 }
 
 void WaypointSequencer::internal_on_start_new_navigation()
@@ -273,6 +344,6 @@ void WaypointSequencer::internal_on_start_new_navigation()
 
     config_.vehicleMotionInterface->start_watchdog(1000 /*ms*/);
 
-    m_latestPoses.clear();  // Clear cache of last poses.
-    m_latestOdomPoses.clear();
+    latestPoses_.clear();  // Clear cache of last poses.
+    latestOdomPoses_.clear();
 }
