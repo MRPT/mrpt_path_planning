@@ -408,7 +408,7 @@ void prepare_selfdriving_window(
         auto wr = vs->add<nanogui::Widget>();
         wr->setLayout(new nanogui::GridLayout(
             nanogui::Orientation::Horizontal, 1 /*columns */,
-            nanogui::Alignment::Minimum, 3, 3));
+            nanogui::Alignment::Fill, 3, 3));
 
         wr->setFixedSize({pnWidth - 7, pnHeight});
         wrappers.emplace_back(wr);
@@ -423,6 +423,7 @@ void prepare_selfdriving_window(
     // -----------------------------------------
     // High-level waypoints-based navigator
     // -----------------------------------------
+    nanogui::Label* lbNavStatus = nullptr;
     {
         auto pnNav        = wrappers.at(0);
         auto lbWaypsCount = pnNav->add<nanogui::Label>("");
@@ -445,9 +446,30 @@ void prepare_selfdriving_window(
             world->m_gui_user_objects->insert(glWaypoints);
         }
 
-        auto btn = pnNav->add<nanogui::Button>("START");
-        btn->setCallback([]() { sd.navigator.requestNavigation(sd.waypts); });
+        lbNavStatus =
+            pnNav->add<nanogui::Label>("Nav Status:                    ");
+
+        auto btnReq = pnNav->add<nanogui::Button>("requestNavigation()");
+        btnReq->setCallback(
+            []() { sd.navigator.requestNavigation(sd.waypts); });
+
+        pnNav->add<nanogui::Button>("suspend()")->setCallback([]() {
+            sd.navigator.suspend();
+        });
+        pnNav->add<nanogui::Button>("resume()")->setCallback([]() {
+            sd.navigator.resume();
+        });
+        pnNav->add<nanogui::Button>("cancel()")->setCallback([]() {
+            sd.navigator.cancel();
+        });
     }
+    const auto lambdaUpdateNavStatus = [lbNavStatus]() {
+        const auto state = sd.navigator.getCurrentState();
+        lbNavStatus->setCaption(mrpt::format(
+            "Nav status: %s",
+            mrpt::typemeta::TEnumType<selfdriving::NavState>::value2name(state)
+                .c_str()));
+    };
 
     // -------------------------------
     // Single RRT* planner tab
@@ -651,6 +673,8 @@ void prepare_selfdriving_window(
     };
 
     gui->addLoopCallback(lambdaHandleMouseOperations);
+
+    gui->addLoopCallback(lambdaUpdateNavStatus);
 
     gui->performLayout();
 }

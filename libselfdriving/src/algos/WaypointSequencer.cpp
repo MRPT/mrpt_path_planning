@@ -84,6 +84,16 @@ void WaypointSequencer::navigationStep()
     mrpt::system::CTimeLoggerEntry tle(
         navProfiler_, "WaypointSequencer::navigationStep()");
 
+    // Record execution period:
+    {
+        const double tNow = mrpt::Clock::nowDouble();
+        if (lastNavigationStepEndTime_)
+            navProfiler_.registerUserMeasure(
+                "navigationStep_period", tNow - *lastNavigationStepEndTime_,
+                true /*has time units*/);
+        lastNavigationStepEndTime_ = tNow;
+    }
+
     const NavState prevState = navigationState_;
     switch (navigationState_)
     {
@@ -92,7 +102,8 @@ void WaypointSequencer::navigationStep()
             if (lastNavigationState_ == NavState::NAVIGATING)
             {
                 MRPT_LOG_INFO(
-                    "WaypointSequencer::navigationStep(): Navigation stopped.");
+                    "WaypointSequencer::navigationStep(): Navigation "
+                    "stopped.");
             }
             break;
 
@@ -111,7 +122,8 @@ void WaypointSequencer::navigationStep()
             if (lastNavigationState_ == NavState::NAVIGATING)
             {
                 MRPT_LOG_ERROR(
-                    "[WaypointSequencer::navigationStep()] Stopping navigation "
+                    "[WaypointSequencer::navigationStep()] Stopping "
+                    "navigation "
                     "due to a NavState::NAV_ERROR state!");
 
                 if (config_.vehicleMotionInterface)
@@ -228,7 +240,8 @@ void WaypointSequencer::updateCurrentPoseAndSpeeds()
         {
             MRPT_LOG_THROTTLE_DEBUG_FMT(
                 5.0,
-                "updateCurrentPoseAndSpeeds: ignoring call, since last call "
+                "updateCurrentPoseAndSpeeds: ignoring call, since last "
+                "call "
                 "was only %f ms ago.",
                 lastCallAge * 1e3);
             // previous data is still valid: don't query the robot again
@@ -294,7 +307,8 @@ void WaypointSequencer::performNavigationStepNavigating()
         if (lastNavigationState_ != NavState::NAVIGATING)
         {
             MRPT_LOG_INFO(
-                "[WaypointSequencer::navigationStep()] Starting navigation. "
+                "[WaypointSequencer::navigationStep()] Starting "
+                "navigation. "
                 "Watchdog enabled.\n");
 
             internal_on_start_new_navigation();

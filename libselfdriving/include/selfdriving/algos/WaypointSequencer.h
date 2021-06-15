@@ -9,6 +9,7 @@
 #include <mrpt/poses/CPose2DInterpolator.h>
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
+#include <mrpt/typemeta/TEnumType.h>
 #include <selfdriving/data/TrajectoriesAndRobotShape.h>
 #include <selfdriving/data/Waypoints.h>
 #include <selfdriving/interfaces/ObstacleSource.h>
@@ -224,6 +225,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     NavState       lastNavigationState_ = NavState::IDLE;
     NavErrorReason m_navErrorReason;
 
+    std::optional<double> lastNavigationStepEndTime_;
+
     bool initialized_ = false;
 
     /** mutex for all navigation methods */
@@ -302,3 +305,10 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 };
 
 }  // namespace selfdriving
+
+MRPT_ENUM_TYPE_BEGIN(selfdriving::NavState)
+MRPT_FILL_ENUM_MEMBER(selfdriving, NavState::IDLE);
+MRPT_FILL_ENUM_MEMBER(selfdriving, NavState::NAVIGATING);
+MRPT_FILL_ENUM_MEMBER(selfdriving, NavState::SUSPENDED);
+MRPT_FILL_ENUM_MEMBER(selfdriving, NavState::NAV_ERROR);
+MRPT_ENUM_TYPE_END()
