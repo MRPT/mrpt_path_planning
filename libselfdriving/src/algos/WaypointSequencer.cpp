@@ -21,7 +21,7 @@ WaypointSequencer::~WaypointSequencer()
 void WaypointSequencer::initialize()
 {
     MRPT_START
-    auto lck = mrpt::lockHelper(m_nav_cs);
+    auto lck = mrpt::lockHelper(navMtx_);
 
     // Check that config_ holds all the required fields:
     ASSERT_(config_.vehicleMotionInterface);
@@ -36,40 +36,40 @@ void WaypointSequencer::initialize()
 void WaypointSequencer::requestNavigation(const WaypointSequence& navRequest)
 {
     MRPT_START
-    auto lck = mrpt::lockHelper(m_nav_cs);
+    auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "requestNavigation() called before initialize()");
 
-    m_navigationEndEventSent = false;
+    navigationEndEventSent_ = false;
 
-    std::lock_guard<std::recursive_mutex> csl(m_nav_waypoints_cs);
+    std::lock_guard<std::recursive_mutex> csl(navWaypointsMtx_);
 
     const size_t N = navRequest.waypoints.size();
     ASSERTMSG_(N > 0, "List of waypoints is empty!");
 
     // reset fields to default:
-    m_waypoint_nav_status = WaypointStatusSequence();
+    waypointNavStatus_ = WaypointStatusSequence();
 
-    m_waypoint_nav_status.waypoints.resize(N);
+    waypointNavStatus_.waypoints.resize(N);
     // Copy waypoints fields data, leave status fields to defaults:
     for (size_t i = 0; i < N; i++)
     {
         ASSERT_(navRequest.waypoints[i].isValid());
-        m_waypoint_nav_status.waypoints[i].Waypoint::operator=(
+        waypointNavStatus_.waypoints[i].Waypoint::operator=(
             navRequest.waypoints[i]);
     }
-    m_waypoint_nav_status.timestamp_nav_started = mrpt::Clock::now();
+    waypointNavStatus_.timestamp_nav_started = mrpt::Clock::now();
 
     // new state:
     navigationState_ = NavState::NAVIGATING;
-    m_navErrorReason = NavErrorReason();
+    navErrorReason_  = NavErrorReason();
 
     // Reset the bad navigation alarm:
-    m_badNavAlarm_minDistTarget   = std::numeric_limits<double>::max();
-    m_badNavAlarm_lastMinDistTime = mrpt::Clock::now();
+    badNavAlarmMinDistTarget_   = std::numeric_limits<double>::max();
+    badNavAlarmLastMinDistTime_ = mrpt::Clock::now();
 
     MRPT_LOG_DEBUG_STREAM(
         "requestNavigation() called, navigation plan:\n"
-        << m_waypoint_nav_status.getAsText());
+        << waypointNavStatus_.getAsText());
 
     // The main loop navigationStep() will iterate over waypoints
     MRPT_END
@@ -77,7 +77,7 @@ void WaypointSequencer::requestNavigation(const WaypointSequence& navRequest)
 
 void WaypointSequencer::navigationStep()
 {
-    auto lck = mrpt::lockHelper(m_nav_cs);
+    auto lck = mrpt::lockHelper(navMtx_);
 
     ASSERTMSG_(initialized_, "navigationStep() called before initialize()");
 
@@ -146,7 +146,7 @@ void WaypointSequencer::navigationStep()
 
 void WaypointSequencer::cancel()
 {
-    auto lck = mrpt::lockHelper(m_nav_cs);
+    auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "cancel() called before initialize()");
 
     MRPT_LOG_DEBUG("WaypointSequencer::cancel() called.");
@@ -160,7 +160,7 @@ void WaypointSequencer::cancel()
 }
 void WaypointSequencer::resume()
 {
-    auto lck = mrpt::lockHelper(m_nav_cs);
+    auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "resume() called before initialize()");
 
     MRPT_LOG_DEBUG("WaypointSequencer::resume() called.");
@@ -170,7 +170,7 @@ void WaypointSequencer::resume()
 }
 void WaypointSequencer::suspend()
 {
-    auto lck = mrpt::lockHelper(m_nav_cs);
+    auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "suspend() called before initialize()");
 
     MRPT_LOG_DEBUG("WaypointSequencer::suspend() called.");
@@ -189,21 +189,21 @@ void WaypointSequencer::suspend()
 
 void WaypointSequencer::resetNavError()
 {
-    auto lck = mrpt::lockHelper(m_nav_cs);
+    auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "resetNavError() called before initialize()");
 
     if (navigationState_ == NavState::NAV_ERROR)
     {
         navigationState_ = NavState::IDLE;
-        m_navErrorReason = NavErrorReason();
+        navErrorReason_  = NavErrorReason();
     }
 }
 
 WaypointStatusSequence WaypointSequencer::getWaypointNavStatus() const
 {
     // Make sure the data structure is not under modification:
-    auto                   lck = mrpt::lockHelper(m_nav_waypoints_cs);
-    WaypointStatusSequence ret = m_waypoint_nav_status;
+    auto                   lck = mrpt::lockHelper(navWaypointsMtx_);
+    WaypointStatusSequence ret = waypointNavStatus_;
 
     return ret;
 }
@@ -260,9 +260,9 @@ void WaypointSequencer::updateCurrentPoseAndSpeeds()
 
         if (!lastVehicleLocalization_.valid)
         {
-            navigationState_            = NavState::NAV_ERROR;
-            m_navErrorReason.error_code = NavError::EMERGENCY_STOP;
-            m_navErrorReason.error_msg  = std::string(
+            navigationState_           = NavState::NAV_ERROR;
+            navErrorReason_.error_code = NavError::EMERGENCY_STOP;
+            navErrorReason_.error_msg  = std::string(
                 "ERROR: get_localization() failed, stopping robot "
                 "and finishing navigation");
             try
@@ -272,8 +272,8 @@ void WaypointSequencer::updateCurrentPoseAndSpeeds()
             catch (...)
             {
             }
-            MRPT_LOG_ERROR(m_navErrorReason.error_msg);
-            throw std::runtime_error(m_navErrorReason.error_msg);
+            MRPT_LOG_ERROR(navErrorReason_.error_msg);
+            throw std::runtime_error(navErrorReason_.error_msg);
         }
     }
     lastVehiclePosRobotTime_ = robotTime;
@@ -337,10 +337,10 @@ void WaypointSequencer::performNavigationStepNavigating()
     catch (const std::exception& e)
     {
         navigationState_ = NavState::NAV_ERROR;
-        if (m_navErrorReason.error_code == NavError::NONE)
+        if (navErrorReason_.error_code == NavError::NONE)
         {
-            m_navErrorReason.error_code = NavError::OTHER;
-            m_navErrorReason.error_msg =
+            navErrorReason_.error_code = NavError::OTHER;
+            navErrorReason_.error_msg =
                 std::string("Exception: ") + std::string(e.what());
         }
 

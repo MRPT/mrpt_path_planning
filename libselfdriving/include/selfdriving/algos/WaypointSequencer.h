@@ -183,7 +183,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
      */
     inline const NavErrorReason& getErrorReason() const
     {
-        return m_navErrorReason;
+        return navErrorReason_;
     }
 
     /** Get a copy of the control structure which describes the progress status
@@ -196,12 +196,12 @@ class WaypointSequencer : public mrpt::system::COutputLogger
      */
     WaypointStatusSequence& beginWaypointsAccess()
     {
-        m_nav_waypoints_cs.lock();
-        return m_waypoint_nav_status;
+        navWaypointsMtx_.lock();
+        return waypointNavStatus_;
     }
 
     /** Must be called after beginWaypointsAccess() */
-    void endWaypointsAccess() { m_nav_waypoints_cs.unlock(); }
+    void endWaypointsAccess() { navWaypointsMtx_.unlock(); }
 
     /** Publicly available time profiling object. Default: disabled */
     mrpt::system::CTimeLogger navProfiler_{
@@ -223,14 +223,14 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     /** Current and last internal state of navigator: */
     NavState       navigationState_     = NavState::IDLE;
     NavState       lastNavigationState_ = NavState::IDLE;
-    NavErrorReason m_navErrorReason;
+    NavErrorReason navErrorReason_;
 
     std::optional<double> lastNavigationStepEndTime_;
 
     bool initialized_ = false;
 
     /** mutex for all navigation methods */
-    std::recursive_mutex m_nav_cs;
+    std::recursive_mutex navMtx_;
 
     /** Current robot pose (updated in navigationStep() ) */
     VehicleLocalizationState lastVehicleLocalization_;
@@ -242,8 +242,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
     /** For sending an alarm (error event) when it seems that we are not
      * approaching toward the target in a while... */
-    double                  m_badNavAlarm_minDistTarget;
-    mrpt::Clock::time_point m_badNavAlarm_lastMinDistTime;
+    double                  badNavAlarmMinDistTarget_;
+    mrpt::Clock::time_point badNavAlarmLastMinDistTime_;
 
     /** Events generated during navigationStep(), enqueued to be called at the
      * end of the method execution to avoid user code to change the navigator
@@ -269,13 +269,13 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
     /** Will be false until the navigation end is sent, and it is reset with
      * each new command */
-    bool m_navigationEndEventSent          = false;
-    int  m_counter_check_target_is_blocked = 0;
+    bool navigationEndEventSent_ = false;
+    // int  counterCheckTargetIsBlocked_ = 0;
 
     /** The latest waypoints navigation command and the up-to-date control
      * status. */
-    WaypointStatusSequence m_waypoint_nav_status;
-    std::recursive_mutex   m_nav_waypoints_cs;
+    WaypointStatusSequence waypointNavStatus_;
+    std::recursive_mutex   navWaypointsMtx_;
 
     /** Implements the way to waypoint is free function in children classes:
      * `true` must be returned
