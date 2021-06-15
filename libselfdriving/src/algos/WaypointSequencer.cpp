@@ -33,7 +33,7 @@ void WaypointSequencer::initialize()
     MRPT_END
 }
 
-void WaypointSequencer::requestNavigation(const WaypointSequence& navRequest)
+void WaypointSequencer::request_navigation(const WaypointSequence& navRequest)
 {
     MRPT_START
     auto lck = mrpt::lockHelper(navMtx_);
@@ -75,7 +75,7 @@ void WaypointSequencer::requestNavigation(const WaypointSequence& navRequest)
     MRPT_END
 }
 
-void WaypointSequencer::navigationStep()
+void WaypointSequencer::navigation_step()
 {
     auto lck = mrpt::lockHelper(navMtx_);
 
@@ -135,13 +135,29 @@ void WaypointSequencer::navigationStep()
             break;
 
         case NavState::NAVIGATING:
-            performNavigationStepNavigating();
+            try
+            {
+                impl_navigation_step();
+            }
+            catch (const std::exception& e)
+            {
+                navigationState_ = NavState::NAV_ERROR;
+                if (navErrorReason_.error_code == NavError::NONE)
+                {
+                    navErrorReason_.error_code = NavError::OTHER;
+                    navErrorReason_.error_msg =
+                        std::string("Exception: ") + std::string(e.what());
+                }
+                MRPT_LOG_ERROR_FMT(
+                    "[CAbstractNavigator::navigationStep] Exception:\n %s",
+                    e.what());
+            }
             break;
     };
 
     lastNavigationState_ = prevState;
 
-    dispatchPendingNavEvents();
+    dispatch_pending_nav_events();
 }
 
 void WaypointSequencer::cancel()
@@ -187,7 +203,7 @@ void WaypointSequencer::suspend()
     }
 }
 
-void WaypointSequencer::resetNavError()
+void WaypointSequencer::reset_nav_error()
 {
     auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "resetNavError() called before initialize()");
@@ -199,7 +215,7 @@ void WaypointSequencer::resetNavError()
     }
 }
 
-WaypointStatusSequence WaypointSequencer::getWaypointNavStatus() const
+WaypointStatusSequence WaypointSequencer::waypoint_nav_status() const
 {
     // Make sure the data structure is not under modification:
     auto                   lck = mrpt::lockHelper(navWaypointsMtx_);
@@ -208,7 +224,7 @@ WaypointStatusSequence WaypointSequencer::getWaypointNavStatus() const
     return ret;
 }
 
-void WaypointSequencer::dispatchPendingNavEvents()
+void WaypointSequencer::dispatch_pending_nav_events()
 {
     // Invoke pending events:
     for (auto& ev : pendingEvents_)
@@ -225,7 +241,7 @@ void WaypointSequencer::dispatchPendingNavEvents()
     pendingEvents_.clear();
 }
 
-void WaypointSequencer::updateCurrentPoseAndSpeeds()
+void WaypointSequencer::update_robot_kinematic_state()
 {
     // Ignore calls too-close in time, e.g. from the navigationStep()
     // methods of AbstractNavigator and a derived, overriding class.
@@ -300,64 +316,40 @@ void WaypointSequencer::updateCurrentPoseAndSpeeds()
     { latestOdomPoses_.erase(latestOdomPoses_.begin()); }
 }
 
-void WaypointSequencer::performNavigationStepNavigating()
+void WaypointSequencer::impl_navigation_step()
 {
-    try
-    {
-        if (lastNavigationState_ != NavState::NAVIGATING)
-        {
-            MRPT_LOG_INFO(
-                "[WaypointSequencer::navigationStep()] Starting "
-                "navigation. "
-                "Watchdog enabled.\n");
+    if (lastNavigationState_ != NavState::NAVIGATING)
+        internal_on_start_new_navigation();
 
-            internal_on_start_new_navigation();
-        }
+    // Get current robot kinematic state:
+    update_robot_kinematic_state();
 
-        // Have we just started the navigation?
-        if (lastNavigationState_ == NavState::IDLE)
-        {
-            pendingEvents_.emplace_back([this]() {
-                ASSERT_(config_.vehicleMotionInterface);
-                config_.vehicleMotionInterface->on_nav_start();
-            });
-        }
+    // Have we reached the target location
+    // TODO... here?
 
-        // Get current robot kinematic state:
-        updateCurrentPoseAndSpeeds();
-
-        // Have we reached the target location
-        // TODO... here?
-
-        // Check if the target seems to be at reach, but it's clearly
-        // occupied by obstacles:
-        // TODO... here?
-        // m_counter_check_target_is_blocked = 0;
-    }
-    catch (const std::exception& e)
-    {
-        navigationState_ = NavState::NAV_ERROR;
-        if (navErrorReason_.error_code == NavError::NONE)
-        {
-            navErrorReason_.error_code = NavError::OTHER;
-            navErrorReason_.error_msg =
-                std::string("Exception: ") + std::string(e.what());
-        }
-
-        MRPT_LOG_ERROR_FMT(
-            "[CAbstractNavigator::navigationStep] Exception:\n %s", e.what());
-
-        // Not useful here?
-        // if (m_rethrow_exceptions) throw;
-    }
+    // Check if the target seems to be at reach, but it's clearly
+    // occupied by obstacles:
+    // TODO... here?
+    // m_counter_check_target_is_blocked = 0;
 }
 
 void WaypointSequencer::internal_on_start_new_navigation()
 {
     ASSERT_(config_.vehicleMotionInterface);
 
+    MRPT_LOG_INFO("Starting navigation. Watchdog enabled.");
+
     config_.vehicleMotionInterface->start_watchdog(1000 /*ms*/);
 
     latestPoses_.clear();  // Clear cache of last poses.
     latestOdomPoses_.clear();
+
+    // Have we just started the navigation?
+    if (lastNavigationState_ == NavState::IDLE)
+    {
+        pendingEvents_.emplace_back([this]() {
+            ASSERT_(config_.vehicleMotionInterface);
+            config_.vehicleMotionInterface->on_nav_start();
+        });
+    }
 }

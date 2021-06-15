@@ -53,9 +53,11 @@ struct NavErrorReason
  *
  * How to use:
  *  - \c initialize() must be called before running any actual navigation.
+ *
  *  - Callbacks must be provided for interfacing the real (or simulated)
  * robot/vehicle. They are given as arguments to \c initialize().
- *  - \c navigationStep() must be called periodically in order to effectively
+ *
+ *  - \c navigation_step() must be called periodically in order to effectively
  * run the navigation. This method will internally call the callbacks to gather
  * sensor data and robot positioning data.
  *
@@ -156,11 +158,11 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     /** Waypoint navigation request. This immediately cancels any other previous
      * on-going navigation.
      */
-    virtual void requestNavigation(const WaypointSequence& navRequest);
+    virtual void request_navigation(const WaypointSequence& navRequest);
 
     /** This method must be called periodically in order to effectively run the
      * navigation */
-    virtual void navigationStep();
+    virtual void navigation_step();
 
     /** Cancel current navegation. */
     virtual void cancel();
@@ -172,23 +174,23 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     virtual void suspend();
 
     /** Resets a `NAV_ERROR` state back to `IDLE` */
-    virtual void resetNavError();
+    virtual void reset_nav_error();
 
     /** Returns the current navigator state. */
-    inline NavState getCurrentState() const { return navigationState_; }
+    inline NavState current_state() const { return navigationState_; }
 
     /** In case of state=NAV_ERROR, this returns the reason for the error.
      * Error state is reseted every time a new navigation starts with
      * a call to navigate(), or when resetNavError() is called.
      */
-    inline const NavErrorReason& getErrorReason() const
+    inline const NavErrorReason& error_reason() const
     {
         return navErrorReason_;
     }
 
     /** Get a copy of the control structure which describes the progress status
      * of the waypoint navigation. */
-    WaypointStatusSequence getWaypointNavStatus() const;
+    WaypointStatusSequence waypoint_nav_status() const;
 
     /** Gets a write-enabled reference to the list of waypoints, simultaneously
      * acquiring the critical section mutex.
@@ -201,7 +203,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     }
 
     /** Must be called after beginWaypointsAccess() */
-    void endWaypointsAccess() { navWaypointsMtx_.unlock(); }
+    void end_waypoints_access() { navWaypointsMtx_.unlock(); }
 
     /** Publicly available time profiling object. Default: disabled */
     mrpt::system::CTimeLogger navProfiler_{
@@ -250,22 +252,18 @@ class WaypointSequencer : public mrpt::system::COutputLogger
      * state. */
     std::list<std::function<void(void)>> pendingEvents_;
 
-    void dispatchPendingNavEvents();
+    void dispatch_pending_nav_events();
 
     /** Call to the robot getCurrentPoseAndSpeeds() and updates members
      * m_curPoseVel accordingly.
      * If an error is returned by the user callback, first, it calls
      * robot.stop() ,then throws an std::runtime_error exception. */
-    virtual void updateCurrentPoseAndSpeeds();
+    virtual void update_robot_kinematic_state();
 
-    /** Factorization of the part inside navigationStep(), for the case of state
-     * being NAVIGATING.
-     * Performs house-hold tasks like raising events in case of starting/ending
-     * navigation, timeout reaching destination, etc.
-     * `call_virtual_nav_method` can be set to false to avoid calling the
-     * virtual method performNavigationStep()
+    /** The actual action that happens inside navigationStep() for the
+     * case of state being NAVIGATING.
      */
-    virtual void performNavigationStepNavigating();
+    virtual void impl_navigation_step();
 
     /** Will be false until the navigation end is sent, and it is reset with
      * each new command */

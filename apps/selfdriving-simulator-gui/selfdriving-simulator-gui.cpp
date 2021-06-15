@@ -451,7 +451,7 @@ void prepare_selfdriving_window(
 
         auto btnReq = pnNav->add<nanogui::Button>("requestNavigation()");
         btnReq->setCallback(
-            []() { sd.navigator.requestNavigation(sd.waypts); });
+            []() { sd.navigator.request_navigation(sd.waypts); });
 
         pnNav->add<nanogui::Button>("suspend()")->setCallback([]() {
             sd.navigator.suspend();
@@ -464,7 +464,7 @@ void prepare_selfdriving_window(
         });
     }
     const auto lambdaUpdateNavStatus = [lbNavStatus]() {
-        const auto state = sd.navigator.getCurrentState();
+        const auto state = sd.navigator.current_state();
         lbNavStatus->setCaption(mrpt::format(
             "Nav status: %s",
             mrpt::typemeta::TEnumType<selfdriving::NavState>::value2name(state)
@@ -721,7 +721,7 @@ void selfdriving_run_thread(SelfDrivingThreadParams& params)
     {
         try
         {
-            sd.navigator.navigationStep();
+            sd.navigator.navigation_step();
             rate.sleep();
         }
         catch (const std::exception& e)
