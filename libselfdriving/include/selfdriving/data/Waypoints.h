@@ -22,6 +22,8 @@
 
 namespace selfdriving
 {
+using waypoint_idx_t = std::size_t;
+
 /** A single waypoint within WaypointSequence. */
 struct Waypoint
 {
@@ -192,6 +194,14 @@ struct WaypointStatusSequence
     /** Waypoints parameters and status (reached, skipped, etc.) */
     std::vector<WaypointStatus> waypoints;
 
+    /** Extracts a copy of the waypoints, without status information. */
+    WaypointSequence withoutStatus() const
+    {
+        WaypointSequence seq;
+        for (const auto& w : waypoints) seq.waypoints.emplace_back(w);
+        return seq;
+    }
+
     /** Timestamp of user navigation command. */
     mrpt::system::TTimeStamp timestamp_nav_started = INVALID_TIMESTAMP;
 
@@ -202,7 +212,7 @@ struct WaypointStatusSequence
      * to reach.
      * This will point to the last waypoint after navigation ends successfully.
      * It has no value if navigation has not started yet */
-    std::optional<size_t> waypoint_index_current_goal;
+    std::optional<waypoint_idx_t> waypoint_index_current_goal;
 
     /** Robot pose at last time step (has INVALID_NUM fields upon
      * initialization) */

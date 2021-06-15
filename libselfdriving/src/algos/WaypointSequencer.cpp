@@ -39,37 +39,29 @@ void WaypointSequencer::request_navigation(const WaypointSequence& navRequest)
     auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "requestNavigation() called before initialize()");
 
-    navigationEndEventSent_ = false;
-
-    std::lock_guard<std::recursive_mutex> csl(navWaypointsMtx_);
-
     const size_t N = navRequest.waypoints.size();
     ASSERTMSG_(N > 0, "List of waypoints is empty!");
 
     // reset fields to default:
-    waypointNavStatus_ = WaypointStatusSequence();
+    innerState_.clear();
 
-    waypointNavStatus_.waypoints.resize(N);
+    innerState_.waypointNavStatus.waypoints.resize(N);
     // Copy waypoints fields data, leave status fields to defaults:
     for (size_t i = 0; i < N; i++)
     {
         ASSERT_(navRequest.waypoints[i].isValid());
-        waypointNavStatus_.waypoints[i].Waypoint::operator=(
+        innerState_.waypointNavStatus.waypoints[i].Waypoint::operator=(
             navRequest.waypoints[i]);
     }
-    waypointNavStatus_.timestamp_nav_started = mrpt::Clock::now();
+    innerState_.waypointNavStatus.timestamp_nav_started = mrpt::Clock::now();
 
     // new state:
-    navigationState_ = NavState::NAVIGATING;
-    navErrorReason_  = NavErrorReason();
-
-    // Reset the bad navigation alarm:
-    badNavAlarmMinDistTarget_   = std::numeric_limits<double>::max();
-    badNavAlarmLastMinDistTime_ = mrpt::Clock::now();
+    navigationStatus_ = NavStatus::NAVIGATING;
+    navErrorReason_   = NavErrorReason();
 
     MRPT_LOG_DEBUG_STREAM(
         "requestNavigation() called, navigation plan:\n"
-        << waypointNavStatus_.getAsText());
+        << innerState_.waypointNavStatus.getAsText());
 
     // The main loop navigationStep() will iterate over waypoints
     MRPT_END
@@ -94,12 +86,12 @@ void WaypointSequencer::navigation_step()
         lastNavigationStepEndTime_ = tNow;
     }
 
-    const NavState prevState = navigationState_;
-    switch (navigationState_)
+    const NavStatus prevState = navigationStatus_;
+    switch (navigationStatus_)
     {
-        case NavState::IDLE:
-        case NavState::SUSPENDED:
-            if (lastNavigationState_ == NavState::NAVIGATING)
+        case NavStatus::IDLE:
+        case NavStatus::SUSPENDED:
+            if (lastNavigationState_ == NavStatus::NAVIGATING)
             {
                 MRPT_LOG_INFO(
                     "WaypointSequencer::navigationStep(): Navigation "
@@ -107,10 +99,10 @@ void WaypointSequencer::navigation_step()
             }
             break;
 
-        case NavState::NAV_ERROR:
+        case NavStatus::NAV_ERROR:
             // Send end-of-navigation event:
-            if (lastNavigationState_ == NavState::NAVIGATING &&
-                navigationState_ == NavState::NAV_ERROR)
+            if (lastNavigationState_ == NavStatus::NAVIGATING &&
+                navigationStatus_ == NavStatus::NAV_ERROR)
             {
                 pendingEvents_.emplace_back([this]() {
                     ASSERT_(config_.vehicleMotionInterface);
@@ -119,12 +111,12 @@ void WaypointSequencer::navigation_step()
             }
 
             // If we just arrived at this state, stop the robot:
-            if (lastNavigationState_ == NavState::NAVIGATING)
+            if (lastNavigationState_ == NavStatus::NAVIGATING)
             {
                 MRPT_LOG_ERROR(
                     "[WaypointSequencer::navigationStep()] Stopping "
                     "navigation "
-                    "due to a NavState::NAV_ERROR state!");
+                    "due to a NavStatus::NAV_ERROR state!");
 
                 if (config_.vehicleMotionInterface)
                 {
@@ -134,14 +126,14 @@ void WaypointSequencer::navigation_step()
             }
             break;
 
-        case NavState::NAVIGATING:
+        case NavStatus::NAVIGATING:
             try
             {
                 impl_navigation_step();
             }
             catch (const std::exception& e)
             {
-                navigationState_ = NavState::NAV_ERROR;
+                navigationStatus_ = NavStatus::NAV_ERROR;
                 if (navErrorReason_.error_code == NavError::NONE)
                 {
                     navErrorReason_.error_code = NavError::OTHER;
@@ -166,7 +158,7 @@ void WaypointSequencer::cancel()
     ASSERTMSG_(initialized_, "cancel() called before initialize()");
 
     MRPT_LOG_DEBUG("WaypointSequencer::cancel() called.");
-    navigationState_ = NavState::IDLE;
+    navigationStatus_ = NavStatus::IDLE;
 
     if (config_.vehicleMotionInterface)
     {
@@ -181,8 +173,8 @@ void WaypointSequencer::resume()
 
     MRPT_LOG_DEBUG("WaypointSequencer::resume() called.");
 
-    if (navigationState_ == NavState::SUSPENDED)
-        navigationState_ = NavState::NAVIGATING;
+    if (navigationStatus_ == NavStatus::SUSPENDED)
+        navigationStatus_ = NavStatus::NAVIGATING;
 }
 void WaypointSequencer::suspend()
 {
@@ -191,9 +183,9 @@ void WaypointSequencer::suspend()
 
     MRPT_LOG_DEBUG("WaypointSequencer::suspend() called.");
 
-    if (navigationState_ == NavState::NAVIGATING)
+    if (navigationStatus_ == NavStatus::NAVIGATING)
     {
-        navigationState_ = NavState::SUSPENDED;
+        navigationStatus_ = NavStatus::SUSPENDED;
 
         if (config_.vehicleMotionInterface)
         {
@@ -208,19 +200,19 @@ void WaypointSequencer::reset_nav_error()
     auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "resetNavError() called before initialize()");
 
-    if (navigationState_ == NavState::NAV_ERROR)
+    if (navigationStatus_ == NavStatus::NAV_ERROR)
     {
-        navigationState_ = NavState::IDLE;
-        navErrorReason_  = NavErrorReason();
+        navigationStatus_ = NavStatus::IDLE;
+        navErrorReason_   = NavErrorReason();
     }
 }
 
 WaypointStatusSequence WaypointSequencer::waypoint_nav_status() const
 {
     // Make sure the data structure is not under modification:
-    auto                   lck = mrpt::lockHelper(navWaypointsMtx_);
-    WaypointStatusSequence ret = waypointNavStatus_;
+    auto lck = mrpt::lockHelper(navMtx_);
 
+    WaypointStatusSequence ret = innerState_.waypointNavStatus;
     return ret;
 }
 
@@ -276,7 +268,7 @@ void WaypointSequencer::update_robot_kinematic_state()
 
         if (!lastVehicleLocalization_.valid)
         {
-            navigationState_           = NavState::NAV_ERROR;
+            navigationStatus_          = NavStatus::NAV_ERROR;
             navErrorReason_.error_code = NavError::EMERGENCY_STOP;
             navErrorReason_.error_msg  = std::string(
                 "ERROR: get_localization() failed, stopping robot "
@@ -298,34 +290,38 @@ void WaypointSequencer::update_robot_kinematic_state()
     // m_latestOdomPoses.
 
     // Append to list of past poses:
-    latestPoses_.insert(
+    innerState_.latestPoses.insert(
         lastVehicleLocalization_.timestamp, lastVehicleLocalization_.pose);
-    latestOdomPoses_.insert(
+    innerState_.latestOdomPoses.insert(
         lastVehicleOdometry_.timestamp, lastVehicleOdometry_.odometry);
 
     // Purge old ones:
-    while (latestPoses_.size() > 1 &&
+    while (innerState_.latestPoses.size() > 1 &&
            mrpt::system::timeDifference(
-               latestPoses_.begin()->first, latestPoses_.rbegin()->first) >
+               innerState_.latestPoses.begin()->first,
+               innerState_.latestPoses.rbegin()->first) >
                PREVIOUS_POSES_MAX_AGE)
-    { latestPoses_.erase(latestPoses_.begin()); }
-    while (latestOdomPoses_.size() > 1 &&
+    { innerState_.latestPoses.erase(innerState_.latestPoses.begin()); }
+    while (innerState_.latestOdomPoses.size() > 1 &&
            mrpt::system::timeDifference(
-               latestOdomPoses_.begin()->first,
-               latestOdomPoses_.rbegin()->first) > PREVIOUS_POSES_MAX_AGE)
-    { latestOdomPoses_.erase(latestOdomPoses_.begin()); }
+               innerState_.latestOdomPoses.begin()->first,
+               innerState_.latestOdomPoses.rbegin()->first) >
+               PREVIOUS_POSES_MAX_AGE)
+    {
+        innerState_.latestOdomPoses.erase(innerState_.latestOdomPoses.begin());
+    }
 }
 
 void WaypointSequencer::impl_navigation_step()
 {
-    if (lastNavigationState_ != NavState::NAVIGATING)
+    if (lastNavigationState_ != NavStatus::NAVIGATING)
         internal_on_start_new_navigation();
 
     // Get current robot kinematic state:
     update_robot_kinematic_state();
 
-    // Have we reached the target location
-    // TODO... here?
+    // Checks whether we need to launch a new RRT* path planner:
+    check_have_to_replan();
 
     // Check if the target seems to be at reach, but it's clearly
     // occupied by obstacles:
@@ -341,15 +337,65 @@ void WaypointSequencer::internal_on_start_new_navigation()
 
     config_.vehicleMotionInterface->start_watchdog(1000 /*ms*/);
 
-    latestPoses_.clear();  // Clear cache of last poses.
-    latestOdomPoses_.clear();
-
     // Have we just started the navigation?
-    if (lastNavigationState_ == NavState::IDLE)
+    if (lastNavigationState_ == NavStatus::IDLE)
     {
         pendingEvents_.emplace_back([this]() {
             ASSERT_(config_.vehicleMotionInterface);
             config_.vehicleMotionInterface->on_nav_start();
         });
     }
+}
+
+void WaypointSequencer::check_have_to_replan()
+{
+    auto& _ = innerState_;
+
+    // We don't have yet neither a running path following, nor a path planner:
+    if (!_.activeFinalTarget && !_.pathPlannerTarget)
+    {
+        // find next target wp:
+        auto nextWp = find_next_waypoint_for_planner();
+
+        enqueue_path_planner_towards(nextWp);
+    }
+}
+
+waypoint_idx_t WaypointSequencer::find_next_waypoint_for_planner()
+{
+    //
+    return 1;
+}
+
+WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
+    WaypointSequencer::PathPlannerInput ppi)
+{
+    PathPlannerOutput ret;
+
+    return ret;
+}
+
+void WaypointSequencer::enqueue_path_planner_towards(
+    const waypoint_idx_t target)
+{
+    auto& _ = innerState_;
+
+    // ----------------------------------
+    // prepare planner request:
+    // ----------------------------------
+    PathPlannerInput ppi;
+
+    // Starting pose and velocity:
+    // The current one plus a bit ahead in the future?
+    // ---------------------------------------------------
+    ppi.pi.stateGoal.pose = lastVehicleLocalization_.pose;
+    // ppi.pi.stateGoal.vel =
+    // lastVehicleOdometry_.odometryVelocityLocal.rotate();
+
+    // ----------------------------------
+    // send it for running of the worker thread:
+    // ----------------------------------
+    _.pathPlannerFuture = pathPlannerPool_.enqueue(
+        &WaypointSequencer::path_planner_function, this, ppi);
+    _.pathPlannerTarget = target;
 }
