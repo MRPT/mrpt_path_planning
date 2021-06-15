@@ -6,10 +6,13 @@
 
 #pragma once
 
+#include <mrpt/core/WorkerThreadsPool.h>
 #include <mrpt/poses/CPose2DInterpolator.h>
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
 #include <mrpt/typemeta/TEnumType.h>
+#include <selfdriving/data/PlannerInput.h>
+#include <selfdriving/data/PlannerOutput.h>
 #include <selfdriving/data/TrajectoriesAndRobotShape.h>
 #include <selfdriving/data/Waypoints.h>
 #include <selfdriving/interfaces/ObstacleSource.h>
@@ -20,8 +23,8 @@
 
 namespace selfdriving
 {
-/** The different states for the navigation system. */
-enum class NavState : uint8_t
+/** The different statuses for the navigation system. */
+enum class NavStatus : uint8_t
 {
     IDLE = 0,
     NAVIGATING,
@@ -61,7 +64,7 @@ struct NavErrorReason
  * run the navigation. This method will internally call the callbacks to gather
  * sensor data and robot positioning data.
  *
- * This class implements the following state machine (see \c getCurrentState()):
+ * This class implements the following state machine (see \c current_state()):
  * \dot
  *  digraph CAbstractNavigator_States {
  *      IDLE; NAVIGATING; SUSPENDED; NAV_ERROR;
@@ -176,11 +179,11 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     /** Resets a `NAV_ERROR` state back to `IDLE` */
     virtual void reset_nav_error();
 
-    /** Returns the current navigator state. */
-    inline NavState current_state() const { return navigationState_; }
+    /** Returns the current navigator status. */
+    inline NavStatus current_status() const { return navigationStatus_; }
 
-    /** In case of state=NAV_ERROR, this returns the reason for the error.
-     * Error state is reseted every time a new navigation starts with
+    /** In case of status=NAV_ERROR, this returns the reason for the error.
+     * Error status is reseted every time a new navigation starts with
      * a call to navigate(), or when resetNavError() is called.
      */
     inline const NavErrorReason& error_reason() const
@@ -198,12 +201,12 @@ class WaypointSequencer : public mrpt::system::COutputLogger
      */
     WaypointStatusSequence& beginWaypointsAccess()
     {
-        navWaypointsMtx_.lock();
-        return waypointNavStatus_;
+        navMtx_.lock();
+        return innerState_.waypointNavStatus;
     }
 
     /** Must be called after beginWaypointsAccess() */
-    void end_waypoints_access() { navWaypointsMtx_.unlock(); }
+    void end_waypoints_access() { navMtx_.unlock(); }
 
     /** Publicly available time profiling object. Default: disabled */
     mrpt::system::CTimeLogger navProfiler_{
@@ -223,8 +226,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
    protected:
     /** Current and last internal state of navigator: */
-    NavState       navigationState_     = NavState::IDLE;
-    NavState       lastNavigationState_ = NavState::IDLE;
+    NavStatus      navigationStatus_    = NavStatus::IDLE;
+    NavStatus      lastNavigationState_ = NavStatus::IDLE;
     NavErrorReason navErrorReason_;
 
     std::optional<double> lastNavigationStepEndTime_;
@@ -234,18 +237,12 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     /** mutex for all navigation methods */
     std::recursive_mutex navMtx_;
 
-    /** Current robot pose (updated in navigationStep() ) */
+    /** Current robot kinematic state; Updated in navigation_step() with a
+     * minimum period of MIN_TIME_BETWEEN_POSE_UPDATES.
+     */
     VehicleLocalizationState lastVehicleLocalization_;
     VehicleOdometryState     lastVehicleOdometry_;
     double                   lastVehiclePosRobotTime_ = 0;
-
-    /** Latest robot poses (updated in CAbstractNavigator::navigationStep() ) */
-    mrpt::poses::CPose2DInterpolator latestPoses_, latestOdomPoses_;
-
-    /** For sending an alarm (error event) when it seems that we are not
-     * approaching toward the target in a while... */
-    double                  badNavAlarmMinDistTarget_;
-    mrpt::Clock::time_point badNavAlarmLastMinDistTime_;
 
     /** Events generated during navigationStep(), enqueued to be called at the
      * end of the method execution to avoid user code to change the navigator
@@ -265,16 +262,6 @@ class WaypointSequencer : public mrpt::system::COutputLogger
      */
     virtual void impl_navigation_step();
 
-    /** Will be false until the navigation end is sent, and it is reset with
-     * each new command */
-    bool navigationEndEventSent_ = false;
-    // int  counterCheckTargetIsBlocked_ = 0;
-
-    /** The latest waypoints navigation command and the up-to-date control
-     * status. */
-    WaypointStatusSequence waypointNavStatus_;
-    std::recursive_mutex   navWaypointsMtx_;
-
     /** Implements the way to waypoint is free function in children classes:
      * `true` must be returned
      * if, according to the information gathered at the last navigation step,
@@ -285,6 +272,74 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     //        const mrpt::math::TPoint2D& wp_local_wrt_robot) const = 0;
 
     void internal_on_start_new_navigation();
+
+    // Path planning in a parallel thread:
+    mrpt::WorkerThreadsPool pathPlannerPool_{
+        1 /*Single thread*/, mrpt::WorkerThreadsPool::POLICY_DROP_OLD,
+        "path_planner"};
+
+    struct PathPlannerInput
+    {
+        PathPlannerInput() = default;
+
+        selfdriving::PlannerInput pi;
+    };
+
+    struct PathPlannerOutput
+    {
+        PathPlannerOutput() = default;
+
+        selfdriving::PlannerOutput po;
+    };
+
+    PathPlannerOutput path_planner_function(PathPlannerInput ppi);
+
+    /** Everything that should be cleared upon a new navigation command. */
+    struct CurrentNavInternalState
+    {
+        CurrentNavInternalState() = default;
+
+        void clear() { *this = CurrentNavInternalState(); }
+
+        /** The latest waypoints navigation command and the up-to-date control
+         * status. */
+        WaypointStatusSequence waypointNavStatus;
+
+        /** Latest robot poses, updated in navigation_Step() */
+        mrpt::poses::CPose2DInterpolator latestPoses, latestOdomPoses;
+
+        std::future<PathPlannerOutput> pathPlannerFuture;
+        std::optional<waypoint_idx_t>  pathPlannerTarget;
+
+        /** The final waypoint of the currently under-execution path tracking.
+         */
+        std::optional<waypoint_idx_t> activeFinalTarget;
+
+        // int  counterCheckTargetIsBlocked_ = 0;
+
+        /** For sending an alarm (error event) when it seems that we are not
+         * approaching toward the target in a while... */
+        double badNavAlarmMinDistTarget_ = std::numeric_limits<double>::max();
+        mrpt::Clock::time_point badNavAlarmLastMinDistTime_ =
+            mrpt::Clock::now();
+
+        /** Will be false until the navigation end is sent. */
+        bool navigationEndEventSent = false;
+    };
+
+    /** Navigation state variables, protected by navMtx_ */
+    CurrentNavInternalState innerState_;
+
+    /** Checks whether we need to launch a new RRT* path planner */
+    void check_have_to_replan();
+
+    /** Finds the next waypt index up to which we should find a new RRT* plan */
+    waypoint_idx_t find_next_waypoint_for_planner();
+
+    /** Enqueues a task in pathPlannerPool_ running path_planner_function() and
+     * saving future results into pathPlannerFuture
+     */
+    void enqueue_path_planner_towards(const waypoint_idx_t target);
 
 #if 0
     bool checkHasReachedTarget(const double targetDist) const override;
@@ -304,9 +359,9 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
 }  // namespace selfdriving
 
-MRPT_ENUM_TYPE_BEGIN(selfdriving::NavState)
-MRPT_FILL_ENUM_MEMBER(selfdriving, NavState::IDLE);
-MRPT_FILL_ENUM_MEMBER(selfdriving, NavState::NAVIGATING);
-MRPT_FILL_ENUM_MEMBER(selfdriving, NavState::SUSPENDED);
-MRPT_FILL_ENUM_MEMBER(selfdriving, NavState::NAV_ERROR);
+MRPT_ENUM_TYPE_BEGIN(selfdriving::NavStatus)
+MRPT_FILL_ENUM_MEMBER(selfdriving, NavStatus::IDLE);
+MRPT_FILL_ENUM_MEMBER(selfdriving, NavStatus::NAVIGATING);
+MRPT_FILL_ENUM_MEMBER(selfdriving, NavStatus::SUSPENDED);
+MRPT_FILL_ENUM_MEMBER(selfdriving, NavStatus::NAV_ERROR);
 MRPT_ENUM_TYPE_END()

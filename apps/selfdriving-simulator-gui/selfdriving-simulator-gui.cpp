@@ -464,10 +464,10 @@ void prepare_selfdriving_window(
         });
     }
     const auto lambdaUpdateNavStatus = [lbNavStatus]() {
-        const auto state = sd.navigator.current_state();
+        const auto state = sd.navigator.current_status();
         lbNavStatus->setCaption(mrpt::format(
             "Nav status: %s",
-            mrpt::typemeta::TEnumType<selfdriving::NavState>::value2name(state)
+            mrpt::typemeta::TEnumType<selfdriving::NavStatus>::value2name(state)
                 .c_str()));
     };
 
