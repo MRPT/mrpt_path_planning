@@ -6,7 +6,10 @@
 
 #include <mrpt/core/lock_helper.h>
 #include <mrpt/math/TSegment2D.h>
+#include <mrpt/opengl/COpenGLScene.h>
+#include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/WaypointSequencer.h>
+#include <selfdriving/algos/render_tree.h>
 
 using namespace selfdriving;
 
@@ -323,6 +326,10 @@ void WaypointSequencer::impl_navigation_step()
     // Checks whether we need to launch a new RRT* path planner:
     check_have_to_replan();
 
+    // Checks whether the RRT* planner finished and we have to send a new active
+    // trajectory to the path tracker:
+    check_new_rrtstar_output();
+
     // Check if the target seems to be at reach, but it's clearly
     // occupied by obstacles:
     // TODO... here?
@@ -363,20 +370,95 @@ void WaypointSequencer::check_have_to_replan()
 
 waypoint_idx_t WaypointSequencer::find_next_waypoint_for_planner()
 {
-    //
-    return 1;
+    MRPT_TODO("To-do: Actual impl!");
+    return 0;
 }
 
 WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     WaypointSequencer::PathPlannerInput ppi)
 {
+    ppi.pi.obstacles = config_.obstacleSource;
+
+    const double RRT_BBOX_MARGIN = 4.0;  // [meters]
+
+    mrpt::math::TBoundingBoxf bbox;
+
+    // Make sure goal and start are within bbox:
+    {
+        const auto bboxMargin =
+            mrpt::math::TPoint3Df(RRT_BBOX_MARGIN, RRT_BBOX_MARGIN, .0);
+        const auto ptStart = mrpt::math::TPoint3Df(
+            ppi.pi.stateStart.pose.x, ppi.pi.stateStart.pose.y, 0);
+        const auto ptGoal = mrpt::math::TPoint3Df(
+            ppi.pi.stateGoal.pose.x, ppi.pi.stateGoal.pose.y, 0);
+
+        bbox.min = ptStart;
+        bbox.max = ptStart;
+        bbox.updateWithPoint(ptStart - bboxMargin);
+        bbox.updateWithPoint(ptStart + bboxMargin);
+        bbox.updateWithPoint(ptGoal - bboxMargin);
+        bbox.updateWithPoint(ptGoal + bboxMargin);
+    }
+
+    ppi.pi.worldBboxMax = {bbox.max.x, bbox.max.y, M_PI};
+    ppi.pi.worldBboxMin = {bbox.min.x, bbox.min.y, -M_PI};
+
+    MRPT_LOG_DEBUG_STREAM(
+        "[path_planner_function] Start pose: "
+        << ppi.pi.stateStart.pose.asString());
+    MRPT_LOG_DEBUG_STREAM(
+        "[path_planner_function] Goal pose : "
+        << ppi.pi.stateGoal.pose.asString());
+    MRPT_LOG_DEBUG_STREAM(
+        "[path_planner_function] World bbox: "
+        << ppi.pi.worldBboxMin.asString() << " - "
+        << ppi.pi.worldBboxMax.asString());
+
+    // Do the path planning :
+    selfdriving::TPS_RRTstar planner;
+
+    // time profiler:
+    planner.profiler_.enable(false);
+
+    // Add cost maps:
+    MRPT_TODO("Add the static world cost map");
+#if 0
+    {
+        // cost map:
+        auto costmap =
+            selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
+                *obsPts);
+
+        planner.costEvaluators_.push_back(costmap);
+    }
+#endif
+    MRPT_TODO("Add the preferred waypoints cost map");
+
+    // verbosity level:
+    planner.setMinLoggingLevel(this->getMinLoggingLevel());
+
+    planner.params_ = config_.rrt_params;
+    {
+        std::stringstream ss;
+        planner.params_.as_yaml().printAsYAML(ss);
+        MRPT_LOG_DEBUG_STREAM(
+            "[path_planner_function] RRT* planner parameters:\n"
+            << ss.str());
+    }
+
+    // PTGs:
+    ppi.pi.ptgs = config_.ptgs;
+
+    // ========== ACTUAL RRT* PLANNING ================
     PathPlannerOutput ret;
+    ret.po = planner.plan(ppi.pi);
+    // ================================================
 
     return ret;
 }
 
 void WaypointSequencer::enqueue_path_planner_towards(
-    const waypoint_idx_t target)
+    const waypoint_idx_t targetWpIdx)
 {
     auto& _ = innerState_;
 
@@ -388,14 +470,69 @@ void WaypointSequencer::enqueue_path_planner_towards(
     // Starting pose and velocity:
     // The current one plus a bit ahead in the future?
     // ---------------------------------------------------
-    ppi.pi.stateGoal.pose = lastVehicleLocalization_.pose;
-    // ppi.pi.stateGoal.vel =
-    // lastVehicleOdometry_.odometryVelocityLocal.rotate();
+    MRPT_TODO("Add some pose delta to account for the computation time?");
+    ppi.pi.stateStart.pose = lastVehicleLocalization_.pose;
+    ppi.pi.stateStart.vel  = lastVehicleOdometry_.odometryVelocityLocal.rotated(
+        ppi.pi.stateGoal.pose.phi);
+
+    ASSERT_LT_(targetWpIdx, _.waypointNavStatus.waypoints.size());
+    const auto& wp          = _.waypointNavStatus.waypoints.at(targetWpIdx);
+    ppi.pi.stateGoal.pose.x = wp.target.x;
+    ppi.pi.stateGoal.pose.y = wp.target.y;
+
+    if (wp.targetHeading.has_value())
+    {
+        // assign heading at target:
+        ppi.pi.stateGoal.pose.phi = wp.targetHeading.value();
+    }
+    else
+    {
+        MRPT_TODO("Handle no preferred heading");
+    }
+
+    MRPT_TODO("Handle speed at target waypoint");
 
     // ----------------------------------
     // send it for running of the worker thread:
     // ----------------------------------
     _.pathPlannerFuture = pathPlannerPool_.enqueue(
         &WaypointSequencer::path_planner_function, this, ppi);
-    _.pathPlannerTarget = target;
+    _.pathPlannerTarget = targetWpIdx;
+}
+
+void WaypointSequencer::check_new_rrtstar_output()
+{
+    auto& _ = innerState_;
+
+    if (!_.pathPlannerFuture.valid()) return;
+
+    if (std::future_status::ready !=
+        _.pathPlannerFuture.wait_for(std::chrono::milliseconds(0)))
+        return;
+
+    const auto result = _.pathPlannerFuture.get();
+
+    if (!result.po.success)
+    {
+        MRPT_LOG_WARN("RRT* failed to plan towards the target!");
+        return;
+    }
+
+    RenderOptions ro;
+    ro.highlight_path_to_node_id = result.po.goalNodeId;
+    // ro.draw_obstacles = false;
+
+#if 1
+    mrpt::opengl::COpenGLScene scene;
+    scene.insert(
+        render_tree(result.po.motionTree, result.po.originalInput, ro));
+    scene.saveToFile("debug_rrtstar_result.3Dscene");
+#endif
+
+    const auto plannedPath =
+        result.po.motionTree.backtrack_path(result.po.goalNodeId);
+    for (const auto& step : plannedPath)
+    {  //
+        std::cout << step.asString() << std::endl;
+    }
 }

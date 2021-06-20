@@ -154,6 +154,10 @@ void prepare_selfdriving(mvsim::World& world)
     // --------------------------------------------------------
     // sd.navigator.config_.multitarget_look_ahead = 2;
 
+    sd.navigator.setMinLoggingLevel(
+        mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
+            argVerbosity.getValue()));
+
     // Load PTGs:
     {
         mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
@@ -179,6 +183,14 @@ void prepare_selfdriving(mvsim::World& world)
     sd.mvsimVehicleInterface->connect();
 
     sd.navigator.config_.vehicleMotionInterface = sd.mvsimVehicleInterface;
+
+    if (arg_planner_yaml_file.isSet())
+    {
+        sd.navigator.config_.rrt_params =
+            selfdriving::TPS_RRTstar_Parameters::FromYAML(
+                mrpt::containers::yaml::FromFile(
+                    arg_planner_yaml_file.getValue()));
+    }
 
     // all mandaroty fields filled in now:
     sd.navigator.initialize();
@@ -607,8 +619,6 @@ void prepare_selfdriving_window(
                 std::cout << "Loaded these planner params:\n";
                 sd.planner.params_.as_yaml().printAsYAML();
             }
-
-            // sd.planner.params_.maxIterations = XX;
 
             // verbosity level:
             sd.planner.setMinLoggingLevel(mrpt::system::LVL_DEBUG);
