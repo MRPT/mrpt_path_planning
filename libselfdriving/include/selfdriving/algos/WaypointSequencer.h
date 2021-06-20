@@ -11,6 +11,7 @@
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
 #include <mrpt/typemeta/TEnumType.h>
+#include <selfdriving/algos/TPS_RRTstar.h>
 #include <selfdriving/data/PlannerInput.h>
 #include <selfdriving/data/PlannerOutput.h>
 #include <selfdriving/data/TrajectoriesAndRobotShape.h>
@@ -142,6 +143,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         /** (Default=3) How many steps should the condition for
          * dist_check_target_is_blocked be fulfilled to raise an event */
         int hysteresis_check_target_is_blocked{3};
+
+        TPS_RRTstar_Parameters rrt_params;
 
         /** @} */
     };
@@ -332,6 +335,10 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
     /** Checks whether we need to launch a new RRT* path planner */
     void check_have_to_replan();
+
+    /** Checks whether the RRT* planner finished, then send a new active
+     * trajectory to the path tracker */
+    void check_new_rrtstar_output();
 
     /** Finds the next waypt index up to which we should find a new RRT* plan */
     waypoint_idx_t find_next_waypoint_for_planner();

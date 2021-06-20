@@ -1,0 +1,15 @@
+%YAML 1.2
+---
+maxIterations: 300
+initialSearchRadius: 4.0 # [m]
+minStepLength: 0.20 # Between waypoints [m]
+maxStepLength: 3.00 # Between waypoints [m]
+drawInTPS: true # Draw samples in TPS vs Euclidean
+drawBiasTowardsGoal: 0.8
+headingToleranceGenerate: 1.57 # [rad]
+headingToleranceMetric: 0.03 # [rad]
+metricDistanceEpsilon: 0.01 
+SE2_metricAngleWeight: 1.0
+pathInterpolatedSegments: 5
+
+#saveDebugVisualizationDecimation: 100
