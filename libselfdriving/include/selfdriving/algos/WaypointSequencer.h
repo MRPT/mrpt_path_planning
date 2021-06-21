@@ -147,6 +147,15 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         TPS_RRTstar_Parameters rrt_params;
 
         /** @} */
+
+        /**  \name Visualization Callbacks
+         *   @{ */
+
+        std::function<void(void)>                   on_viz_pre_modify;
+        std::shared_ptr<mrpt::opengl::COpenGLScene> vizSceneToModify;
+        std::function<void(void)>                   on_viz_post_modify;
+
+        /** @} */
     };
 
     /** Must be called before any other navigation command, and after filling in

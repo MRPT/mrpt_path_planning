@@ -134,7 +134,8 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
     path_to_nodes_list_t find_reachable_nodes_from(
         const MotionPrimitivesTreeSE2& tree, const TNodeID queryNodeId,
         const double maxDistance, const TrajectoriesAndRobotShape& trs,
-        const closest_lie_nodes_list_t& hintCloseNodes);
+        const closest_lie_nodes_list_t& hintCloseNodes,
+        const std::optional<TNodeID>&   nodeToIgnoreHeading = std::nullopt);
 
     /** Returns local obstacles as seen from a given pose, clipped to a maximum
      * distance. */

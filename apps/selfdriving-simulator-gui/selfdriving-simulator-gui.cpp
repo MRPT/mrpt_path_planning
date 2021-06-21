@@ -381,6 +381,15 @@ void prepare_selfdriving_window(
 {
     auto lck = mrpt::lockHelper(gui->background_scene_mtx);
 
+    // navigator 3D visualization interface :
+    sd.navigator.config_.on_viz_pre_modify = [&gui]() {
+        gui->background_scene_mtx.lock();
+    };
+    sd.navigator.config_.on_viz_post_modify = [&gui]() {
+        gui->background_scene_mtx.unlock();
+    };
+    sd.navigator.config_.vizSceneToModify = gui->background_scene;
+
     ASSERT_(gui);
 #if MRPT_VERSION >= 0x211
     nanogui::Window* w = gui->createManagedSubWindow("SelfDriving");
