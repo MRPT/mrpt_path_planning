@@ -171,7 +171,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         const path_to_nodes_list_t closeNodes = find_source_nodes_towards(
             tree, qi, searchRadius, in.ptgs, goalNodeId, qiNearbyNodes);
 
-        if (closeNodes.empty()) continue;  // No body around?
+        if (closeNodes.empty()) continue;  // No one around?
 
         // Check for CollisionFree and keep the smallest cost:
         std::optional<MoveEdgeSE2_TPS> bestEdge;
@@ -321,7 +321,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         // 10  |        parent[x] ← x_i
         // ------------------------------------------------------------------
         const path_to_nodes_list_t reachableNodes = find_reachable_nodes_from(
-            tree, newNodeId, searchRadius, in.ptgs, qiNearbyNodes);
+            tree, newNodeId, searchRadius, in.ptgs, qiNearbyNodes, goalNodeId);
 
         // Check collisions:
         const auto& localObstaclesNewNode = cached_local_obstacles(
@@ -767,7 +767,8 @@ TPS_RRTstar::path_to_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
             }
 
             // Exact look up in the PTG manifold of poses:
-            const auto ret = de.distance(nodeState, query);
+            const auto ret =
+                de.distance(nodeState, query, false /*dont ignore heading*/);
             if (!ret.has_value())
             {
                 // No exact solution with this ptg, skip:
@@ -802,7 +803,8 @@ TPS_RRTstar::path_to_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
 TPS_RRTstar::path_to_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
     const MotionPrimitivesTreeSE2& tree, const TNodeID queryNodeId,
     const double maxDistance, const TrajectoriesAndRobotShape& trs,
-    const closest_lie_nodes_list_t& hintCloseNodes)
+    const closest_lie_nodes_list_t& hintCloseNodes,
+    const std::optional<TNodeID>&   nodeToIgnoreHeading)
 {
     auto tle =
         mrpt::system::CTimeLoggerEntry(profiler_, "find_reachable_nodes_from");
@@ -850,7 +852,13 @@ TPS_RRTstar::path_to_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
 
             // Exact look up in the PTG manifold of poses:
             MRPT_TODO("Target velocity not accounted for!!!");
-            const auto ret = de.distance(/*from*/ query, /*to*/ nodeState.pose);
+
+            const bool ignoreNodeHeading =
+                nodeToIgnoreHeading.has_value() &&
+                nodeToIgnoreHeading.value() == nodeId;
+
+            const auto ret = de.distance(
+                /*from*/ query, /*to*/ nodeState.pose, ignoreNodeHeading);
             if (!ret.has_value())
             {
                 // No exact solution with this ptg, skip:

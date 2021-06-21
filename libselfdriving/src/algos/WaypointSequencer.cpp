@@ -31,6 +31,11 @@ void WaypointSequencer::initialize()
     ASSERT_(config_.obstacleSource);
     ASSERT_(config_.ptgs.initialized());
 
+    // sanity check: PTG max distance must be >= than RRT* step lengths:
+    ASSERT_(!config_.ptgs.ptgs.empty());
+    for (const auto& ptg : config_.ptgs.ptgs)
+        ASSERT_GT_(ptg->getRefDistance(), config_.rrt_params.maxStepLength);
+
     initialized_ = true;
 
     MRPT_END
@@ -518,16 +523,40 @@ void WaypointSequencer::check_new_rrtstar_output()
         return;
     }
 
-    RenderOptions ro;
-    ro.highlight_path_to_node_id = result.po.goalNodeId;
-    // ro.draw_obstacles = false;
+    if (config_.vizSceneToModify)
+    {
+        RenderOptions ro;
+        ro.highlight_path_to_node_id = result.po.goalNodeId;
+        ro.draw_obstacles            = false;
+        ro.ground_xy_grid_frequency  = 0;  // disabled
+        ro.phi2z_scale               = 0;
 
-#if 1
-    mrpt::opengl::COpenGLScene scene;
-    scene.insert(
-        render_tree(result.po.motionTree, result.po.originalInput, ro));
-    scene.saveToFile("debug_rrtstar_result.3Dscene");
-#endif
+        mrpt::opengl::CSetOfObjects::Ptr planViz =
+            render_tree(result.po.motionTree, result.po.originalInput, ro);
+        planViz->setName("rrtstar_plan_result");
+
+        planViz->setLocation(0, 0, 0.01);  // to easy the vis wrt the ground
+
+        // lock:
+        if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
+
+        if (auto glObj =
+                config_.vizSceneToModify->getByName(planViz->getName());
+            glObj)
+        {
+            auto glContainer =
+                std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
+            ASSERT_(glContainer);
+            *glContainer = *planViz;
+        }
+        else
+        {
+            config_.vizSceneToModify->insert(planViz);
+        }
+
+        // unlock:
+        if (config_.on_viz_post_modify) config_.on_viz_post_modify();
+    }
 
     const auto plannedPath =
         result.po.motionTree.backtrack_path(result.po.goalNodeId);

@@ -297,7 +297,8 @@ struct PoseDistanceMetric_TPS<SE2_KinState>
         return false;
     }
     std::optional<std::tuple<distance_t, trajectory_index_t>> distance(
-        const SE2_KinState& src, const mrpt::math::TPose2D& dst) const
+        const SE2_KinState& src, const mrpt::math::TPose2D& dst,
+        bool ignoreDstHeading) const
     {
         normalized_distance_t normDist;
         trajectory_index_t    k;
@@ -322,8 +323,10 @@ struct PoseDistanceMetric_TPS<SE2_KinState>
             uint32_t ptg_step;
             ptg_.getPathStepForDist(k, d, ptg_step);
             const auto   reconsRelPose = ptg_.getPathPose(k, ptg_step);
-            const double headingError  = std::abs(
-                mrpt::math::angDistance(reconsRelPose.phi, relPose.phi));
+            const double headingError =
+                ignoreDstHeading ? .0
+                                 : std::abs(mrpt::math::angDistance(
+                                       reconsRelPose.phi, relPose.phi));
 
             if (headingError > headingTolerance_) tp_point_is_exact = false;
         }
