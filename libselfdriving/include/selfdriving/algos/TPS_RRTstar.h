@@ -142,7 +142,7 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
     static void transform_pc_square_clipping(
         const mrpt::maps::CPointsMap& inMap,
         const mrpt::poses::CPose2D& asSeenFrom, const double MAX_DIST_XY,
-        mrpt::maps::CPointsMap& outMap);
+        mrpt::maps::CPointsMap& outMap, bool appendToOutMap = true);
 
     /** Returns TPS-distance to obstacles.
      * ptg dynamic state must be updated by the caller.

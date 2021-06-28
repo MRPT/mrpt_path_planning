@@ -180,6 +180,7 @@ void prepare_selfdriving(mvsim::World& world)
     // Vehicle interface:
     sd.mvsimVehicleInterface =
         std::make_shared<selfdriving::MVSIM_VehicleInterface>();
+    sd.mvsimVehicleInterface->setMinLoggingLevel(world.getMinLoggingLevel());
     sd.mvsimVehicleInterface->connect();
 
     sd.navigator.config_.vehicleMotionInterface = sd.mvsimVehicleInterface;
@@ -577,9 +578,9 @@ void prepare_selfdriving_window(
             sd.pi.stateGoal.pose.fromString(edStateGoalPose->value());
             sd.pi.stateGoal.vel.fromString(edStateGoalVel->value());
 
-            sd.pi.obstacles = obstacles;
+            sd.pi.obstacles.push_back(obstacles);
 
-            auto bbox = sd.pi.obstacles->obstacles()->boundingBox();
+            auto bbox = obstacles->obstacles()->boundingBox();
 
             // Make sure goal and start are within bbox:
             {
@@ -601,7 +602,7 @@ void prepare_selfdriving_window(
                       << "\n";
             std::cout << "Goal pose : " << sd.pi.stateGoal.pose.asString()
                       << "\n";
-            std::cout << "Obstacles : " << sd.pi.obstacles->obstacles()->size()
+            std::cout << "Obstacles : " << obstacles->obstacles()->size()
                       << " points\n";
             std::cout << "World bbox: " << sd.pi.worldBboxMin.asString()
                       << " - " << sd.pi.worldBboxMax.asString() << "\n";
@@ -691,9 +692,29 @@ void prepare_selfdriving_window(
         MRPT_END
     };
 
+    const auto lambdaCollectSensors = [&]() {
+        if (!sd.mvsimVehicleInterface) return;
+
+        if (!sd.navigator.config_.localSensedObstacleSource)
+            sd.navigator.config_.localSensedObstacleSource =
+                std::make_shared<selfdriving::ObstacleSourceGenericSensor>();
+
+        auto o =
+            std::dynamic_pointer_cast<selfdriving::ObstacleSourceGenericSensor>(
+                sd.navigator.config_.localSensedObstacleSource);
+        if (!o) return;
+
+        o->set_sensor_observation(
+            sd.mvsimVehicleInterface->last_lidar_obs(),
+            mrpt::poses::CPose3D(
+                sd.mvsimVehicleInterface->get_localization().pose));
+    };
+
     gui->addLoopCallback(lambdaHandleMouseOperations);
 
     gui->addLoopCallback(lambdaUpdateNavStatus);
+
+    gui->addLoopCallback(lambdaCollectSensors);
 
     gui->performLayout();
 }
