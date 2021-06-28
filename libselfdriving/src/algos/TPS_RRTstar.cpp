@@ -152,7 +152,9 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     const DrawFreePoseParams drawParams(in, tree, searchRadius, goalNodeId);
 
     // obstacles (TODO: dynamic over future time?):
-    const auto obstaclePoints = in.obstacles->obstacles();
+    std::vector<mrpt::maps::CPointsMap::Ptr> obstaclePoints;
+    for (const auto& os : in.obstacles)
+        if (os) obstaclePoints.emplace_back(os->obstacles());
 
     //  3  |  for i \in [1,N] do
     for (size_t rrtIter = 0; rrtIter < params_.maxIterations; rrtIter++)
@@ -194,7 +196,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             // if (dist < params_.minStepLength)break;
 
             const auto& localObstacles = cached_local_obstacles(
-                tree, nodeId, *obstaclePoints, MAX_XY_DIST);
+                tree, nodeId, obstaclePoints, MAX_XY_DIST);
 
             const auto&             srcNode = tree.nodes().at(nodeId);
             auto&                   ptg     = *in.ptgs.ptgs.at(ptgIdx);
@@ -883,7 +885,8 @@ TPS_RRTstar::path_to_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
 
 mrpt::maps::CPointsMap::Ptr TPS_RRTstar::cached_local_obstacles(
     const MotionPrimitivesTreeSE2& tree, const TNodeID nodeID,
-    const mrpt::maps::CPointsMap& globalObstacles, double MAX_XY_DIST)
+    const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+    double                                          MAX_XY_DIST)
 {
     // reuse?
     const auto& node = tree.nodes().at(nodeID);

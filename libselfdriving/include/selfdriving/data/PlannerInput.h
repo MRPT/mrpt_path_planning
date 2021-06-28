@@ -15,10 +15,10 @@ namespace selfdriving
 {
 struct PlannerInput
 {
-    SE2_KinState              stateStart, stateGoal;
-    mrpt::math::TPose2D       worldBboxMin, worldBboxMax;  //!< World bounds
-    ObstacleSource::Ptr       obstacles;
-    TrajectoriesAndRobotShape ptgs;
+    SE2_KinState        stateStart, stateGoal;
+    mrpt::math::TPose2D worldBboxMin, worldBboxMax;  //!< World bounds
+    std::vector<ObstacleSource::Ptr> obstacles;
+    TrajectoriesAndRobotShape        ptgs;
 };
 
 }  // namespace selfdriving

@@ -174,7 +174,7 @@ void prepare_selfdriving(mvsim::World& world)
         grid->getOccGrid().getAsPointCloud(*obsPts);
     });
 
-    sd.navigator.config_.obstacleSource =
+    sd.navigator.config_.globalMapObstacleSource =
         selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
 
     // Vehicle interface:

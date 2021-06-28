@@ -28,7 +28,7 @@ void WaypointSequencer::initialize()
 
     // Check that config_ holds all the required fields:
     ASSERT_(config_.vehicleMotionInterface);
-    ASSERT_(config_.obstacleSource);
+    ASSERT_(config_.globalMapObstacleSource);
     ASSERT_(config_.ptgs.initialized());
 
     // sanity check: PTG max distance must be >= than RRT* step lengths:
@@ -396,8 +396,6 @@ waypoint_idx_t WaypointSequencer::find_next_waypoint_for_planner()
 WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     WaypointSequencer::PathPlannerInput ppi)
 {
-    ppi.pi.obstacles = config_.obstacleSource;
-
     const double RRT_BBOX_MARGIN = 4.0;  // [meters]
 
     mrpt::math::TBoundingBoxf bbox;
@@ -439,19 +437,33 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     // time profiler:
     planner.profiler_.enable(false);
 
-    // Add cost maps:
-    MRPT_TODO("Add the static world cost map");
+    // ~~~~~~~~~~~~~~
+    // Add cost maps
+    // ~~~~~~~~~~~~~~
+
+    // cost map #1: obstacles from current sensors
+    // =============
 #if 0
     {
-        // cost map:
         auto costmap =
             selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
                 *obsPts);
-
         planner.costEvaluators_.push_back(costmap);
     }
 #endif
-    MRPT_TODO("Add the preferred waypoints cost map");
+
+    // cost map #2: prefer to go thru waypoints
+    // =============
+    MRPT_TODO("Add this cost map");
+
+    // ~~~~~~~~~~~~~~~~~~
+    // Obstacles sources
+    // ~~~~~~~~~~~~~~~~~~
+    if (config_.globalMapObstacleSource)
+        ppi.pi.obstacles.push_back(config_.globalMapObstacleSource);
+
+    if (config_.localSensedObstacleSource)
+        ppi.pi.obstacles.push_back(config_.localSensedObstacleSource);
 
     // verbosity level:
     planner.setMinLoggingLevel(this->getMinLoggingLevel());
