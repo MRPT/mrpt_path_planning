@@ -38,5 +38,10 @@ bin/path-planner-cli -g "[4 2.5 45]" -s "[0.5 0 0]" \
 GUI with live navigation simulator:
 
 ```
-bin/selfdriving-simulator-gui -s ../share/mvsim-demo.xml -p ../share/ptgs_ackermann_vehicle.ini
+bin/selfdriving-simulator-gui \
+  --waypoints ../share/mvsim-demo-waypoints01.yaml \
+  -s ../share/mvsim-demo.xml \
+  -p ../share/ptgs_holonomic_robot.ini \
+  --planner-parameters ../share/mvsim-demo-rrtstar-planner-params.yaml \
+  -v DEBUG
 ```

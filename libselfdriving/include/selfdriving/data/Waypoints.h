@@ -216,8 +216,9 @@ struct WaypointStatusSequence
 
     /** Robot pose at last time step (has INVALID_NUM fields upon
      * initialization) */
-    mrpt::math::TPose2D last_robot_pose{
-        Waypoint::INVALID_NUM, Waypoint::INVALID_NUM, Waypoint::INVALID_NUM};
+    // delete?
+    // mrpt::math::TPose2D last_robot_pose{Waypoint::INVALID_NUM,
+    // Waypoint::INVALID_NUM, Waypoint::INVALID_NUM};
 
     /** Ctor with default values */
     /** Gets navigation params as a human-readable format */
