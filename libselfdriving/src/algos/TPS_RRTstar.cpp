@@ -327,7 +327,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 
         // Check collisions:
         const auto& localObstaclesNewNode = cached_local_obstacles(
-            tree, newNodeId, *obstaclePoints, MAX_XY_DIST);
+            tree, newNodeId, obstaclePoints, MAX_XY_DIST);
         const auto& newNode = tree.nodes().at(newNodeId);
 
         for (const auto& tupl : reachableNodes)
@@ -468,14 +468,16 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 
 void TPS_RRTstar::transform_pc_square_clipping(
     const mrpt::maps::CPointsMap& inMap, const mrpt::poses::CPose2D& asSeenFrom,
-    const double MAX_DIST_XY, mrpt::maps::CPointsMap& outMap)
+    const double MAX_DIST_XY, mrpt::maps::CPointsMap& outMap,
+    bool appendToOutMap)
 {
     size_t       nObs;
     const float *obs_xs, *obs_ys, *obs_zs;
     inMap.getPointsBuffer(nObs, obs_xs, obs_ys, obs_zs);
 
-    outMap.clear();
-    outMap.reserve(nObs);  // Prealloc mem for speed-up
+    if (!appendToOutMap) outMap.clear();
+    // Prealloc mem for speed-up
+    outMap.reserve(nObs);
 
     const mrpt::poses::CPose2D invPose = -asSeenFrom;
     // We can safely discard the rest of obstacles, since they cannot be
@@ -553,7 +555,9 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_euclidean(
 
     auto& rng = mrpt::random::getRandomGenerator();
 
-    const auto obstacles = p.pi_.obstacles->obstacles();
+    std::vector<mrpt::maps::CPointsMap::Ptr> obstacles;
+    for (const auto& os : p.pi_.obstacles)
+        if (os) obstacles.emplace_back(os->obstacles());
 
     // Pick a random pose until we find a collision-free one:
     const auto& bbMin = p.pi_.worldBboxMin;
@@ -585,15 +589,23 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_euclidean(
         }
 
         // TODO: More flexible check? Variable no. of points?
-        mrpt::math::TPoint2D closestObs;
-        float                closestDistSqr;
-        obstacles->kdTreeClosestPoint2D({q.x, q.y}, closestObs, closestDistSqr);
+        bool isCollision = false;
 
-        const auto closestObsWrtRobot = q.inverseComposePoint(closestObs);
+        for (const auto& o : obstacles)
+        {
+            mrpt::math::TPoint2D closestObs;
+            float                closestDistSqr;
+            o->kdTreeClosestPoint2D({q.x, q.y}, closestObs, closestDistSqr);
 
-        const bool isCollision =
-            selfdriving::obstaclePointCollides(closestObsWrtRobot, p.pi_.ptgs);
+            const auto closestObsWrtRobot = q.inverseComposePoint(closestObs);
 
+            if (selfdriving::obstaclePointCollides(
+                    closestObsWrtRobot, p.pi_.ptgs))
+            {
+                isCollision = true;
+                break;
+            }
+        }
         if (!isCollision) return {q, std::nullopt, closeNodes};
     }
     THROW_EXCEPTION("Could not draw collision-free random pose!");
@@ -607,7 +619,9 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_tps(
 
     auto& rng = mrpt::random::getRandomGenerator();
 
-    const auto obstacles = p.pi_.obstacles->obstacles();
+    std::vector<mrpt::maps::CPointsMap::Ptr> obstacles;
+    for (const auto& os : p.pi_.obstacles)
+        if (os) obstacles.emplace_back(os->obstacles());
 
     const size_t maxAttempts = 1000000;
     for (size_t attempt = 0; attempt < maxAttempts; attempt++)
@@ -702,14 +716,23 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_tps(
 
         // Approximate check for collisions:
         // TODO: More flexible check? Variable no. of points?
-        mrpt::math::TPoint2D closestObs;
-        float                closestDistSqr;
-        obstacles->kdTreeClosestPoint2D({q.x, q.y}, closestObs, closestDistSqr);
+        bool isCollision = false;
 
-        const auto closestObsWrtRobot = q.inverseComposePoint(closestObs);
+        for (const auto& o : obstacles)
+        {
+            mrpt::math::TPoint2D closestObs;
+            float                closestDistSqr;
+            o->kdTreeClosestPoint2D({q.x, q.y}, closestObs, closestDistSqr);
 
-        const bool isCollision = ptg->isPointInsideRobotShape(
-            closestObsWrtRobot.x, closestObsWrtRobot.y);
+            const auto closestObsWrtRobot = q.inverseComposePoint(closestObs);
+
+            if (ptg->isPointInsideRobotShape(
+                    closestObsWrtRobot.x, closestObsWrtRobot.y))
+            {
+                isCollision = true;
+                break;
+            }
+        }
 
         if (!isCollision)
         {
@@ -902,11 +925,17 @@ mrpt::maps::CPointsMap::Ptr TPS_RRTstar::cached_local_obstacles(
     auto& loc = local_obstacles_cache_[nodeID];
 
     loc.globalNodePose = node.pose;
-    if (!loc.obs) loc.obs = mrpt::maps::CSimplePointsMap::Create();
+    if (!loc.obs)
+        loc.obs = mrpt::maps::CSimplePointsMap::Create();
+    else
+        loc.obs->clear();
 
-    transform_pc_square_clipping(
-        globalObstacles, mrpt::poses::CPose2D(node.pose), MAX_XY_DIST,
-        *loc.obs);
+    for (const auto& obs : globalObstacles)
+    {
+        ASSERT_(obs);
+        transform_pc_square_clipping(
+            *obs, mrpt::poses::CPose2D(node.pose), MAX_XY_DIST, *loc.obs);
+    }
 
     return loc.obs;
 }

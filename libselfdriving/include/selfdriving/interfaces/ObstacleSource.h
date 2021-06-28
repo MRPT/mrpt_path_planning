@@ -6,7 +6,10 @@
 
 #pragma once
 
+#include <mrpt/core/lock_helper.h>
 #include <mrpt/maps/CPointsMap.h>
+#include <mrpt/maps/CSimplePointsMap.h>
+#include <mrpt/obs/CObservation.h>
 #include <mrpt/system/datetime.h>
 
 namespace selfdriving
@@ -40,7 +43,7 @@ class ObstacleSourceStaticPointcloud : public ObstacleSource
         ASSERT_(static_obs_);
     }
 
-    virtual mrpt::maps::CPointsMap::Ptr obstacles(
+    mrpt::maps::CPointsMap::Ptr obstacles(
         [[maybe_unused]] mrpt::system::TTimeStamp t =
             mrpt::system::TTimeStamp()) override
     {
@@ -49,6 +52,42 @@ class ObstacleSourceStaticPointcloud : public ObstacleSource
 
    private:
     mrpt::maps::CPointsMap::Ptr static_obs_;
+};
+
+/** Obstacles from a generic MRPT observation (2D lidar, 3D camera, velodyne,
+ * etc.)
+ */
+class ObstacleSourceGenericSensor : public ObstacleSource
+{
+   public:
+    ObstacleSourceGenericSensor() {}
+
+    void set_sensor_observation(
+        const mrpt::obs::CObservation::Ptr& o,
+        const mrpt::poses::CPose3D&         robotPose)
+    {
+        auto lck         = mrpt::lockHelper(obsMtx_);
+        obs_             = o;
+        robotPoseForObs_ = robotPose;
+    }
+
+    mrpt::maps::CPointsMap::Ptr obstacles(
+        [[maybe_unused]] mrpt::system::TTimeStamp t =
+            mrpt::system::TTimeStamp()) override
+    {
+        auto lck = mrpt::lockHelper(obsMtx_);
+
+        // TODO: Cached pts with obs timestamp for checking.
+        auto pts = mrpt::maps::CSimplePointsMap::Create();
+        if (obs_) { pts->insertObservation(*obs_, &robotPoseForObs_); }
+
+        return pts;
+    }
+
+   private:
+    std::mutex                   obsMtx_;
+    mrpt::obs::CObservation::Ptr obs_;
+    mrpt::poses::CPose3D         robotPoseForObs_;
 };
 
 }  // namespace selfdriving
