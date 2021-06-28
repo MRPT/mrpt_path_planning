@@ -153,7 +153,8 @@ class TPS_RRTstar : public mrpt::system::COutputLogger
 
     mrpt::maps::CPointsMap::Ptr cached_local_obstacles(
         const MotionPrimitivesTreeSE2& tree, const TNodeID nodeID,
-        const mrpt::maps::CPointsMap& globalObstacles, double MAX_XY_DIST);
+        const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+        double                                          MAX_XY_DIST);
 
     /** for use in cached_local_obstacles(), local_obstacles_cache_ */
     struct LocalObstaclesInfo

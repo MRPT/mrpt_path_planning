@@ -343,15 +343,18 @@ auto selfdriving::render_tree(
     // Obstacles:
     if (ro.draw_obstacles)
     {
-        auto obj = mrpt::opengl::CPointCloud::Create();
+        for (const auto& os : pi.obstacles)
+        {
+            auto obj = mrpt::opengl::CPointCloud::Create();
 
-        const auto obs = pi.obstacles->obstacles();
+            const auto obs = os->obstacles();
 
-        obj->loadFromPointsMap(obs.get());
+            obj->loadFromPointsMap(obs.get());
 
-        obj->setPointSize(ro.point_size_obstacles);
-        obj->setColor_u8(ro.color_obstacles);
-        scene.insert(obj);
+            obj->setPointSize(ro.point_size_obstacles);
+            obj->setColor_u8(ro.color_obstacles);
+            scene.insert(obj);
+        }
     }
 
     // The current set of local obstacles:

@@ -104,7 +104,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
          *  @{ */
         VehicleMotionInterface::Ptr vehicleMotionInterface;
 
-        ObstacleSource::Ptr obstacleSource;
+        ObstacleSource::Ptr globalMapObstacleSource;
+        ObstacleSource::Ptr localSensedObstacleSource;
 
         TrajectoriesAndRobotShape ptgs;
 
