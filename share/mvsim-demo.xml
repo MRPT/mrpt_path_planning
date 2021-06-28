@@ -44,9 +44,19 @@
 		<!--  Dynamical model -->
 		<dynamics class="differential">
 			<!-- Params -->
-			<l_wheel pos="0.0  0.5" mass="4.0" width="0.20" diameter="0.40" />
-			<r_wheel pos="0.0 -0.5" mass="4.0" width="0.20" diameter="0.40" />
+			<l_wheel pos="0.0  0.3" mass="4.0" width="0.05" diameter="0.20" />
+			<r_wheel pos="0.0 -0.3" mass="4.0" width="0.05" diameter="0.20" />
 			<chassis mass="15.0" zmin="0.05" zmax="0.6">
+			  <shape>
+			    <pt>-0.3    0.0</pt>
+			    <pt>-0.2   0.15</pt>
+			    <pt>  0.0   0.3</pt>
+			    <pt> 0.2  0.15</pt>
+			    <pt> 0.3    0.0</pt>
+			    <pt> 0.2  -0.15</pt>
+			    <pt>  0.0  -0.3</pt>
+			    <pt>-0.2 -0.15</pt>
+			  </shape>
 			</chassis>
 
 			<!--   Motor controller -->
@@ -85,10 +95,10 @@
 		<init_pose>0 0 0</init_pose>  <!-- In global coords: x,y, yaw(deg) -->
 		<init_vel>0 0 0</init_vel>  <!-- In local coords: vx,vy, omega(deg/s) -->
 
-		<publish>
+		<!-- <publish>
 		  <publish_pose_topic>/${NAME}/pose</publish_pose_topic>
 		  <publish_pose_period>50e-3</publish_pose_period>
-		</publish>
+		</publish> -->
 	</vehicle>
 
 	<!-- ======================================

@@ -375,8 +375,22 @@ void WaypointSequencer::check_have_to_replan()
 
 waypoint_idx_t WaypointSequencer::find_next_waypoint_for_planner()
 {
-    MRPT_TODO("To-do: Actual impl!");
-    return 0;
+    auto& _ = innerState_;
+
+    std::optional<waypoint_idx_t> firstWpIdx;
+
+    for (size_t i = 0; i < _.waypointNavStatus.waypoints.size(); i++)
+    {
+        const auto& wp = _.waypointNavStatus.waypoints.at(i);
+        if (wp.reached) continue;
+
+        firstWpIdx = i;
+
+        if (!wp.allowSkip) break;
+    }
+    ASSERT_(firstWpIdx.has_value());
+
+    return *firstWpIdx;
 }
 
 WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
@@ -467,6 +481,10 @@ void WaypointSequencer::enqueue_path_planner_towards(
 {
     auto& _ = innerState_;
 
+    MRPT_LOG_DEBUG_STREAM(
+        "enqueue_path_planner_towards() called with targetWpIdx="
+        << targetWpIdx);
+
     // ----------------------------------
     // prepare planner request:
     // ----------------------------------
@@ -495,6 +513,8 @@ void WaypointSequencer::enqueue_path_planner_towards(
         MRPT_TODO("Handle no preferred heading");
     }
 
+    // speed at target:
+    // ppi.pi.stateGoal.vel;
     MRPT_TODO("Handle speed at target waypoint");
 
     // ----------------------------------
