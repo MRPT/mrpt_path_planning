@@ -35,6 +35,12 @@ struct VehicleOdometryState
     /** The timestamp for the read pose and velocity values. Use
      * mrpt::system::now() unless you have something more accurate. */
     mrpt::system::TTimeStamp timestamp;
+
+    /** There exists an action waiting for execution after the current
+     * under-execution one.
+     * See: VehicleMotionInterface::motion_execute() for a discussion.
+     */
+    bool pendedActionExists = false;
 };
 
 }  // namespace selfdriving
