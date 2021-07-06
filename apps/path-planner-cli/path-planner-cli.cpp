@@ -141,7 +141,7 @@ static void do_plan_path()
     if (arg_goal_vel.isSet())
         pi.stateGoal.vel.fromString(arg_goal_vel.getValue());
 
-    pi.obstacles = obs;
+    pi.obstacles.emplace_back(obs);
 
     auto bbox = obs->obstacles()->boundingBox();
 
@@ -163,8 +163,7 @@ static void do_plan_path()
 
     std::cout << "Start pose: " << pi.stateStart.pose.asString() << "\n";
     std::cout << "Goal pose : " << pi.stateGoal.pose.asString() << "\n";
-    std::cout << "Obstacles : " << pi.obstacles->obstacles()->size()
-              << " points\n";
+    std::cout << "Obstacles : " << obs->obstacles()->size() << " points\n";
     std::cout << "World bbox: " << pi.worldBboxMin.asString() << " - "
               << pi.worldBboxMax.asString() << "\n";
 
@@ -217,6 +216,7 @@ static void do_plan_path()
     selfdriving::VisualizationOptions vizOpts;
 
     vizOpts.renderOptions.highlight_path_to_node_id = plan.goalNodeId;
+    vizOpts.renderOptions.color_normal_edge         = {0xb0b0b0, 0x20};  // RGBA
     // vizOpts.renderOptions.showEdgeWeights           = true;
 
     selfdriving::viz_nav_plan(plan, vizOpts);
