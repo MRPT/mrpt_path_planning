@@ -28,6 +28,7 @@ class MVSIM_VehicleInterface : public VehicleMotionInterface
      */
     void connect()
     {
+        connection_.enable_profiler(true);
         MRPT_LOG_INFO("Connecting to mvsim server...");
         connection_.connect();
 
