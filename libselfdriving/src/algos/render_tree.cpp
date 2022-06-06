@@ -326,7 +326,7 @@ auto selfdriving::render_tree(
                 obj->enableShowName();
             }
 
-            scene.insert(obj);
+            if (obj->getLineWidth() > 0) { scene.insert(obj); }
         }
     }
 

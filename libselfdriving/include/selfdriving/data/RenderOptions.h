@@ -56,9 +56,9 @@ struct RenderOptions
     mrpt::img::TColor color_last_edge{0xffff00, 0xff};
     mrpt::img::TColor color_optimal_edge{0x000000, 0xff};
 
-    float width_last_edge            = 3.f;
-    float width_normal_edge          = 1.f;
-    float width_optimal_edge         = 4.f;
+    float width_last_edge            = 3.f;  //!< 0=hidden
+    float width_normal_edge          = 1.f;  //!< 0=hidden
+    float width_optimal_edge         = 4.f;  //!< 0=hidden
     float point_size_obstacles       = 5.f;
     float point_size_local_obstacles = 5.f;
 
