@@ -22,7 +22,7 @@ struct MoveEdgeSE2_TPS
 
     /** The ID of the parent node in the tree (all edges must have a valid
      * starting node). */
-    mrpt::graphs::TNodeID parentId = INVALID_NODEID;
+    mrpt::graphs::TNodeID parentId = mrpt::graphs::INVALID_NODEID;
 
     SE2_KinState stateFrom, stateTo;
 

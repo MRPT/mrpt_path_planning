@@ -79,7 +79,7 @@ class ObstacleSourceGenericSensor : public ObstacleSource
 
         // TODO: Cached pts with obs timestamp for checking.
         auto pts = mrpt::maps::CSimplePointsMap::Create();
-        if (obs_) { pts->insertObservation(*obs_, &robotPoseForObs_); }
+        if (obs_) { pts->insertObservation(*obs_, robotPoseForObs_); }
 
         return pts;
     }

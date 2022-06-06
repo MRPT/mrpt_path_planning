@@ -65,7 +65,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     {
         /** Duplicated ID (it's also in the map::iterator->first), but put here
          * to make it available in path_t */
-        mrpt::graphs::TNodeID nodeID_ = INVALID_NODEID;
+        mrpt::graphs::TNodeID nodeID_ = mrpt::graphs::INVALID_NODEID;
 
         /** Does not have value for the root, a valid ID otherwise */
         std::optional<mrpt::graphs::TNodeID> parentID_;
