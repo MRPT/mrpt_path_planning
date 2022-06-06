@@ -257,7 +257,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     VehicleOdometryState     lastVehicleOdometry_;
     double                   lastVehiclePosRobotTime_ = 0;
 
-    /** Events generated during navigationStep(), enqueued to be called at the
+    /** Events generated during navigation_step(), enqueued to be called at the
      * end of the method execution to avoid user code to change the navigator
      * state. */
     std::list<std::function<void(void)>> pendingEvents_;
@@ -270,7 +270,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
      * robot.stop() ,then throws an std::runtime_error exception. */
     virtual void update_robot_kinematic_state();
 
-    /** The actual action that happens inside navigationStep() for the
+    /** The actual action that happens inside navigation_step() for the
      * case of state being NAVIGATING.
      */
     virtual void impl_navigation_step();
@@ -361,8 +361,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 #if 0
     bool checkHasReachedTarget(const double targetDist) const override;
 
-    /** The waypoints-specific part of navigationStep() */
-    virtual void waypoints_navigationStep();
+    /** The waypoints-specific part of navigation_step() */
+    virtual void waypoints_navigation_step();
 
     bool waypoints_isAligning() const { return m_is_aligning; }
 

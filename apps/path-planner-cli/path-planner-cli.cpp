@@ -217,6 +217,7 @@ static void do_plan_path()
 
     vizOpts.renderOptions.highlight_path_to_node_id = plan.goalNodeId;
     vizOpts.renderOptions.color_normal_edge         = {0xb0b0b0, 0x20};  // RGBA
+    // vizOpts.renderOptions.width_normal_edge         = 0;  // hidden
     // vizOpts.renderOptions.showEdgeWeights           = true;
 
     selfdriving::viz_nav_plan(plan, vizOpts);

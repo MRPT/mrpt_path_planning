@@ -71,7 +71,7 @@ void WaypointSequencer::request_navigation(const WaypointSequence& navRequest)
         "requestNavigation() called, navigation plan:\n"
         << innerState_.waypointNavStatus.getAsText());
 
-    // The main loop navigationStep() will iterate over waypoints
+    // The main loop navigation_step() will iterate over waypoints
     MRPT_END
 }
 
@@ -79,10 +79,10 @@ void WaypointSequencer::navigation_step()
 {
     auto lck = mrpt::lockHelper(navMtx_);
 
-    ASSERTMSG_(initialized_, "navigationStep() called before initialize()");
+    ASSERTMSG_(initialized_, "navigation_step() called before initialize()");
 
     mrpt::system::CTimeLoggerEntry tle(
-        navProfiler_, "WaypointSequencer::navigationStep()");
+        navProfiler_, "WaypointSequencer::navigation_step()");
 
     // Record execution period:
     {
@@ -102,7 +102,7 @@ void WaypointSequencer::navigation_step()
             if (lastNavigationState_ == NavStatus::NAVIGATING)
             {
                 MRPT_LOG_INFO(
-                    "WaypointSequencer::navigationStep(): Navigation "
+                    "WaypointSequencer::navigation_step(): Navigation "
                     "stopped.");
             }
             break;
@@ -122,7 +122,7 @@ void WaypointSequencer::navigation_step()
             if (lastNavigationState_ == NavStatus::NAVIGATING)
             {
                 MRPT_LOG_ERROR(
-                    "[WaypointSequencer::navigationStep()] Stopping "
+                    "[WaypointSequencer::navigation_step()] Stopping "
                     "navigation "
                     "due to a NavStatus::NAV_ERROR state!");
 
@@ -243,7 +243,7 @@ void WaypointSequencer::dispatch_pending_nav_events()
 
 void WaypointSequencer::update_robot_kinematic_state()
 {
-    // Ignore calls too-close in time, e.g. from the navigationStep()
+    // Ignore calls too-close in time, e.g. from the navigation_step()
     // methods of AbstractNavigator and a derived, overriding class.
 
     // this is clockwall time for real robots, simulated time in simulators.
@@ -559,6 +559,7 @@ void WaypointSequencer::check_new_rrtstar_output()
     {
         RenderOptions ro;
         ro.highlight_path_to_node_id = result.po.goalNodeId;
+        ro.width_normal_edge         = 0;  // hidden
         ro.draw_obstacles            = false;
         ro.ground_xy_grid_frequency  = 0;  // disabled
         ro.phi2z_scale               = 0;
