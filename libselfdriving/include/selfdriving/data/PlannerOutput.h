@@ -36,7 +36,7 @@ struct PlannerOutput
     double pathCost = std::numeric_limits<double>::max();
 
     /** The ID of the best target node in the tree */
-    TNodeID goalNodeId = INVALID_NODEID;
+    TNodeID goalNodeId = mrpt::graphs::INVALID_NODEID;
 
     /** The generated motion tree that explores free space starting at "start"
      */
