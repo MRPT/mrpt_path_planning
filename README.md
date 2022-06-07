@@ -1,4 +1,4 @@
-[![CircleCI](https://circleci.com/gh/jlblancoc/selfdriving.svg?style=svg)](https://circleci.com/gh/jlblancoc/selfdriving)
+[![CircleCI](https://circleci.com/gh/jlblancoc/selfdriving/tree/develop.svg?style=svg)](https://circleci.com/gh/jlblancoc/selfdriving/tree/develop)
 [![Documentation Status](https://readthedocs.org/projects/selfdriving/badge/?version=latest)](https://selfdriving.readthedocs.io/en/latest/?badge=latest)
 
 # selfdriving
