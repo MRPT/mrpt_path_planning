@@ -37,6 +37,7 @@ struct TPS_RRTstar_Parameters
      * path cost, etc. */
     size_t pathInterpolatedSegments = 5;
 
+    /** 0:disabled */
     size_t saveDebugVisualizationDecimation = 0;
 
     mrpt::containers::yaml as_yaml();
