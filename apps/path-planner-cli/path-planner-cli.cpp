@@ -30,6 +30,10 @@ static TCLAP::ValueArg<std::string> arg_obs_file(
     "gray-scale occupancy grid (*.png, *.bmp)",
     true, "", "obs.txt", cmd);
 
+static TCLAP::ValueArg<std::string> argVerbosity(
+    "v", "verbose", "Verbosity level for path planner", false, "INFO",
+    "ERROR|WARN|INFO|DEBUG", cmd);
+
 static TCLAP::ValueArg<float> argObstaclesGridResolution(
     "", "obstacles-gridimage-resolution",
     "Only if --obstacles points to an image file, this sets the length of each "
@@ -184,7 +188,9 @@ static void do_plan_path()
     }
 
     // verbosity level:
-    planner.setMinLoggingLevel(mrpt::system::LVL_DEBUG);
+    planner.setMinLoggingLevel(
+        mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
+            argVerbosity.getValue()));
 
     // Set planner required params:
     if (arg_planner_yaml_file.isSet())

@@ -173,7 +173,14 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         const path_to_nodes_list_t closeNodes = find_source_nodes_towards(
             tree, qi, searchRadius, in.ptgs, goalNodeId, qiNearbyNodes);
 
-        if (closeNodes.empty()) continue;  // No one around?
+        if (closeNodes.empty())
+        {
+            // No one around?
+            MRPT_LOG_DEBUG_FMT(
+                "iter: %5u, no near nodes", static_cast<unsigned int>(rrtIter));
+
+            continue;
+        }
 
         // Check for CollisionFree and keep the smallest cost:
         std::optional<MoveEdgeSE2_TPS> bestEdge;
@@ -213,6 +220,11 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             {
                 // we would need to move farther away than what is possible
                 // without colliding: discard this trajectory.
+                MRPT_LOG_DEBUG_FMT(
+                    "iter: %5u | nearbyNode#%u: collision, skipping.",
+                    static_cast<unsigned int>(rrtIter),
+                    static_cast<unsigned int>(nodeId));
+
                 continue;
             }
 
@@ -220,7 +232,16 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             // Predict the path segment:
             uint32_t ptg_step;
             bool stepOk = ptg.getPathStepForDist(trajIdx, trajDist, ptg_step);
-            if (!stepOk) continue;  // No solution with this ptg
+            if (!stepOk)
+            {
+                // No solution with this ptg
+                MRPT_LOG_DEBUG_FMT(
+                    "iter: %5u | nearbyNode#%u: no valid PTG path to new node.",
+                    static_cast<unsigned int>(rrtIter),
+                    static_cast<unsigned int>(nodeId));
+
+                continue;
+            }
 
             const auto reconstrRelPose = ptg.getPathPose(trajIdx, ptg_step);
             const auto relTwist        = ptg.getPathTwist(trajIdx, ptg_step);
@@ -233,6 +254,11 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             if (headingError > params_.headingToleranceGenerate)
             {
                 // Too large error in heading, skip:
+                MRPT_LOG_DEBUG_STREAM(
+                    "Skipping nearby node check for headingError="
+                    << mrpt::RAD2DEG(headingError) << " deg > "
+                    << mrpt::RAD2DEG(params_.headingToleranceGenerate)
+                    << " deg");
                 continue;
             }
 
@@ -280,8 +306,9 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         }
         if (!bestEdge)
         {
-            MRPT_LOG_DEBUG_STREAM(
-                "iter: " << rrtIter << ", no valid edge found.");
+            MRPT_LOG_DEBUG_FMT(
+                "iter: %5u, no valid edge found to new random node.",
+                static_cast<unsigned int>(rrtIter));
 
             continue;  // no valid edge found
         }
@@ -420,7 +447,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         const auto goalCost = tree.nodes().at(goalNodeId).cost_;
 
         MRPT_LOG_DEBUG_FMT(
-            "iter: %5u qi=%40s candidates/evaluated/rewired= %3u/%3u/%3u "
+            "iter: %5u qi=%35s candidates/evaluated/rewired= %3u/%3u/%3u "
             "goal_cost=%s",
             static_cast<unsigned int>(rrtIter), qi.asString().c_str(),
             static_cast<unsigned int>(closeNodes.size()),
