@@ -9,8 +9,7 @@
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
 #include <selfdriving/algos/CostEvaluator.h>
-#include <selfdriving/data/PlannerInput.h>
-#include <selfdriving/data/PlannerOutput.h>
+#include <selfdriving/algos/Planner.h>
 
 namespace selfdriving
 {
@@ -44,16 +43,17 @@ struct TPS_RRTstar_Parameters
     void                   load_from_yaml(const mrpt::containers::yaml& c);
 };
 
-class TPS_RRTstar : public mrpt::system::COutputLogger
+class TPS_RRTstar : public mrpt::system::COutputLogger, public Planner
 {
+    DEFINE_MRPT_OBJECT(TPS_RRTstar, selfdriving)
+
    public:
     TPS_RRTstar();
-    ~TPS_RRTstar() = default;
+    virtual ~TPS_RRTstar() = default;
 
-    PlannerOutput plan(const PlannerInput& in);
+    PlannerOutput plan(const PlannerInput& in) override;
 
-    TPS_RRTstar_Parameters          params_;
-    std::vector<CostEvaluator::Ptr> costEvaluators_;
+    TPS_RRTstar_Parameters params_;
 
     /** Time profiler (Default: enabled)*/
     mrpt::system::CTimeLogger profiler_{true, "TPS_RRTstar"};

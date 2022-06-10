@@ -10,8 +10,11 @@
 #include <mrpt/random/RandomGenerators.h>
 #include <selfdriving/algos/TPS_RRTstar.h>
 #include <selfdriving/algos/render_tree.h>
+#include <selfdriving/algos/within_bbox.h>
 
 #include <iostream>
+
+IMPLEMENTS_MRPT_OBJECT(TPS_RRTstar, Planner, selfdriving)
 
 using namespace selfdriving;
 
@@ -90,14 +93,6 @@ TPS_RRTstar_Parameters TPS_RRTstar_Parameters::FromYAML(
 // clang-format on
 
 TPS_RRTstar::TPS_RRTstar() : mrpt::system::COutputLogger("TPS_RRTstar") {}
-
-static bool within_bbox(
-    const mrpt::math::TPose2D& p, const mrpt::math::TPose2D& max,
-    const mrpt::math::TPose2D& min)
-{
-    return p.x < max.x && p.y < max.y && p.phi < max.phi + 1e-6 &&  //
-           p.x > min.x && p.y > min.y && p.phi > min.phi - 1e-6;
-}
 
 PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 {
