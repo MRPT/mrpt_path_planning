@@ -7,7 +7,6 @@
 #pragma once
 
 #include <mrpt/system/COutputLogger.h>
-#include <mrpt/system/CTimeLogger.h>
 #include <selfdriving/algos/CostEvaluator.h>
 #include <selfdriving/algos/Planner.h>
 
@@ -43,7 +42,7 @@ struct TPS_RRTstar_Parameters
     void                   load_from_yaml(const mrpt::containers::yaml& c);
 };
 
-class TPS_RRTstar : public mrpt::system::COutputLogger, public Planner
+class TPS_RRTstar : virtual public mrpt::system::COutputLogger, public Planner
 {
     DEFINE_MRPT_OBJECT(TPS_RRTstar, selfdriving)
 
@@ -51,12 +50,19 @@ class TPS_RRTstar : public mrpt::system::COutputLogger, public Planner
     TPS_RRTstar();
     virtual ~TPS_RRTstar() = default;
 
-    PlannerOutput plan(const PlannerInput& in) override;
-
     TPS_RRTstar_Parameters params_;
 
-    /** Time profiler (Default: enabled)*/
-    mrpt::system::CTimeLogger profiler_{true, "TPS_RRTstar"};
+    PlannerOutput plan(const PlannerInput& in) override;
+
+    mrpt::containers::yaml params_as_yaml() override
+    {
+        return params_.as_yaml();
+    }
+
+    void params_from_yaml(const mrpt::containers::yaml& c) override
+    {
+        params_.load_from_yaml(c);
+    }
 
    private:
     struct DrawFreePoseParams

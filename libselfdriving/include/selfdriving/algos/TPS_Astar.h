@@ -36,7 +36,7 @@ struct TPS_Astar_Parameters
  * path from "A" to "B" using a set of trajectories in the form of PTGs.
  *
  */
-class TPS_Astar : public mrpt::system::COutputLogger, public Planner
+class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 {
     DEFINE_MRPT_OBJECT(TPS_Astar, selfdriving)
 
@@ -44,12 +44,19 @@ class TPS_Astar : public mrpt::system::COutputLogger, public Planner
     TPS_Astar();
     virtual ~TPS_Astar() = default;
 
-    PlannerOutput plan(const PlannerInput& in) override;
-
     TPS_Astar_Parameters params_;
 
-    /** Time profiler (Default: enabled)*/
-    mrpt::system::CTimeLogger profiler_{true, "TPS_Astar"};
+    PlannerOutput plan(const PlannerInput& in) override;
+
+    mrpt::containers::yaml params_as_yaml() override
+    {
+        return params_.as_yaml();
+    }
+
+    void params_from_yaml(const mrpt::containers::yaml& c) override
+    {
+        params_.load_from_yaml(c);
+    }
 };
 
 }  // namespace selfdriving

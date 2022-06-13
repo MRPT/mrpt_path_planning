@@ -92,7 +92,10 @@ TPS_RRTstar_Parameters TPS_RRTstar_Parameters::FromYAML(
  */
 // clang-format on
 
-TPS_RRTstar::TPS_RRTstar() : mrpt::system::COutputLogger("TPS_RRTstar") {}
+TPS_RRTstar::TPS_RRTstar() : mrpt::system::COutputLogger("TPS_RRTstar")
+{
+    profiler_.setName("TPS_RRTstar");
+}
 
 PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 {
