@@ -30,6 +30,10 @@ static TCLAP::ValueArg<std::string> arg_obs_file(
     "gray-scale occupancy grid (*.png, *.bmp)",
     true, "", "obs.txt", cmd);
 
+static TCLAP::ValueArg<std::string> argPlanner(
+    "p", "planner", "Planner C++ class name to use", false,
+    "selfdriving::TPS_Astar", "selfdriving::TPS_Astar", cmd);
+
 static TCLAP::ValueArg<std::string> argVerbosity(
     "v", "verbose", "Verbosity level for path planner", false, "INFO",
     "ERROR|WARN|INFO|DEBUG", cmd);
@@ -44,11 +48,11 @@ static TCLAP::ValueArg<std::string> arg_ptgs_file(
     "p", "ptg-config", "Input .ini file with PTG definitions.", true, "",
     "ptgs.ini", cmd);
 
-static TCLAP::ValueArg<std::string> arg_planner_yaml_file(
+static TCLAP::ValueArg<std::string> argPlanner_yaml_file(
     "", "planner-parameters", "Input .yaml file with planner parameters", false,
     "", "tps-rrtstar.yaml", cmd);
 
-static TCLAP::ValueArg<std::string> arg_planner_yaml_output_file(
+static TCLAP::ValueArg<std::string> argPlanner_yaml_output_file(
     "", "write-planner-parameters",
     "If defined, it will save default planner params to a .yaml file and exit.",
     false, "", "tps-rrtstar.yaml", cmd);
@@ -72,9 +76,6 @@ static TCLAP::ValueArg<std::string> arg_goal_pose(
 static TCLAP::ValueArg<std::string> arg_goal_vel(
     "", "goal-vel", "Goal 2D velocity", false, "", "\"[vx vy omega_deg]\"",
     cmd);
-
-static TCLAP::ValueArg<size_t> argMaxIterations(
-    "", "max-iterations", "Maximum RRT iterations", false, 1000, "1000", cmd);
 
 static TCLAP::ValueArg<unsigned int> argRandomSeed(
     "", "random-seed", "Pseudorandom generator seed (default: from time)",
@@ -172,10 +173,20 @@ static void do_plan_path()
               << pi.worldBboxMax.asString() << "\n";
 
     // Do the path planning :
-    selfdriving::TPS_RRTstar planner;
+    selfdriving::Planner::Ptr planner =
+        std::dynamic_pointer_cast<selfdriving::Planner>(
+            mrpt::rtti::classFactory(argPlanner.getValue()));
+
+    if (!planner)
+    {
+        THROW_EXCEPTION_FMT(
+            "Given classname '%s' does not seem to be a known C++ class "
+            "implementing `Planner",
+            argPlanner.getValue().c_str());
+    }
 
     // Enable time profiler:
-    planner.profiler_.enable(true);
+    planner->profiler_.enable(true);
 
     if (arg_costMap.isSet())
     {
@@ -184,33 +195,30 @@ static void do_plan_path()
             selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
                 *obsPts);
 
-        planner.costEvaluators_.push_back(costmap);
+        planner->costEvaluators_.push_back(costmap);
     }
 
     // verbosity level:
-    planner.setMinLoggingLevel(
+    planner->setMinLoggingLevel(
         mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
             argVerbosity.getValue()));
 
     // Set planner required params:
-    if (arg_planner_yaml_file.isSet())
+    if (argPlanner_yaml_file.isSet())
     {
-        const auto sFile = arg_planner_yaml_file.getValue();
+        const auto sFile = argPlanner_yaml_file.getValue();
         ASSERT_FILE_EXISTS_(sFile);
         const auto c = mrpt::containers::yaml::FromFile(sFile);
-        planner.params_.load_from_yaml(c);
+        planner->params_from_yaml(c);
         std::cout << "Loaded these planner params:\n";
-        planner.params_.as_yaml().printAsYAML();
+        planner->params_as_yaml().printAsYAML();
     }
-
-    if (argMaxIterations.isSet())
-        planner.params_.maxIterations = argMaxIterations.getValue();
 
     // PTGs config file:
     mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
     pi.ptgs.initFromConfigFile(cfg, arg_config_file_section.getValue());
 
-    const selfdriving::PlannerOutput plan = planner.plan(pi);
+    const selfdriving::PlannerOutput plan = planner->plan(pi);
 
     std::cout << "\nDone.\n";
     std::cout << "Success: " << (plan.success ? "YES" : "NO") << "\n";
@@ -235,11 +243,11 @@ int main(int argc, char** argv)
     {
         bool cmdsOk = cmd.parse(argc, argv);
 
-        if (arg_planner_yaml_output_file.isSet())
+        if (argPlanner_yaml_output_file.isSet())
         {
             selfdriving::TPS_RRTstar_Parameters defaults;
             const auto                          c = defaults.as_yaml();
-            const auto    sFile = arg_planner_yaml_output_file.getValue();
+            const auto    sFile = argPlanner_yaml_output_file.getValue();
             std::ofstream fileYaml(sFile);
             ASSERT_(fileYaml.is_open());
             c.printAsYAML(fileYaml);

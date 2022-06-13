@@ -43,7 +43,10 @@ TPS_Astar_Parameters TPS_Astar_Parameters::FromYAML(
     return p;
 }
 
-TPS_Astar::TPS_Astar() : mrpt::system::COutputLogger("TPS_Astar") {}
+TPS_Astar::TPS_Astar() : mrpt::system::COutputLogger("TPS_Astar")
+{
+    profiler_.setName("TPS_Astar");
+}
 
 PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 {
