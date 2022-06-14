@@ -171,8 +171,6 @@ class TPS_RRTstar : virtual public mrpt::system::COutputLogger, public Planner
     };
 
     std::map<TNodeID, LocalObstaclesInfo> local_obstacles_cache_;
-
-    cost_t cost_path_segment(const MoveEdgeSE2_TPS& edge) const;
 };
 
 }  // namespace selfdriving

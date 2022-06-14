@@ -21,7 +21,20 @@ sudo apt install libmrpt-dev
 
 ## Demo runs
 
-Command-line app to test the RRT* planner:
+```
+# bin/path-planner-cli --write-planner-parameters tps-rrtstar.yaml
+```
+
+Command-line app to test the A* planner:
+
+```
+bin/path-planner-cli -g "[4 2.5 45]" -s "[0.5 0 0]" \
+    --planner "selfdriving::TPS_Astar"  \
+    -c ../share/ptgs_holonomic_robot.ini  \
+    --obstacles ../share/obstacles_01.txt  \
+    --planner-parameters ../share/mvsim-demo-astar-planner-params.yaml  \
+    --costmap
+```
 
 ```
 bin/path-planner-cli --write-planner-parameters tps-rrtstar.yaml

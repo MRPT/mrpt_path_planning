@@ -34,6 +34,8 @@ class Planner : public mrpt::rtti::CObject,
 
     /** Time profiler (Default: enabled)*/
     mrpt::system::CTimeLogger profiler_{true, "Planner"};
+
+    cost_t cost_path_segment(const MoveEdgeSE2_TPS& edge) const;
 };
 
 }  // namespace selfdriving

@@ -45,7 +45,7 @@ static TCLAP::ValueArg<float> argObstaclesGridResolution(
     false, 0.05, "0.05", cmd);
 
 static TCLAP::ValueArg<std::string> arg_ptgs_file(
-    "p", "ptg-config", "Input .ini file with PTG definitions.", true, "",
+    "c", "ptg-config", "Input .ini file with PTG definitions.", true, "",
     "ptgs.ini", cmd);
 
 static TCLAP::ValueArg<std::string> argPlanner_yaml_file(
