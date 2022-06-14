@@ -120,14 +120,16 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         //!< exact pose and velocity (no binning here)
         SE2_KinState state;
 
-        /// Total cost from initialState to this node:
+        /// Total cost from initialState to this node (default=Inf)
         distance_t gScore = std::numeric_limits<distance_t>::max();
 
-        /// Guess of cost from this node to goal:
+        /// Guess of cost from this node to goal (default=Inf)
         distance_t fScore = std::numeric_limits<distance_t>::max();
 
         /// parent (precedent) of this node in the path.
-        std::optional<Node*> cameFrom;
+        std::optional<const Node*> cameFrom;
+
+        bool pendingInOpenSet = false;
     };
 
     mrpt::poses::CPose2DGridTemplate<Node> grid_;

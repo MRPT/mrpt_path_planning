@@ -88,19 +88,23 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     //
     // ----------------------------------------
     std::multimap<distance_t, NodePtr> openSet;
+    mrpt::graphs::TNodeID              nextFreeId = 0;
 
     // openSet <- startNode
     {
         auto& n = getOrCreateNodeByPose(in.stateStart.pose, tree);
         n.state = in.stateStart;
 
+        std::cout << "Created start node ID=" << n.id.value() << std::endl;
+
         //   X_T ← {X_0 }    # Tree nodes (state space)
         // ------------------------------------------------------------------
         tree.root = n.id.value();
         tree.insert_root_node(tree.root, n.state);
 
-        n.gScore = 0;
-        n.fScore = heuristic(n.state, in.stateGoal);
+        n.gScore           = 0;
+        n.fScore           = heuristic(n.state, in.stateGoal);
+        n.pendingInOpenSet = true;
 
         openSet.insert({n.fScore, &n});
     }
@@ -109,24 +113,42 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     auto& nodeGoal = getOrCreateNodeByPose(in.stateGoal.pose, tree);
     po.goalNodeId  = nodeGoal.id.value();
 
+    // Insert a dummy edge between root -> goal, just to allow new node IDs
+    // to be generated in sequence:
+    {
+        MoveEdgeSE2_TPS dummyEdge;
+        dummyEdge.cost      = std::numeric_limits<cost_t>::max();
+        dummyEdge.parentId  = tree.root;
+        dummyEdge.stateFrom = in.stateStart;
+        dummyEdge.stateTo   = in.stateGoal;
+        tree.insert_node_and_edge(
+            tree.root, nodeGoal.id.value(), in.stateGoal, dummyEdge);
+    }
+
+    std::cout << "Created goal node ID=" << nodeGoal.id.value() << std::endl;
+
     while (!openSet.empty())
     {
         // node with the lowest fScore:
-        const auto& current = openSet.begin()->second;
+        Node& current = *openSet.begin()->second.ptr;
 
         // current==goal?
-        if (current->id.value() == nodeGoal.id.value())
+        if (current.id.value() == nodeGoal.id.value())
         {
+            std::cout << "Reached goal cell pose:" << current.state.pose
+                      << std::endl;
+
             // Path found:
             break;
         }
 
         // remove it from open set:
+        current.pendingInOpenSet = false;
         openSet.erase(openSet.begin());
 
         // for each neighbor of current:
         const auto neighbors =
-            find_feasible_paths_to_neighbors(*current, in.ptgs);
+            find_feasible_paths_to_neighbors(current, in.ptgs);
 
         for (const auto& edge : neighbors)
         {
@@ -142,31 +164,31 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
             uint32_t ptg_step;
             bool     stepOk = ptg.getPathStepForDist(
-                edge.ptgTrajIndex.value(), edge.distance, ptg_step);
+                    edge.ptgTrajIndex.value(), edge.distance, ptg_step);
             ASSERT_(stepOk);
 
             const auto reconstrRelPose =
                 ptg.getPathPose(edge.ptgTrajIndex.value(), ptg_step);
 
             // new tentative node pose & velocity:
-            const auto q_i = current->state.pose + reconstrRelPose;
+            const auto q_i = current.state.pose + reconstrRelPose;
             const auto relTwist =
                 ptg.getPathTwist(edge.ptgTrajIndex.value(), ptg_step);
 
             SE2_KinState x_i;
             x_i.pose = q_i;
             // relTwist is relative to the *parent* (srcNode) frame:
-            (x_i.vel = relTwist).rotate(current->state.pose.phi);
+            (x_i.vel = relTwist).rotate(current.state.pose.phi);
 
             MoveEdgeSE2_TPS tentativeEdge;
 
-            tentativeEdge.parentId     = current->id.value();
+            tentativeEdge.parentId     = current.id.value();
             tentativeEdge.ptgDist      = edge.distance;
             tentativeEdge.ptgIndex     = edge.ptgIndex.value();
             tentativeEdge.ptgPathIndex = edge.ptgTrajIndex.value();
             MRPT_TODO("targetRelSpeed?");
             // tentativeEdge.targetRelSpeed = ds.targetRelSpeed;
-            tentativeEdge.stateFrom = current->state;
+            tentativeEdge.stateFrom = current.state;
             tentativeEdge.stateTo   = x_i;
             // interpolated path:
             if (const auto nSeg = params_.pathInterpolatedSegments; nSeg > 0)
@@ -188,24 +210,47 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             tentativeEdge.cost = cost_path_segment(tentativeEdge);
             ASSERT_GT_(tentativeEdge.cost, .0);
 
-            const cost_t tentative_gScore =
-                current->gScore + tentativeEdge.cost;
+            const cost_t tentative_gScore = current.gScore + tentativeEdge.cost;
 
             auto& neighborNode = getOrCreateNodeByPose(x_i.pose, tree);
 
             if (tentative_gScore < neighborNode.gScore)
             {
-                // This path to neighbor is better than any previous one.
-                // Grab it:
-                // cameFrom[neighbor] : = current
+                std::cout << "New better path to:" << x_i.pose
+                          << " cost:" << tentative_gScore << std::endl;
 
-                // gScore[neighbor] : =tentative_gScore
+                const bool hasToRewire = neighborNode.cameFrom.has_value();
+
+                // This path to neighbor is better than any previous one,
+                // keep it:
+                neighborNode.cameFrom = &current;
+                neighborNode.gScore   = tentative_gScore;
 
                 // fScore[neighbor] := tentative_gScore + h(neighbor)
+                neighborNode.fScore =
+                    tentative_gScore +
+                    heuristic(current.state, neighborNode.state);
 
-                // if neighbor not in openSet
+                if (!neighborNode.pendingInOpenSet)
                 {
-                    // openSet.add(neighbor)
+                    neighborNode.pendingInOpenSet = true;
+                    openSet.insert({neighborNode.fScore, &neighborNode});
+
+                    std::cout << "+openSet x=" << x_i.pose << std::endl;
+                }
+
+                // Delete old edge, if any:
+                if (hasToRewire)
+                {
+                    tree.rewire_node_parent(
+                        neighborNode.id.value(), tentativeEdge);
+                }
+                else
+                {
+                    // Add edge to tree:
+                    tree.insert_node_and_edge(
+                        tentativeEdge.parentId, neighborNode.id.value(),
+                        neighborNode.state, tentativeEdge);
                 }
             }
         }
@@ -236,10 +281,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 distance_t TPS_Astar::heuristic(
     const SE2_KinState& from, const SE2_KinState& goal) const
 {
-    const double WEIGHT_ANGLE_IN_HEURISTIC = 1.0;
-
     selfdriving::PoseDistanceMetric_Lie<selfdriving::SE2_KinState> metric(
-        WEIGHT_ANGLE_IN_HEURISTIC);
+        params_.SE2_metricAngleWeight);
 
     return metric.distance(from.pose, goal.pose);
 }
