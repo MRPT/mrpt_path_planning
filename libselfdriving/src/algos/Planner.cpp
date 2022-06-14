@@ -11,3 +11,18 @@ using namespace selfdriving;
 IMPLEMENTS_VIRTUAL_MRPT_OBJECT(Planner, mrpt::rtti::CObject, selfdriving)
 
 Planner::~Planner() = default;
+
+cost_t Planner::cost_path_segment(const MoveEdgeSE2_TPS& edge) const
+{
+    // Base cost: distance
+    cost_t c = edge.ptgDist;
+
+    // Additional optional cost evaluators:
+    for (const auto& ce : costEvaluators_)
+    {
+        ASSERT_(ce);
+        c += (*ce)(edge);
+    }
+
+    return c;
+}
