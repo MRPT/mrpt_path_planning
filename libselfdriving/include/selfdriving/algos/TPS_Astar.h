@@ -130,6 +130,7 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         std::optional<const Node*> cameFrom;
 
         bool pendingInOpenSet = false;
+        bool visited          = false;
     };
 
     mrpt::poses::CPose2DGridTemplate<Node> grid_;

@@ -5,6 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <mrpt/math/wrap2pi.h>
+#include <mrpt/opengl/COpenGLScene.h>
 #include <selfdriving/algos/TPS_Astar.h>
 #include <selfdriving/algos/render_tree.h>
 #include <selfdriving/algos/within_bbox.h>
@@ -128,9 +129,12 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         tree.insert_node_and_edge(
             tree.root, nodeGoal.id.value(), in.stateGoal, dummyEdge);
     }
+    unsigned int nIter = 0;
 
     while (!openSet.empty())
     {
+        nIter++;  // just for debugging purposes
+
         // node with the lowest fScore:
         Node& current = *openSet.begin()->second.ptr;
 
@@ -143,6 +147,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
         // remove it from open set:
         current.pendingInOpenSet = false;
+        current.visited          = true;
         openSet.erase(openSet.begin());
 
         // for each neighbor of current:
@@ -179,6 +184,11 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // relTwist is relative to the *parent* (srcNode) frame:
             (x_i.vel = relTwist).rotate(current.state.pose.phi);
 
+            auto& neighborNode = getOrCreateNodeByPose(x_i, tree, nextFreeId);
+
+            // Skip if already visited:
+            if (neighborNode.visited) continue;
+
             // Build a tentative new edge data structure.
             // It will be used to be inserted in the graph, if accepted, and in
             // any case, to evaluate the edge cost.
@@ -214,8 +224,6 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
             const cost_t tentative_gScore = current.gScore + newEdge.cost;
 
-            auto& neighborNode = getOrCreateNodeByPose(x_i, tree, nextFreeId);
-
             // Better path? If it is not, go on with the next edge:
             if (tentative_gScore >= neighborNode.gScore) continue;
 
@@ -224,7 +232,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             const bool hasToRewire = neighborNode.cameFrom.has_value();
 
             // This path to neighbor is better than any previous one,
-            // keep it:
+            // overwrite it:
             neighborNode.cameFrom = &current;
             neighborNode.gScore   = tentative_gScore;
 
@@ -250,6 +258,23 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             }
 
         }  // end for each edge to neighbor
+
+        MRPT_LOG_DEBUG_FMT(
+            "iter: %5u p=%35s neighbors=%3u fScore=%f gScore=%f", nIter,
+            current.state.pose.asString().c_str(),
+            static_cast<unsigned int>(neighbors.size()), current.fScore,
+            current.gScore);
+
+        // Debug log files:
+        if (params_.saveDebugVisualizationDecimation > 0 &&
+            (nIter % params_.saveDebugVisualizationDecimation) == 0)
+        {
+            RenderOptions ro;
+            ro.highlight_path_to_node_id = current.id.value();
+            mrpt::opengl::COpenGLScene scene;
+            scene.insert(render_tree(tree, in, ro));
+            scene.saveToFile(mrpt::format("debug_astar_%05u.3Dscene", nIter));
+        }
 
     }  // end while openSet!=empty
 
@@ -350,12 +375,13 @@ TPS_Astar::list_paths_to_neighbors_t
                     relPose.x, relPose.y, relTrg_k, relTrg_d))
                 continue;  // no (x,y) solution with this PTG.
 
+            distance_t dist = relTrg_d * ptg->getRefDistance();
+
             MRPT_TODO("Enhance PTG interface to query pure rotations?");
 
             // now, check orientation:
             uint32_t relTrgStep;
-            bool     stepOk =
-                ptg->getPathStepForDist(relTrg_k, relTrg_d, relTrgStep);
+            bool stepOk = ptg->getPathStepForDist(relTrg_k, dist, relTrgStep);
             ASSERT_(stepOk);
 
             // solution is a no-motion: skip.
@@ -367,11 +393,10 @@ TPS_Astar::list_paths_to_neighbors_t
                 mrpt::math::angDistance(relReconstrPose.phi, relPose.phi));
 
             // Is heading out of lattice cell?
-            if (phiMismatch > grid_.getResolutionPhi()) continue;
+            if (phiMismatch > 1.5 * params_.grid_resolution_yaw) continue;
 
-            // Ok, it's a valid new neighbor with this PTG. Is it shorter than
-            // existing?
-            distance_t dist = relTrg_d * ptg->getRefDistance();
+            // Ok, it's a valid new neighbor with this PTG.
+            // Is it shorter with this PTG than with others?
 
             if (dist < path.distance)
             {
