@@ -15,6 +15,7 @@
 #include <selfdriving/data/MotionPrimitivesTree.h>
 
 #include <limits>
+#include <unordered_map>
 
 namespace selfdriving
 {
@@ -87,12 +88,56 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
                 idxYaw.value() + o.idxYaw.value()};
         }
 
+        std::string asString() const
+        {
+            std::string r = "(";
+            r += std::to_string(idxX);
+            r += ",";
+            r += std::to_string(idxY);
+            if (idxYaw.has_value())
+            {
+                r += ",";
+                r += std::to_string(*idxYaw);
+            }
+            r += ")";
+            return r;
+        }
+
+        bool operator==(const NodeCoords& o) const
+        {
+            if (idxX != o.idxX || idxY != o.idxY) return false;
+            if (idxYaw.has_value() != o.idxYaw.has_value()) return false;
+            if (idxYaw.has_value() && idxYaw.value() != o.idxYaw.value())
+                return false;
+            return true;
+        }
+        bool operator!=(const NodeCoords& o) const { return !(*this == o); }
+
         /** Integer cell indices for (x,y) in `grid_` */
         int32_t idxX = 0, idxY = 0;
 
         /** Phi or Yaw index in `grid_`, or none if undefined/arbitrary */
         std::optional<int32_t> idxYaw;
     };
+
+    struct NodeCoordsHash
+    {
+        size_t operator()(const NodeCoords& x) const
+        {
+            size_t res = 17;
+            res        = res * 31 + std::hash<int32_t>()(x.idxX);
+            res        = res * 31 + std::hash<int32_t>()(x.idxY);
+            if (x.idxYaw)
+                res = res * 31 + std::hash<int32_t>()(x.idxYaw.value());
+            return res;
+        }
+    };
+
+    using nodes_with_exact_coordinates_t =
+        std::unordered_map<NodeCoords, SE2_KinState, NodeCoordsHash>;
+
+    using nodes_with_desired_speed_t =
+        std::unordered_map<NodeCoords, relative_speed_t, NodeCoordsHash>;
 
     using absolute_cell_index_t = size_t;
 
@@ -102,8 +147,13 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
                grid_.getSizeX() * n.idxY + n.idxX;
     }
 
-    mrpt::math::TPose2D nodeCoordsToPose(const NodeCoords& n) const
+    mrpt::math::TPose2D nodeCoordsToPose(
+        const NodeCoords&                     n,
+        const nodes_with_exact_coordinates_t& specialNodes) const
     {
+        if (const auto it = specialNodes.find(n); it != specialNodes.end())
+            return it->second.pose;
+
         return {
             grid_.idx2x(n.idxX), grid_.idx2y(n.idxY),
             grid_.idx2phi(n.idxYaw.value())};
@@ -200,7 +250,9 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     using list_paths_to_neighbors_t = std::vector<path_to_neighbor_t>;
 
     list_paths_to_neighbors_t find_feasible_paths_to_neighbors(
-        const Node& from, const TrajectoriesAndRobotShape& trs);
+        const Node& from, const TrajectoriesAndRobotShape& trs,
+        const nodes_with_exact_coordinates_t& nodesWithExactCoords,
+        const nodes_with_desired_speed_t&     nodesWithSpeed);
 };
 
 }  // namespace selfdriving

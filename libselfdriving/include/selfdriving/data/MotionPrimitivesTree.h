@@ -44,6 +44,9 @@ using ptg_index_t = size_t;
 
 using cost_t = double;
 
+/** Relative speed ratio [0,1] */
+using relative_speed_t = double;
+
 /** A tree with nodes being vehicle poses, and edges potential valid motion
  * primitives between them.
  *
