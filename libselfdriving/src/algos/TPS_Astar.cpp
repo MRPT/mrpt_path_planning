@@ -4,6 +4,7 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
+#include <mrpt/math/wrap2pi.h>
 #include <selfdriving/algos/TPS_Astar.h>
 #include <selfdriving/algos/render_tree.h>
 #include <selfdriving/algos/within_bbox.h>
@@ -23,6 +24,8 @@ mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
     MCP_SAVE(c, SE2_metricAngleWeight);
     MCP_SAVE(c, pathInterpolatedSegments);
     MCP_SAVE(c, saveDebugVisualizationDecimation);
+    MCP_SAVE(c, grid_resolution_xy);
+    MCP_SAVE_DEG(c, grid_resolution_yaw);
 
     return c;
 }
@@ -31,7 +34,10 @@ void TPS_Astar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
 {
     ASSERT_(c.isMap());
 
-    MCP_LOAD_OPT(c, SE2_metricAngleWeight);
+    MCP_LOAD_REQ(c, grid_resolution_xy);
+    MCP_LOAD_REQ_DEG(c, grid_resolution_yaw);
+
+    MCP_LOAD_REQ(c, SE2_metricAngleWeight);
     MCP_LOAD_OPT(c, pathInterpolatedSegments);
     MCP_LOAD_OPT(c, saveDebugVisualizationDecimation);
 }
@@ -92,10 +98,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     // openSet <- startNode
     {
-        auto& n = getOrCreateNodeByPose(in.stateStart.pose, tree);
+        auto& n = getOrCreateNodeByPose(in.stateStart, tree, nextFreeId);
         n.state = in.stateStart;
-
-        std::cout << "Created start node ID=" << n.id.value() << std::endl;
 
         //   X_T ← {X_0 }    # Tree nodes (state space)
         // ------------------------------------------------------------------
@@ -110,7 +114,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     }
 
     // Define goal node ID:
-    auto& nodeGoal = getOrCreateNodeByPose(in.stateGoal.pose, tree);
+    auto& nodeGoal = getOrCreateNodeByPose(in.stateGoal, tree, nextFreeId);
     po.goalNodeId  = nodeGoal.id.value();
 
     // Insert a dummy edge between root -> goal, just to allow new node IDs
@@ -125,8 +129,6 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             tree.root, nodeGoal.id.value(), in.stateGoal, dummyEdge);
     }
 
-    std::cout << "Created goal node ID=" << nodeGoal.id.value() << std::endl;
-
     while (!openSet.empty())
     {
         // node with the lowest fScore:
@@ -135,9 +137,6 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         // current==goal?
         if (current.id.value() == nodeGoal.id.value())
         {
-            std::cout << "Reached goal cell pose:" << current.state.pose
-                      << std::endl;
-
             // Path found:
             break;
         }
@@ -164,7 +163,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
             uint32_t ptg_step;
             bool     stepOk = ptg.getPathStepForDist(
-                    edge.ptgTrajIndex.value(), edge.distance, ptg_step);
+                edge.ptgTrajIndex.value(), edge.distance, ptg_step);
             ASSERT_(stepOk);
 
             const auto reconstrRelPose =
@@ -180,80 +179,77 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // relTwist is relative to the *parent* (srcNode) frame:
             (x_i.vel = relTwist).rotate(current.state.pose.phi);
 
-            MoveEdgeSE2_TPS tentativeEdge;
+            // Build a tentative new edge data structure.
+            // It will be used to be inserted in the graph, if accepted, and in
+            // any case, to evaluate the edge cost.
+            MoveEdgeSE2_TPS newEdge;
 
-            tentativeEdge.parentId     = current.id.value();
-            tentativeEdge.ptgDist      = edge.distance;
-            tentativeEdge.ptgIndex     = edge.ptgIndex.value();
-            tentativeEdge.ptgPathIndex = edge.ptgTrajIndex.value();
+            newEdge.parentId     = current.id.value();
+            newEdge.ptgDist      = edge.distance;
+            newEdge.ptgIndex     = edge.ptgIndex.value();
+            newEdge.ptgPathIndex = edge.ptgTrajIndex.value();
             MRPT_TODO("targetRelSpeed?");
             // tentativeEdge.targetRelSpeed = ds.targetRelSpeed;
-            tentativeEdge.stateFrom = current.state;
-            tentativeEdge.stateTo   = x_i;
+            newEdge.stateFrom = current.state;
+            newEdge.stateTo   = x_i;
             // interpolated path:
             if (const auto nSeg = params_.pathInterpolatedSegments; nSeg > 0)
             {
-                auto& ip = tentativeEdge.interpolatedPath.emplace();
+                auto& ip = newEdge.interpolatedPath.emplace();
                 ip.emplace_back(0, 0, 0);  // fixed
                 // interpolated:
                 for (size_t i = 0; i < nSeg; i++)
                 {
                     const auto iStep =
-                        ((i + 1) * tentativeEdge.ptgPathIndex) / (nSeg + 2);
+                        ((i + 1) * newEdge.ptgPathIndex) / (nSeg + 2);
                     ip.emplace_back(
-                        ptg.getPathPose(tentativeEdge.ptgPathIndex, iStep));
+                        ptg.getPathPose(newEdge.ptgPathIndex, iStep));
                 }
                 ip.emplace_back(reconstrRelPose);  // already known
             }
 
             // Let's compute its cost:
-            tentativeEdge.cost = cost_path_segment(tentativeEdge);
-            ASSERT_GT_(tentativeEdge.cost, .0);
+            newEdge.cost = cost_path_segment(newEdge);
+            ASSERT_GT_(newEdge.cost, .0);
 
-            const cost_t tentative_gScore = current.gScore + tentativeEdge.cost;
+            const cost_t tentative_gScore = current.gScore + newEdge.cost;
 
-            auto& neighborNode = getOrCreateNodeByPose(x_i.pose, tree);
+            auto& neighborNode = getOrCreateNodeByPose(x_i, tree, nextFreeId);
 
-            if (tentative_gScore < neighborNode.gScore)
+            // Better path? If it is not, go on with the next edge:
+            if (tentative_gScore >= neighborNode.gScore) continue;
+
+            // YES: accept this new edge
+            // --------------------------------
+            const bool hasToRewire = neighborNode.cameFrom.has_value();
+
+            // This path to neighbor is better than any previous one,
+            // keep it:
+            neighborNode.cameFrom = &current;
+            neighborNode.gScore   = tentative_gScore;
+
+            // fScore[neighbor] := tentative_gScore + h(neighbor)
+            neighborNode.fScore = tentative_gScore +
+                                  heuristic(neighborNode.state, nodeGoal.state);
+
+            if (!neighborNode.pendingInOpenSet)
             {
-                std::cout << "New better path to:" << x_i.pose
-                          << " cost:" << tentative_gScore << std::endl;
-
-                const bool hasToRewire = neighborNode.cameFrom.has_value();
-
-                // This path to neighbor is better than any previous one,
-                // keep it:
-                neighborNode.cameFrom = &current;
-                neighborNode.gScore   = tentative_gScore;
-
-                // fScore[neighbor] := tentative_gScore + h(neighbor)
-                neighborNode.fScore =
-                    tentative_gScore +
-                    heuristic(current.state, neighborNode.state);
-
-                if (!neighborNode.pendingInOpenSet)
-                {
-                    neighborNode.pendingInOpenSet = true;
-                    openSet.insert({neighborNode.fScore, &neighborNode});
-
-                    std::cout << "+openSet x=" << x_i.pose << std::endl;
-                }
-
-                // Delete old edge, if any:
-                if (hasToRewire)
-                {
-                    tree.rewire_node_parent(
-                        neighborNode.id.value(), tentativeEdge);
-                }
-                else
-                {
-                    // Add edge to tree:
-                    tree.insert_node_and_edge(
-                        tentativeEdge.parentId, neighborNode.id.value(),
-                        neighborNode.state, tentativeEdge);
-                }
+                neighborNode.pendingInOpenSet = true;
+                openSet.insert({neighborNode.fScore, &neighborNode});
             }
-        }
+
+            // Delete old edge, if any:
+            if (hasToRewire)
+            { tree.rewire_node_parent(neighborNode.id.value(), newEdge); }
+            else
+            {
+                // Add edge to tree:
+                tree.insert_node_and_edge(
+                    newEdge.parentId, neighborNode.id.value(),
+                    neighborNode.state, newEdge);
+            }
+
+        }  // end for each edge to neighbor
 
     }  // end while openSet!=empty
 
@@ -308,6 +304,10 @@ TPS_Astar::list_paths_to_neighbors_t
 
     // Create all neighbors:
     std::map<absolute_cell_index_t, path_to_neighbor_t> bestPaths;
+    const int maxIdxX   = grid_.getSizeX();
+    const int maxIdxY   = grid_.getSizeY();
+    const int maxIdxYaw = grid_.getSizePhi();
+
     for (int ix = -1; ix <= 1; ix++)
     {
         for (int iy = -1; iy <= 1; iy++)
@@ -318,6 +318,13 @@ TPS_Astar::list_paths_to_neighbors_t
                 if (ix == 0 && iy == 0 && ip == 0) continue;
 
                 const NodeCoords nc = iFromCoords + NodeCoords(ix, iy, ip);
+
+                // out of lattice limits?
+                if (nc.idxX < 0 || nc.idxY < 0 || nc.idxYaw < 0) continue;
+                if (nc.idxX >= maxIdxX) continue;
+                if (nc.idxY >= maxIdxY) continue;
+                if (nc.idxYaw >= maxIdxYaw) continue;
+
                 bestPaths[nodeCoordsToAbsIndex(nc)].nodeCoords = nc;
             }
         }
@@ -339,17 +346,38 @@ TPS_Astar::list_paths_to_neighbors_t
             const auto            relPose = neighNodePose - from.state.pose;
             int                   relTrg_k;
             normalized_distance_t relTrg_d;
-            if (ptg->inverseMap_WS2TP(relPose.x, relPose.y, relTrg_k, relTrg_d))
-            {
-                // valid. Is it better than existing?
-                distance_t dist = relTrg_d * ptg->getRefDistance();
+            if (!ptg->inverseMap_WS2TP(
+                    relPose.x, relPose.y, relTrg_k, relTrg_d))
+                continue;  // no (x,y) solution with this PTG.
 
-                if (dist < path.distance)
-                {
-                    path.ptgIndex     = curPtgIdx;
-                    path.ptgTrajIndex = relTrg_k;
-                    path.distance     = dist;
-                }
+            MRPT_TODO("Enhance PTG interface to query pure rotations?");
+
+            // now, check orientation:
+            uint32_t relTrgStep;
+            bool     stepOk =
+                ptg->getPathStepForDist(relTrg_k, relTrg_d, relTrgStep);
+            ASSERT_(stepOk);
+
+            // solution is a no-motion: skip.
+            if (relTrgStep == 0) continue;
+
+            const auto relReconstrPose = ptg->getPathPose(relTrg_k, relTrgStep);
+
+            const double phiMismatch = std::abs(
+                mrpt::math::angDistance(relReconstrPose.phi, relPose.phi));
+
+            // Is heading out of lattice cell?
+            if (phiMismatch > grid_.getResolutionPhi()) continue;
+
+            // Ok, it's a valid new neighbor with this PTG. Is it shorter than
+            // existing?
+            distance_t dist = relTrg_d * ptg->getRefDistance();
+
+            if (dist < path.distance)
+            {
+                path.ptgIndex     = curPtgIdx;
+                path.ptgTrajIndex = relTrg_k;
+                path.distance     = dist;
             }
         }
     }
