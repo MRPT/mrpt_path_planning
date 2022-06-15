@@ -115,8 +115,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     }
 
     // Define goal node ID:
-    auto& nodeGoal = getOrCreateNodeByPose(in.stateGoal, tree, nextFreeId);
-    po.goalNodeId  = nodeGoal.id.value();
+    auto& nodeGoal      = getOrCreateNodeByPose(in.stateGoal, tree, nextFreeId);
+    po.goalNodeId       = nodeGoal.id.value();
+    const auto goalIdxs = nodeGridCoords(in.stateGoal.pose);
 
     // Insert a dummy edge between root -> goal, just to allow new node IDs
     // to be generated in sequence:
@@ -129,6 +130,14 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         tree.insert_node_and_edge(
             tree.root, nodeGoal.id.value(), in.stateGoal, dummyEdge);
     }
+
+    nodes_with_exact_coordinates_t nodesWithExactCoords;
+    nodesWithExactCoords[nodeGridCoords(in.stateGoal.pose)] = in.stateGoal;
+
+    // goal speed=0
+    nodes_with_desired_speed_t nodesWithDesiredSpeed;
+    nodesWithDesiredSpeed[nodeGridCoords(in.stateGoal.pose)] = 0;
+
     unsigned int nIter = 0;
 
     while (!openSet.empty())
@@ -144,6 +153,15 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // Path found:
             break;
         }
+        // goal found with a minimum phi error?
+        {
+            const auto curIdxs = nodeGridCoords(current.state.pose);
+            if (curIdxs.idxX == goalIdxs.idxX &&
+                curIdxs.idxY == goalIdxs.idxY &&
+                mrpt::abs_diff(
+                    curIdxs.idxYaw.value(), goalIdxs.idxYaw.value()) <= 1)
+                break;
+        }
 
         // remove it from open set:
         current.pendingInOpenSet = false;
@@ -151,8 +169,15 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         openSet.erase(openSet.begin());
 
         // for each neighbor of current:
-        const auto neighbors =
-            find_feasible_paths_to_neighbors(current, in.ptgs);
+        const auto neighbors = find_feasible_paths_to_neighbors(
+            current, in.ptgs, nodesWithExactCoords, nodesWithDesiredSpeed);
+
+#if 0
+        std::cout << " cur : " << nodeGridCoords(current.state.pose).asString()
+                  << "\n";
+        std::cout << " goal: " << nodeGridCoords(nodeGoal.state.pose).asString()
+                  << "\n";
+#endif
 
         for (const auto& edge : neighbors)
         {
@@ -184,6 +209,18 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // relTwist is relative to the *parent* (srcNode) frame:
             (x_i.vel = relTwist).rotate(current.state.pose.phi);
 
+            // Out of world bounding box? It might happen due to lattice
+            // rounding differences between the checks in
+            // find_feasible_paths_to_neighbors() and the actual PTG path
+            // segments.
+            if (q_i.x < in.worldBboxMin.x || q_i.y < in.worldBboxMin.y ||
+                q_i.phi < in.worldBboxMin.phi)
+                continue;
+            if (q_i.x > in.worldBboxMax.x || q_i.y > in.worldBboxMax.y ||
+                q_i.phi > in.worldBboxMax.phi)
+                continue;
+
+            // Get or create node:
             auto& neighborNode = getOrCreateNodeByPose(x_i, tree, nextFreeId);
 
             // Skip if already visited:
@@ -210,8 +247,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
                 // interpolated:
                 for (size_t i = 0; i < nSeg; i++)
                 {
-                    const auto iStep =
-                        ((i + 1) * newEdge.ptgPathIndex) / (nSeg + 2);
+                    const auto iStep = ((i + 1) * ptg_step) / (nSeg + 2);
                     ip.emplace_back(
                         ptg.getPathPose(newEdge.ptgPathIndex, iStep));
                 }
@@ -246,6 +282,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
                 openSet.insert({neighborNode.fScore, &neighborNode});
             }
 
+            // Overwrite state with new one:
+            neighborNode.state = x_i;
+
             // Delete old edge, if any:
             if (hasToRewire)
             { tree.rewire_node_parent(neighborNode.id.value(), newEdge); }
@@ -260,8 +299,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         }  // end for each edge to neighbor
 
         MRPT_LOG_DEBUG_FMT(
-            "iter: %5u p=%35s neighbors=%3u fScore=%f gScore=%f", nIter,
-            current.state.pose.asString().c_str(),
+            "iter: %4u %35s neighbors=%3u fS=%.02f gS=%.02f", nIter,
+            current.state.asString().c_str(),
             static_cast<unsigned int>(neighbors.size()), current.fScore,
             current.gScore);
 
@@ -310,22 +349,11 @@ distance_t TPS_Astar::heuristic(
 
 TPS_Astar::list_paths_to_neighbors_t
     TPS_Astar::find_feasible_paths_to_neighbors(
-        const TPS_Astar::Node& from, const TrajectoriesAndRobotShape& trs)
+        const TPS_Astar::Node& from, const TrajectoriesAndRobotShape& trs,
+        const nodes_with_exact_coordinates_t& nodesWithExactCoords,
+        const nodes_with_desired_speed_t&     nodesWithSpeed)
 {
     const auto iFromCoords = nodeGridCoords(from.state.pose);
-
-    // Init ptgs:
-    for (auto& ptg : trs.ptgs)
-    {
-        ptg_t::TNavDynamicState ds;
-        (ds.curVelLocal = from.state.vel).rotate(-from.state.pose.phi);
-
-        MRPT_TODO("Include target node speed?");
-        ds.relTarget      = {1.0, 0, 0};
-        ds.targetRelSpeed = 1.0;
-
-        ptg->updateNavDynamicState(ds);
-    }
 
     // Create all neighbors:
     std::map<absolute_cell_index_t, path_to_neighbor_t> bestPaths;
@@ -366,14 +394,39 @@ TPS_Astar::list_paths_to_neighbors_t
             auto& ptg = trs.ptgs.at(curPtgIdx);
 
             // ptg->inverseMap_WS2TP()
-            const auto neighNodePose = nodeCoordsToPose(path.nodeCoords);
+            const auto neighNodePose =
+                nodeCoordsToPose(path.nodeCoords, nodesWithExactCoords);
 
-            const auto            relPose = neighNodePose - from.state.pose;
-            int                   relTrg_k;
-            normalized_distance_t relTrg_d;
-            if (!ptg->inverseMap_WS2TP(
-                    relPose.x, relPose.y, relTrg_k, relTrg_d))
-                continue;  // no (x,y) solution with this PTG.
+            const auto relPose = neighNodePose - from.state.pose;
+
+            // Update PTG dynamics:
+            {
+                ptg_t::TNavDynamicState ds;
+                (ds.curVelLocal = from.state.vel).rotate(-from.state.pose.phi);
+
+                ds.relTarget = relPose;
+                if (const auto it = nodesWithSpeed.find(path.nodeCoords);
+                    it != nodesWithSpeed.end())
+                {
+                    MRPT_TODO("Speed zone filter here too?");
+
+                    ds.targetRelSpeed = it->second;
+                }
+                else
+                {
+                    ds.targetRelSpeed = 1.0;
+                }
+
+                ptg->updateNavDynamicState(ds);
+            }
+
+            int                   relTrg_k       = 0;
+            normalized_distance_t relTrg_d       = 0;
+            const double          queryTolerance = params_.grid_resolution_xy;
+
+            // const bool tpsIsExact =
+            ptg->inverseMap_WS2TP(
+                relPose.x, relPose.y, relTrg_k, relTrg_d, queryTolerance);
 
             distance_t dist = relTrg_d * ptg->getRefDistance();
 
@@ -382,22 +435,25 @@ TPS_Astar::list_paths_to_neighbors_t
             // now, check orientation:
             uint32_t relTrgStep;
             bool stepOk = ptg->getPathStepForDist(relTrg_k, dist, relTrgStep);
-            ASSERT_(stepOk);
+            if (!stepOk) continue;
 
             // solution is a no-motion: skip.
             if (relTrgStep == 0) continue;
 
             const auto relReconstrPose = ptg->getPathPose(relTrg_k, relTrgStep);
 
-            const double phiMismatch = std::abs(
-                mrpt::math::angDistance(relReconstrPose.phi, relPose.phi));
+            const auto poseMismatch = relPose - relReconstrPose;
 
-            // Is heading out of lattice cell?
-            if (phiMismatch > 1.5 * params_.grid_resolution_yaw) continue;
+            // Is it out of lattice cell?
+            if (std::abs(poseMismatch.phi) > params_.grid_resolution_yaw ||
+                poseMismatch.norm() > params_.grid_resolution_xy)
+            {
+                // skip:
+                continue;
+            }
 
             // Ok, it's a valid new neighbor with this PTG.
             // Is it shorter with this PTG than with others?
-
             if (dist < path.distance)
             {
                 path.ptgIndex     = curPtgIdx;

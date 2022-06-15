@@ -1,9 +1,9 @@
 %YAML 1.2
 ---
 grid_resolution_xy: 0.20    # [meters]
-grid_resolution_yaw: 20.0   # [deg]
+grid_resolution_yaw: 15.0   # [deg]
 
 SE2_metricAngleWeight: 0.1
 pathInterpolatedSegments: 3
 
-#saveDebugVisualizationDecimation: 100
+saveDebugVisualizationDecimation: 1
