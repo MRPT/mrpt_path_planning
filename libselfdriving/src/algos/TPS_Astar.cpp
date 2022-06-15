@@ -153,6 +153,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // Path found:
             break;
         }
+#if 0
         // goal found with a minimum phi error?
         {
             const auto curIdxs = nodeGridCoords(current.state.pose);
@@ -162,6 +163,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
                     curIdxs.idxYaw.value(), goalIdxs.idxYaw.value()) <= 1)
                 break;
         }
+#endif
 
         // remove it from open set:
         current.pendingInOpenSet = false;
