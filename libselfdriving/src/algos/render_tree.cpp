@@ -223,9 +223,20 @@ auto selfdriving::render_tree(
             const float corner_scale =
                 xyzcorners_scale * (isLastNode ? 1.5f : 1.0f);
 
-            auto obj = CornerXYZSimple(corner_scale);
-            obj->setPose(poseHeight(mrpt::poses::CPose3D(poseNode)));
-            scene.insert(obj);
+            bool cornerVisible = true;
+            if (ro.width_normal_edge == 0)
+            {
+                // the user doesn't want to see regular edges.
+                // don't show corners, neither:
+                if (!isBestPath) cornerVisible = false;
+            }
+
+            if (cornerVisible)
+            {
+                auto obj = CornerXYZSimple(corner_scale);
+                obj->setPose(poseHeight(mrpt::poses::CPose3D(poseNode)));
+                scene.insert(obj);
+            }
 
             // Insert vehicle shapes along optimal path:
             if (isBestPathAndDrawShape)
@@ -237,7 +248,7 @@ auto selfdriving::render_tree(
                 vehShape->setPose(poseHeightT(shapePose));
                 scene.insert(vehShape);
             }
-            if (drawTwistState)
+            if (drawTwistState && cornerVisible)
             {
                 // Draw twist:
                 if (node.vel.vx != 0 || node.vel.vy != 0)
