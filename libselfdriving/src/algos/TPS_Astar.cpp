@@ -115,9 +115,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     }
 
     // Define goal node ID:
-    auto& nodeGoal      = getOrCreateNodeByPose(in.stateGoal, tree, nextFreeId);
-    po.goalNodeId       = nodeGoal.id.value();
-    const auto goalIdxs = nodeGridCoords(in.stateGoal.pose);
+    auto& nodeGoal = getOrCreateNodeByPose(in.stateGoal, tree, nextFreeId);
+    po.goalNodeId  = nodeGoal.id.value();
 
     // Insert a dummy edge between root -> goal, just to allow new node IDs
     // to be generated in sequence:
@@ -153,17 +152,6 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // Path found:
             break;
         }
-#if 0
-        // goal found with a minimum phi error?
-        {
-            const auto curIdxs = nodeGridCoords(current.state.pose);
-            if (curIdxs.idxX == goalIdxs.idxX &&
-                curIdxs.idxY == goalIdxs.idxY &&
-                mrpt::abs_diff(
-                    curIdxs.idxYaw.value(), goalIdxs.idxYaw.value()) <= 1)
-                break;
-        }
-#endif
 
         // remove it from open set:
         current.pendingInOpenSet = false;
@@ -340,13 +328,24 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     MRPT_END
 }
 
-distance_t TPS_Astar::heuristic(
+distance_t TPS_Astar::default_heuristic(
     const SE2_KinState& from, const SE2_KinState& goal) const
 {
     selfdriving::PoseDistanceMetric_Lie<selfdriving::SE2_KinState> metric(
         params_.SE2_metricAngleWeight);
 
-    return metric.distance(from.pose, goal.pose);
+    // Distance in SE(2):
+    const double distSE2 = metric.distance(from.pose, goal.pose);
+
+    // Favor heading towards the target, if we are far away:
+    const auto   relPose = goal.pose - from.pose;
+    const double distHeading =
+        (relPose.norm() < 2.0)
+            ? 0.0
+            : std::abs(mrpt::math::angDistance(
+                  std::atan2(relPose.y, relPose.x), goal.pose.phi));
+
+    return distSE2 + distHeading;
 }
 
 TPS_Astar::list_paths_to_neighbors_t
