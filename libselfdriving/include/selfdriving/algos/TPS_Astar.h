@@ -256,6 +256,7 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     {
         std::optional<ptg_index_t>        ptgIndex;
         std::optional<trajectory_index_t> ptgTrajIndex;
+        std::optional<uint32_t>           relTrgStep;  //!< traj step index
         distance_t          ptgDist = std::numeric_limits<distance_t>::max();
         mrpt::math::TPose2D relReconstrPose;
         NodeCoords          neighborNodeCoords;
@@ -270,8 +271,9 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         const Node& from, const TrajectoriesAndRobotShape& trs,
         const SE2_KinState&                             goalState,
         const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
-        const nodes_with_exact_coordinates_t&           nodesWithExactCoords,
-        const nodes_with_desired_speed_t&               nodesWithSpeed);
+        double                                MAX_XY_OBSTACLES_CLIPPING_DIST,
+        const nodes_with_exact_coordinates_t& nodesWithExactCoords,
+        const nodes_with_desired_speed_t&     nodesWithSpeed);
 
     mrpt::maps::CPointsMap::Ptr cached_local_obstacles(
         const mrpt::math::TPose2D&                      queryPose,
