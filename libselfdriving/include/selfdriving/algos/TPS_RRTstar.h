@@ -144,20 +144,6 @@ class TPS_RRTstar : virtual public mrpt::system::COutputLogger, public Planner
         const closest_lie_nodes_list_t& hintCloseNodes,
         const std::optional<TNodeID>&   nodeToIgnoreHeading = std::nullopt);
 
-    /** Returns local obstacles as seen from a given pose, clipped to a maximum
-     * distance. */
-    static void transform_pc_square_clipping(
-        const mrpt::maps::CPointsMap& inMap,
-        const mrpt::poses::CPose2D& asSeenFrom, const double MAX_DIST_XY,
-        mrpt::maps::CPointsMap& outMap, bool appendToOutMap = true);
-
-    /** Returns TPS-distance to obstacles.
-     * ptg dynamic state must be updated by the caller.
-     */
-    distance_t tp_obstacles_single_path(
-        const trajectory_index_t      tp_space_k_direction,
-        const mrpt::maps::CPointsMap& localObstacles, const ptg_t& ptg);
-
     mrpt::maps::CPointsMap::Ptr cached_local_obstacles(
         const MotionPrimitivesTreeSE2& tree, const TNodeID nodeID,
         const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,

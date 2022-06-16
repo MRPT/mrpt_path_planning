@@ -8,6 +8,8 @@
 #include <mrpt/opengl/COpenGLScene.h>
 #include <selfdriving/algos/TPS_Astar.h>
 #include <selfdriving/algos/render_tree.h>
+#include <selfdriving/algos/tp_obstacles_single_path.h>
+#include <selfdriving/algos/transform_pc_square_clipping.h>
 #include <selfdriving/algos/within_bbox.h>
 #include <selfdriving/data/MotionPrimitivesTree.h>
 
@@ -77,6 +79,11 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     for (const auto& ptg : in.ptgs.ptgs)
         mrpt::keep_max(MAX_XY_DIST, ptg->getRefDistance());
     ASSERT_(MAX_XY_DIST > 0);
+
+    // obstacles (TODO: dynamic over future time?):
+    std::vector<mrpt::maps::CPointsMap::Ptr> obstaclePoints;
+    for (const auto& os : in.obstacles)
+        if (os) obstaclePoints.emplace_back(os->obstacles());
 
     //  2  |  E T ← ∅         # Tree edges
     // ------------------------------------------------------------------
@@ -477,4 +484,23 @@ TPS_Astar::list_paths_to_neighbors_t
     }
 
     return neighbors;
+}
+
+mrpt::maps::CPointsMap::Ptr TPS_Astar::cached_local_obstacles(
+    const mrpt::math::TPose2D&                      queryPose,
+    const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+    double                                          MAX_PTG_XY_DIST)
+{
+    MRPT_TODO("Impl actual cache");
+
+    auto obs = mrpt::maps::CSimplePointsMap::Create();
+
+    for (const auto& obs : globalObstacles)
+    {
+        ASSERT_(obs);
+        transform_pc_square_clipping(
+            *obs, mrpt::poses::CPose2D(queryPose), MAX_PTG_XY_DIST, *obs);
+    }
+
+    return obs;
 }
