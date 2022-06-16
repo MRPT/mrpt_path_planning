@@ -10,6 +10,8 @@
 #include <mrpt/random/RandomGenerators.h>
 #include <selfdriving/algos/TPS_RRTstar.h>
 #include <selfdriving/algos/render_tree.h>
+#include <selfdriving/algos/tp_obstacles_single_path.h>
+#include <selfdriving/algos/transform_pc_square_clipping.h>
 #include <selfdriving/algos/within_bbox.h>
 
 #include <iostream>
@@ -488,75 +490,6 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     po.pathCost = tree.nodes().at(goalNodeId).cost_;
 
     return po;
-    MRPT_END
-}
-
-void TPS_RRTstar::transform_pc_square_clipping(
-    const mrpt::maps::CPointsMap& inMap, const mrpt::poses::CPose2D& asSeenFrom,
-    const double MAX_DIST_XY, mrpt::maps::CPointsMap& outMap,
-    bool appendToOutMap)
-{
-    size_t       nObs;
-    const float *obs_xs, *obs_ys, *obs_zs;
-    inMap.getPointsBuffer(nObs, obs_xs, obs_ys, obs_zs);
-
-    if (!appendToOutMap) outMap.clear();
-    // Prealloc mem for speed-up
-    outMap.reserve(nObs);
-
-    const mrpt::poses::CPose2D invPose = -asSeenFrom;
-    // We can safely discard the rest of obstacles, since they cannot be
-    // converted into TP-Obstacles anyway!
-
-    for (size_t obs = 0; obs < nObs; obs++)
-    {
-        const double gx = obs_xs[obs], gy = obs_ys[obs];
-
-        if (std::abs(gx - asSeenFrom.x()) > MAX_DIST_XY ||
-            std::abs(gy - asSeenFrom.y()) > MAX_DIST_XY)
-        {
-            // ignore this obstacle: anyway, I don't know how to map it to
-            // TP-Obs!
-            continue;
-        }
-
-        double ox, oy;
-        invPose.composePoint(gx, gy, ox, oy);
-
-        outMap.insertPointFast(ox, oy, 0);
-    }
-}
-
-distance_t TPS_RRTstar::tp_obstacles_single_path(
-    const trajectory_index_t      tp_space_k_direction,
-    const mrpt::maps::CPointsMap& localObstacles, const ptg_t& ptg)
-{
-    MRPT_START
-    // Take "k_rand"s and "distances" such that the collision hits the
-    // obstacles
-    // in the "grid" of the given PT
-    // --------------------------------------------------------------------
-    size_t       nObs;
-    const float *obs_xs, *obs_ys, *obs_zs;
-    localObstacles.getPointsBuffer(nObs, obs_xs, obs_ys, obs_zs);
-
-    // Init obs ranges:
-    normalized_distance_t out_TPObstacle_k = 0;
-    ptg.initTPObstacleSingle(tp_space_k_direction, out_TPObstacle_k);
-
-    for (size_t obs = 0; obs < nObs; obs++)
-    {
-        const float ox = obs_xs[obs];
-        const float oy = obs_ys[obs];
-
-        ptg.updateTPObstacleSingle(
-            ox, oy, tp_space_k_direction, out_TPObstacle_k);
-    }
-
-    // Leave distances in out_TPObstacles un-normalized, so they
-    // just represent real distances in "pseudo-meters".
-    return out_TPObstacle_k;
-
     MRPT_END
 }
 

@@ -261,6 +261,11 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         const Node& from, const TrajectoriesAndRobotShape& trs,
         const nodes_with_exact_coordinates_t& nodesWithExactCoords,
         const nodes_with_desired_speed_t&     nodesWithSpeed);
+
+    mrpt::maps::CPointsMap::Ptr cached_local_obstacles(
+        const mrpt::math::TPose2D&                      queryPose,
+        const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+        double                                          MAX_PTG_XY_DIST);
 };
 
 }  // namespace selfdriving
