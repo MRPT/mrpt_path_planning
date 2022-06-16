@@ -1,10 +1,16 @@
 %YAML 1.2
 ---
-grid_resolution_xy: 0.20    # [meters]
+grid_resolution_xy: 0.15    # [meters]
 grid_resolution_yaw: 15.0   # [deg]
 
+heuristic_heading_weight: 0.1
 SE2_metricAngleWeight: 0.1
-pathInterpolatedSegments: 3
+pathInterpolatedSegments: 4
+
+# find_feasible_paths_to_neighbors() params:
+max_ptg_trajectories_to_explore: 20
+ptg_norm_distance_sampling_granularity: 0.2   # [0,1]
+
 
 #saveDebugVisualizationDecimation: 1
 
