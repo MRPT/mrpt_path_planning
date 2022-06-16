@@ -62,6 +62,7 @@ if (COMPILER_IS_GCC_OR_CLANG)
     -Wreturn-type         -Werror=return-type
     -Wformat              -Werror=format-security
     -Wextra -Wtype-limits -Wcast-align -Wparentheses
+    -Wshadow
   )
 endif()
 

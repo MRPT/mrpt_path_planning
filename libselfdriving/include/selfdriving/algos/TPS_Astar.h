@@ -268,9 +268,10 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
      */
     list_paths_to_neighbors_t find_feasible_paths_to_neighbors(
         const Node& from, const TrajectoriesAndRobotShape& trs,
-        const SE2_KinState&                   goalState,
-        const nodes_with_exact_coordinates_t& nodesWithExactCoords,
-        const nodes_with_desired_speed_t&     nodesWithSpeed);
+        const SE2_KinState&                             goalState,
+        const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+        const nodes_with_exact_coordinates_t&           nodesWithExactCoords,
+        const nodes_with_desired_speed_t&               nodesWithSpeed);
 
     mrpt::maps::CPointsMap::Ptr cached_local_obstacles(
         const mrpt::math::TPose2D&                      queryPose,

@@ -174,8 +174,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
         // for each neighbor of current:
         const auto neighbors = find_feasible_paths_to_neighbors(
-            current, in.ptgs, in.stateGoal, nodesWithExactCoords,
-            nodesWithDesiredSpeed);
+            current, in.ptgs, in.stateGoal, obstaclePoints,
+            nodesWithExactCoords, nodesWithDesiredSpeed);
 
 #if 0
         std::cout << " cur : " << nodeGridCoords(current.state.pose).asString()
@@ -366,9 +366,10 @@ distance_t TPS_Astar::default_heuristic(
 TPS_Astar::list_paths_to_neighbors_t
     TPS_Astar::find_feasible_paths_to_neighbors(
         const TPS_Astar::Node& from, const TrajectoriesAndRobotShape& trs,
-        const SE2_KinState&                   goalState,
-        const nodes_with_exact_coordinates_t& nodesWithExactCoords,
-        const nodes_with_desired_speed_t&     nodesWithSpeed)
+        const SE2_KinState&                             goalState,
+        const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+        const nodes_with_exact_coordinates_t&           nodesWithExactCoords,
+        const nodes_with_desired_speed_t&               nodesWithSpeed)
 {
     const auto iFromCoords = nodeGridCoords(from.state.pose);
     const auto iGoalCoords = nodeGridCoords(goalState.pose);
@@ -446,16 +447,6 @@ TPS_Astar::list_paths_to_neighbors_t
         // now, check which ones of those paths are not blocked by obstacles:
         for (const auto& tpsPt : tpsPointsToConsider)
         {
-            // check collisions:
-            MRPT_TODO("tps-obstacles");
-
-            bool collision = false;
-
-            if (collision) continue;
-
-            // ok, it's a good potential path:
-            // (it will be later on scored by the A* algo)
-
             // Reconstruct the actual global pose:
             distance_t dist = tpsPt.d * ptg->getRefDistance();
 
@@ -478,6 +469,23 @@ TPS_Astar::list_paths_to_neighbors_t
                 continue;
 
             const NodeCoords nc = nodeGridCoords(absPose);
+
+            // check for collisions:
+            const auto localObstacles = cached_local_obstacles(
+                absPose, globalObstacles, 1.5 * ptg->getRefDistance());
+
+            const distance_t freeDistance =
+                tp_obstacles_single_path(tpsPt.k, *localObstacles, *ptg);
+
+            if (tpsPt.d * ptg->getRefDistance() >= freeDistance)
+            {
+                // we would need to move farther away than what is possible
+                // without colliding: discard this trajectory.
+                continue;
+            }
+
+            // ok, it's a good potential path, add it.
+            // It will be later on scored by the A* algo.
 
             auto& path = bestPaths[nodeCoordsToAbsIndex(nc)];
 
@@ -517,14 +525,14 @@ mrpt::maps::CPointsMap::Ptr TPS_Astar::cached_local_obstacles(
 {
     MRPT_TODO("Impl actual cache");
 
-    auto obs = mrpt::maps::CSimplePointsMap::Create();
+    auto outObs = mrpt::maps::CSimplePointsMap::Create();
 
     for (const auto& obs : globalObstacles)
     {
         ASSERT_(obs);
         transform_pc_square_clipping(
-            *obs, mrpt::poses::CPose2D(queryPose), MAX_PTG_XY_DIST, *obs);
+            *obs, mrpt::poses::CPose2D(queryPose), MAX_PTG_XY_DIST, *outObs);
     }
 
-    return obs;
+    return outObs;
 }
