@@ -174,7 +174,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
         // for each neighbor of current:
         const auto neighbors = find_feasible_paths_to_neighbors(
-            current, in.ptgs, in.stateGoal, obstaclePoints,
+            current, in.ptgs, in.stateGoal, obstaclePoints, MAX_XY_DIST,
             nodesWithExactCoords, nodesWithDesiredSpeed);
 
 #if 0
@@ -196,13 +196,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
             const auto& ptg = *in.ptgs.ptgs.at(edge.ptgIndex.value());
 
-            uint32_t ptg_step;
-            bool     stepOk = ptg.getPathStepForDist(
-                edge.ptgTrajIndex.value(), edge.ptgDist, ptg_step);
-            ASSERT_(stepOk);
-
-            const auto reconstrRelPose =
-                ptg.getPathPose(edge.ptgTrajIndex.value(), ptg_step);
+            const uint32_t ptg_step        = edge.relTrgStep.value();
+            const auto&    reconstrRelPose = edge.relReconstrPose;
 
             // new tentative node pose & velocity:
             const auto q_i = current.state.pose + reconstrRelPose;
@@ -368,16 +363,23 @@ TPS_Astar::list_paths_to_neighbors_t
         const TPS_Astar::Node& from, const TrajectoriesAndRobotShape& trs,
         const SE2_KinState&                             goalState,
         const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
-        const nodes_with_exact_coordinates_t&           nodesWithExactCoords,
-        const nodes_with_desired_speed_t&               nodesWithSpeed)
+        double                                MAX_XY_OBSTACLES_CLIPPING_DIST,
+        const nodes_with_exact_coordinates_t& nodesWithExactCoords,
+        const nodes_with_desired_speed_t&     nodesWithSpeed)
 {
     const auto iFromCoords = nodeGridCoords(from.state.pose);
     const auto iGoalCoords = nodeGridCoords(goalState.pose);
 
     const auto relGoal = goalState.pose - from.state.pose;
 
+    // local obstacles as seen from this "from" pose:
+    const auto localObstacles = cached_local_obstacles(
+        from.state.pose, globalObstacles, MAX_XY_OBSTACLES_CLIPPING_DIST);
+
     // If two PTGs reach the same cell, keep the shortest/best:
     std::map<absolute_cell_index_t, path_to_neighbor_t> bestPaths;
+
+    size_t totalConsidered = 0, totalCollided = 0;
 
     // For each PTG:
     for (size_t ptgIdx = 0; ptgIdx < trs.ptgs.size(); ptgIdx++)
@@ -447,6 +449,8 @@ TPS_Astar::list_paths_to_neighbors_t
         // now, check which ones of those paths are not blocked by obstacles:
         for (const auto& tpsPt : tpsPointsToConsider)
         {
+            totalConsidered++;
+
             // Reconstruct the actual global pose:
             distance_t dist = tpsPt.d * ptg->getRefDistance();
 
@@ -471,9 +475,6 @@ TPS_Astar::list_paths_to_neighbors_t
             const NodeCoords nc = nodeGridCoords(absPose);
 
             // check for collisions:
-            const auto localObstacles = cached_local_obstacles(
-                absPose, globalObstacles, 1.5 * ptg->getRefDistance());
-
             const distance_t freeDistance =
                 tp_obstacles_single_path(tpsPt.k, *localObstacles, *ptg);
 
@@ -481,6 +482,7 @@ TPS_Astar::list_paths_to_neighbors_t
             {
                 // we would need to move farther away than what is possible
                 // without colliding: discard this trajectory.
+                totalCollided++;
                 continue;
             }
 
@@ -497,6 +499,7 @@ TPS_Astar::list_paths_to_neighbors_t
                 path.ptgIndex           = ptgIdx;
                 path.ptgTrajIndex       = tpsPt.k;
                 path.relReconstrPose    = relReconstrPose;
+                path.relTrgStep         = relTrgStep;
                 path.neighborNodeCoords = nc;
             }
         }
@@ -509,11 +512,17 @@ TPS_Astar::list_paths_to_neighbors_t
     for (const auto& kv : bestPaths)
     {
         const auto& path = kv.second;
-
         if (!path.ptgIndex.has_value()) continue;  // skip
 
-        neighbors.emplace_back(kv.second);
+        neighbors.emplace_back(path);
     }
+
+#if 0
+    MRPT_LOG_DEBUG_STREAM(
+        "find_feasible_paths_to_neighbors() for p="
+        << from.state.pose << " => " << totalConsidered << "/" << totalCollided
+        << "/" << neighbors.size() << " considered/collided/accepted.");
+#endif
 
     return neighbors;
 }

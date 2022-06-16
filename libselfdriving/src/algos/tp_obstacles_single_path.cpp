@@ -20,7 +20,7 @@ selfdriving::distance_t selfdriving::tp_obstacles_single_path(
     localObstacles.getPointsBuffer(nObs, obs_xs, obs_ys, obs_zs);
 
     // Init obs ranges:
-    normalized_distance_t out_TPObstacle_k = 0;
+    distance_t out_TPObstacle_k = 0;
     ptg.initTPObstacleSingle(tp_space_k_direction, out_TPObstacle_k);
 
     for (size_t obs = 0; obs < nObs; obs++)
