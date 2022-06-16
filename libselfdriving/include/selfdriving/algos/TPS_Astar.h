@@ -40,6 +40,9 @@ struct TPS_Astar_Parameters
     void                   load_from_yaml(const mrpt::containers::yaml& c);
 };
 
+using astar_heuristic_t = std::function<double(
+    const SE2_KinState& /*from*/, const SE2_KinState& /*goal*/)>;
+
 /**
  * Uses a SE(2) lattice to run an A* algorithm to find a kinematicaly feasible
  * path from "A" to "B" using a set of trajectories in the form of PTGs.
@@ -67,8 +70,13 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         params_.load_from_yaml(c);
     }
 
-    distance_t heuristic(
+    distance_t default_heuristic(
         const SE2_KinState& from, const SE2_KinState& goal) const;
+
+    astar_heuristic_t heuristic = astar_heuristic_t(
+        [this](const SE2_KinState& from, const SE2_KinState& goal) {
+            return this->default_heuristic(from, goal);
+        });
 
    private:
     struct NodeCoords
