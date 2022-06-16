@@ -42,6 +42,17 @@ using trajectory_index_t = int;
 
 using ptg_index_t = size_t;
 
+struct TPS_point
+{
+    TPS_point()  = default;
+    ~TPS_point() = default;
+
+    TPS_point(trajectory_index_t _k, normalized_distance_t _d) : k(_k), d(_d) {}
+
+    trajectory_index_t    k;
+    normalized_distance_t d;
+};
+
 using cost_t = double;
 
 /** Relative speed ratio [0,1] */

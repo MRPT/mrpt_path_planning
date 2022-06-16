@@ -1,6 +1,6 @@
 ﻿/* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2021 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -167,7 +167,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
         // for each neighbor of current:
         const auto neighbors = find_feasible_paths_to_neighbors(
-            current, in.ptgs, nodesWithExactCoords, nodesWithDesiredSpeed);
+            current, in.ptgs, in.stateGoal, nodesWithExactCoords,
+            nodesWithDesiredSpeed);
 
 #if 0
         std::cout << " cur : " << nodeGridCoords(current.state.pose).asString()
@@ -190,7 +191,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
             uint32_t ptg_step;
             bool     stepOk = ptg.getPathStepForDist(
-                edge.ptgTrajIndex.value(), edge.distance, ptg_step);
+                edge.ptgTrajIndex.value(), edge.ptgDist, ptg_step);
             ASSERT_(stepOk);
 
             const auto reconstrRelPose =
@@ -229,7 +230,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             MoveEdgeSE2_TPS newEdge;
 
             newEdge.parentId     = current.id.value();
-            newEdge.ptgDist      = edge.distance;
+            newEdge.ptgDist      = edge.ptgDist;
             newEdge.ptgIndex     = edge.ptgIndex.value();
             newEdge.ptgPathIndex = edge.ptgTrajIndex.value();
             MRPT_TODO("targetRelSpeed?");
@@ -358,118 +359,135 @@ distance_t TPS_Astar::default_heuristic(
 TPS_Astar::list_paths_to_neighbors_t
     TPS_Astar::find_feasible_paths_to_neighbors(
         const TPS_Astar::Node& from, const TrajectoriesAndRobotShape& trs,
+        const SE2_KinState&                   goalState,
         const nodes_with_exact_coordinates_t& nodesWithExactCoords,
         const nodes_with_desired_speed_t&     nodesWithSpeed)
 {
     const auto iFromCoords = nodeGridCoords(from.state.pose);
+    const auto iGoalCoords = nodeGridCoords(goalState.pose);
 
-    // Create all neighbors:
+    const size_t MAX_PTG_TRAJ_TO_EXPLORE            = 20;
+    const double PTG_NORM_DIST_GRANULARITY_SAMPLING = 0.2;
+
+    const auto relGoal = goalState.pose - from.state.pose;
+
+    // If two PTGs reach the same cell, keep the shortest/best:
     std::map<absolute_cell_index_t, path_to_neighbor_t> bestPaths;
-    const int maxIdxX   = grid_.getSizeX();
-    const int maxIdxY   = grid_.getSizeY();
-    const int maxIdxYaw = grid_.getSizePhi();
 
-    for (int ix = -1; ix <= 1; ix++)
+    // For each PTG:
+    for (size_t ptgIdx = 0; ptgIdx < trs.ptgs.size(); ptgIdx++)
     {
-        for (int iy = -1; iy <= 1; iy++)
+        auto& ptg = trs.ptgs.at(ptgIdx);
+        ASSERT_(ptg->isInitialized());
+
+        // Update PTG dynamics:
         {
-            for (int ip = -1; ip <= 1; ip++)
+            ptg_t::TNavDynamicState ds;
+            (ds.curVelLocal = from.state.vel).rotate(-from.state.pose.phi);
+
+            ds.relTarget = relGoal;
+            if (const auto it = nodesWithSpeed.find(iGoalCoords);
+                it != nodesWithSpeed.end())
             {
-                // skip the (0,0,0) incremental motion:
-                if (ix == 0 && iy == 0 && ip == 0) continue;
-
-                const NodeCoords nc = iFromCoords + NodeCoords(ix, iy, ip);
-
-                // out of lattice limits?
-                if (nc.idxX < 0 || nc.idxY < 0 || nc.idxYaw < 0) continue;
-                if (nc.idxX >= maxIdxX) continue;
-                if (nc.idxY >= maxIdxY) continue;
-                if (nc.idxYaw >= maxIdxYaw) continue;
-
-                bestPaths[nodeCoordsToAbsIndex(nc)].nodeCoords = nc;
+                MRPT_TODO("Speed zone filter here too?");
+                ds.targetRelSpeed = it->second;
             }
+            else
+            {
+                ds.targetRelSpeed = 1.0;
+            }
+
+            ptg->updateNavDynamicState(ds);
         }
-    }
 
-    // Evaluate which PTG takes us to each neigbor cell:
-    for (auto& kv : bestPaths)
-    {
-        // take references for writing best found ptg paths:
-        auto& path = kv.second;
+        // explore a subset of all trajectories only:
+        std::set<trajectory_index_t> trajIdxsToConsider;
+        std::vector<TPS_point>       tpsPointsToConsider;
 
-        for (size_t curPtgIdx = 0; curPtgIdx < trs.ptgs.size(); curPtgIdx++)
+        for (size_t i = 0; i < MAX_PTG_TRAJ_TO_EXPLORE; i++)
         {
-            auto& ptg = trs.ptgs.at(curPtgIdx);
+            trajectory_index_t trjIdx = mrpt::round(
+                i * (ptg->getPathCount() - 1) / (MAX_PTG_TRAJ_TO_EXPLORE - 1));
+            trajIdxsToConsider.insert(trjIdx);
+        }
 
-            // ptg->inverseMap_WS2TP()
-            const auto neighNodePose =
-                nodeCoordsToPose(path.nodeCoords, nodesWithExactCoords);
-
-            const auto relPose = neighNodePose - from.state.pose;
-
-            // Update PTG dynamics:
-            {
-                ptg_t::TNavDynamicState ds;
-                (ds.curVelLocal = from.state.vel).rotate(-from.state.pose.phi);
-
-                ds.relTarget = relPose;
-                if (const auto it = nodesWithSpeed.find(path.nodeCoords);
-                    it != nodesWithSpeed.end())
-                {
-                    MRPT_TODO("Speed zone filter here too?");
-
-                    ds.targetRelSpeed = it->second;
-                }
-                else
-                {
-                    ds.targetRelSpeed = 1.0;
-                }
-
-                ptg->updateNavDynamicState(ds);
-            }
-
+        // make sure of including the trajectory towards the target, if we are
+        // close enough, plus its immediate neighboring paths:
+        {
             int                   relTrg_k       = 0;
             normalized_distance_t relTrg_d       = 0;
             const double          queryTolerance = params_.grid_resolution_xy;
+            if (ptg->inverseMap_WS2TP(
+                    relGoal.x, relGoal.y, relTrg_k, relTrg_d, queryTolerance))
+            {
+                // Add direct path to target:
+                tpsPointsToConsider.emplace_back(relTrg_k, relTrg_d);
+                // and also, in general, the path:
+                trajIdxsToConsider.insert(relTrg_k);
+            }
+        }
 
-            // const bool tpsIsExact =
-            ptg->inverseMap_WS2TP(
-                relPose.x, relPose.y, relTrg_k, relTrg_d, queryTolerance);
+        // Build possible distances for each path:
+        for (const auto trjIdx : trajIdxsToConsider)
+        {
+            for (normalized_distance_t d = PTG_NORM_DIST_GRANULARITY_SAMPLING;
+                 d < 0.999; d += PTG_NORM_DIST_GRANULARITY_SAMPLING)
+            {  //
+                tpsPointsToConsider.emplace_back(trjIdx, d);
+            }
+        }
 
-            distance_t dist = relTrg_d * ptg->getRefDistance();
+        // now, check which ones of those paths are not blocked by obstacles:
+        for (const auto& tpsPt : tpsPointsToConsider)
+        {
+            // check collisions:
+            MRPT_TODO("tps-obstacles");
 
-            MRPT_TODO("Enhance PTG interface to query pure rotations?");
+            bool collision = false;
 
-            // now, check orientation:
+            if (collision) continue;
+
+            // ok, it's a good potential path:
+            // (it will be later on scored by the A* algo)
+
+            // Reconstruct the actual global pose:
+            distance_t dist = tpsPt.d * ptg->getRefDistance();
+
             uint32_t relTrgStep;
-            bool stepOk = ptg->getPathStepForDist(relTrg_k, dist, relTrgStep);
+            bool stepOk = ptg->getPathStepForDist(tpsPt.k, dist, relTrgStep);
             if (!stepOk) continue;
 
             // solution is a no-motion: skip.
             if (relTrgStep == 0) continue;
 
-            const auto relReconstrPose = ptg->getPathPose(relTrg_k, relTrgStep);
+            const auto relReconstrPose = ptg->getPathPose(tpsPt.k, relTrgStep);
+            const auto absPose         = from.state.pose + relReconstrPose;
 
-            const auto poseMismatch = relPose - relReconstrPose;
-
-            // Is it out of lattice cell?
-            if (std::abs(poseMismatch.phi) > params_.grid_resolution_yaw ||
-                poseMismatch.norm() > params_.grid_resolution_xy)
-            {
-                // skip:
+            // out of lattice limits?
+            if (absPose.x < grid_.getXMin() || absPose.y < grid_.getYMin() ||
+                absPose.phi < grid_.getPhiMin())
                 continue;
-            }
+            if (absPose.x > grid_.getXMax() || absPose.y > grid_.getYMax() ||
+                absPose.phi > grid_.getPhiMax())
+                continue;
+
+            const NodeCoords nc = nodeGridCoords(absPose);
+
+            auto& path = bestPaths[nodeCoordsToAbsIndex(nc)];
 
             // Ok, it's a valid new neighbor with this PTG.
             // Is it shorter with this PTG than with others?
-            if (dist < path.distance)
+            if (dist < path.ptgDist)
             {
-                path.ptgIndex     = curPtgIdx;
-                path.ptgTrajIndex = relTrg_k;
-                path.distance     = dist;
+                path.ptgDist            = dist;
+                path.ptgIndex           = ptgIdx;
+                path.ptgTrajIndex       = tpsPt.k;
+                path.relReconstrPose    = relReconstrPose;
+                path.neighborNodeCoords = nc;
             }
         }
-    }
+
+    }  // end for each PTG
 
     // Fill "neighbors" from valid "bestPaths":
     list_paths_to_neighbors_t neighbors;

@@ -1,6 +1,6 @@
 /* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2021 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -251,14 +251,19 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     {
         std::optional<ptg_index_t>        ptgIndex;
         std::optional<trajectory_index_t> ptgTrajIndex;
-        distance_t distance = std::numeric_limits<distance_t>::max();
-        NodeCoords nodeCoords;
+        distance_t          ptgDist = std::numeric_limits<distance_t>::max();
+        mrpt::math::TPose2D relReconstrPose;
+        NodeCoords          neighborNodeCoords;
     };
 
     using list_paths_to_neighbors_t = std::vector<path_to_neighbor_t>;
 
+    /** This generates a list of many potential neighbor cells to visit, subject
+     * to kinematic and dynamic limitations, and obstacle checking.
+     */
     list_paths_to_neighbors_t find_feasible_paths_to_neighbors(
         const Node& from, const TrajectoriesAndRobotShape& trs,
+        const SE2_KinState&                   goalState,
         const nodes_with_exact_coordinates_t& nodesWithExactCoords,
         const nodes_with_desired_speed_t&     nodesWithSpeed);
 

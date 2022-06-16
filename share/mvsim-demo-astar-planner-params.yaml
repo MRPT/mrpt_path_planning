@@ -6,5 +6,5 @@ grid_resolution_yaw: 15.0   # [deg]
 SE2_metricAngleWeight: 0.1
 pathInterpolatedSegments: 3
 
-saveDebugVisualizationDecimation: 1
+#saveDebugVisualizationDecimation: 1
 
