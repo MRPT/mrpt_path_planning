@@ -28,6 +28,9 @@ mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
     MCP_SAVE(c, pathInterpolatedSegments);
     MCP_SAVE(c, saveDebugVisualizationDecimation);
     MCP_SAVE(c, grid_resolution_xy);
+    MCP_SAVE(c, heuristic_heading_weight);
+    MCP_SAVE(c, max_ptg_trajectories_to_explore);
+    MCP_SAVE(c, ptg_norm_distance_sampling_granularity);
     MCP_SAVE_DEG(c, grid_resolution_yaw);
 
     return c;
@@ -41,8 +44,12 @@ void TPS_Astar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_REQ_DEG(c, grid_resolution_yaw);
 
     MCP_LOAD_REQ(c, SE2_metricAngleWeight);
+    MCP_LOAD_REQ(c, max_ptg_trajectories_to_explore);
+    MCP_LOAD_REQ(c, ptg_norm_distance_sampling_granularity);
+
     MCP_LOAD_OPT(c, pathInterpolatedSegments);
     MCP_LOAD_OPT(c, saveDebugVisualizationDecimation);
+    MCP_LOAD_OPT(c, heuristic_heading_weight);
 }
 
 TPS_Astar_Parameters TPS_Astar_Parameters::FromYAML(
@@ -297,10 +304,10 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         }  // end for each edge to neighbor
 
         MRPT_LOG_DEBUG_FMT(
-            "iter: %4u %35s neighbors=%3u fS=%.02f gS=%.02f", nIter,
-            current.state.asString().c_str(),
+            "iter: %4u %65s neighbors=%3u fS=%.02f gS=%.02f |openSet|=%u",
+            nIter, current.state.asString().c_str(),
             static_cast<unsigned int>(neighbors.size()), current.fScore,
-            current.gScore);
+            current.gScore, static_cast<unsigned int>(openSet.size()));
 
         // Debug log files:
         if (params_.saveDebugVisualizationDecimation > 0 &&
@@ -348,12 +355,12 @@ distance_t TPS_Astar::default_heuristic(
     // Favor heading towards the target, if we are far away:
     const auto   relPose = goal.pose - from.pose;
     const double distHeading =
-        (relPose.norm() < 2.0)
+        (relPose.norm() < 0.1)
             ? 0.0
             : std::abs(mrpt::math::angDistance(
                   std::atan2(relPose.y, relPose.x), goal.pose.phi));
 
-    return distSE2 + distHeading;
+    return distSE2 + params_.heuristic_heading_weight * distHeading;
 }
 
 TPS_Astar::list_paths_to_neighbors_t
@@ -365,9 +372,6 @@ TPS_Astar::list_paths_to_neighbors_t
 {
     const auto iFromCoords = nodeGridCoords(from.state.pose);
     const auto iGoalCoords = nodeGridCoords(goalState.pose);
-
-    const size_t MAX_PTG_TRAJ_TO_EXPLORE            = 20;
-    const double PTG_NORM_DIST_GRANULARITY_SAMPLING = 0.2;
 
     const auto relGoal = goalState.pose - from.state.pose;
 
@@ -404,10 +408,11 @@ TPS_Astar::list_paths_to_neighbors_t
         std::set<trajectory_index_t> trajIdxsToConsider;
         std::vector<TPS_point>       tpsPointsToConsider;
 
-        for (size_t i = 0; i < MAX_PTG_TRAJ_TO_EXPLORE; i++)
+        for (size_t i = 0; i < params_.max_ptg_trajectories_to_explore; i++)
         {
             trajectory_index_t trjIdx = mrpt::round(
-                i * (ptg->getPathCount() - 1) / (MAX_PTG_TRAJ_TO_EXPLORE - 1));
+                i * (ptg->getPathCount() - 1) /
+                (params_.max_ptg_trajectories_to_explore - 1));
             trajIdxsToConsider.insert(trjIdx);
         }
 
@@ -430,8 +435,9 @@ TPS_Astar::list_paths_to_neighbors_t
         // Build possible distances for each path:
         for (const auto trjIdx : trajIdxsToConsider)
         {
-            for (normalized_distance_t d = PTG_NORM_DIST_GRANULARITY_SAMPLING;
-                 d < 0.999; d += PTG_NORM_DIST_GRANULARITY_SAMPLING)
+            for (normalized_distance_t d =
+                     params_.ptg_norm_distance_sampling_granularity;
+                 d < 0.999; d += params_.ptg_norm_distance_sampling_granularity)
             {  //
                 tpsPointsToConsider.emplace_back(trjIdx, d);
             }
