@@ -392,14 +392,14 @@ waypoint_idx_t WaypointSequencer::find_next_waypoint_for_planner()
 WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     WaypointSequencer::PathPlannerInput ppi)
 {
-    const double RRT_BBOX_MARGIN = 4.0;  // [meters]
+    const double BBOX_MARGIN = config_.planner_bbox_margin;  // [meters]
 
     mrpt::math::TBoundingBoxf bbox;
 
     // Make sure goal and start are within bbox:
     {
         const auto bboxMargin =
-            mrpt::math::TPoint3Df(RRT_BBOX_MARGIN, RRT_BBOX_MARGIN, .0);
+            mrpt::math::TPoint3Df(BBOX_MARGIN, BBOX_MARGIN, .0);
         const auto ptStart = mrpt::math::TPoint3Df(
             ppi.pi.stateStart.pose.x, ppi.pi.stateStart.pose.y, 0);
         const auto ptGoal = mrpt::math::TPoint3Df(
@@ -437,10 +437,6 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     // Add cost maps
     // ~~~~~~~~~~~~~~
 
-    selfdriving::CostMapParameters cmP;
-    cmP.resolution                 = 0.05;
-    cmP.preferredClearanceDistance = 1.0;  // [m]
-
     // cost maps: from obstacles
     // ============================
     // TODO: Make static list instead of recreating each time?
@@ -448,11 +444,13 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
 
     planner.costEvaluators_.push_back(
         selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-            *config_.globalMapObstacleSource->obstacles(), cmP));
+            *config_.globalMapObstacleSource->obstacles(),
+            config_.globalCostMapParameters));
 
     planner.costEvaluators_.push_back(
         selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-            *config_.localSensedObstacleSource->obstacles(), cmP));
+            *config_.localSensedObstacleSource->obstacles(),
+            config_.localCostMapParameters));
 
     // cost map #2: prefer to go thru waypoints
     // =============
@@ -486,6 +484,9 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     PathPlannerOutput ret;
     ret.po = planner.plan(ppi.pi);
     // ================================================
+
+    // Keep a copy of the costs, for reference of the caller, visualization,...
+    ret.costEvaluators = planner.costEvaluators_;
 
     return ret;
 }
@@ -557,7 +558,7 @@ void WaypointSequencer::check_new_planner_output()
         return;
     }
 
-    if (config_.vizSceneToModify) send_planner_output_to_viz(result.po);
+    if (config_.vizSceneToModify) send_planner_output_to_viz(result);
 
     const auto plannedPath =
         result.po.motionTree.backtrack_path(result.po.goalNodeId);
@@ -567,22 +568,46 @@ void WaypointSequencer::check_new_planner_output()
     }
 }
 
-void WaypointSequencer::send_planner_output_to_viz(
-    const selfdriving::PlannerOutput& po)
+void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
 {
+    // Visualize the motion tree:
+    // ----------------------------------
     RenderOptions ro;
-    ro.highlight_path_to_node_id = po.goalNodeId;
+    ro.highlight_path_to_node_id = ppo.po.goalNodeId;
     ro.width_normal_edge         = 0;  // hidden
     ro.draw_obstacles            = false;
     ro.ground_xy_grid_frequency  = 0;  // disabled
     ro.phi2z_scale               = 0;
 
     mrpt::opengl::CSetOfObjects::Ptr planViz =
-        render_tree(po.motionTree, po.originalInput, ro);
+        render_tree(ppo.po.motionTree, ppo.po.originalInput, ro);
     planViz->setName("astar_plan_result");
 
     planViz->setLocation(0, 0, 0.01);  // to easy the vis wrt the ground
 
+    // Overlay the costmaps, if any:
+    // ----------------------------------
+    if (!ppo.costEvaluators.empty())
+    {
+        auto glCostMaps = mrpt::opengl::CSetOfObjects::Create();
+
+        float zOffset = 0.01f;  // to help visualize several costmaps at once
+
+        for (const auto& ce : ppo.costEvaluators)
+        {
+            if (!ce) continue;
+            auto glCostMap = ce->get_visualization();
+
+            zOffset += 0.01f;
+            glCostMap->setLocation(0, 0, zOffset);
+            glCostMaps->insert(glCostMap);
+        }
+
+        planViz->insert(glCostMaps);
+    }
+
+    // Send to the viz "server":
+    // ----------------------------------
     // lock:
     if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
 

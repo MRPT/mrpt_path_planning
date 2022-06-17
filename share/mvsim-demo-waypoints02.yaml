@@ -1,0 +1,9 @@
+%YAML 1.2
+---
+-
+  allowSkip: true
+  allowedDistance: 0.2
+  preferNotToSkip: true
+  speedRatio: 1
+  target: [20.0, 7.0]
+  targetFrameId: map

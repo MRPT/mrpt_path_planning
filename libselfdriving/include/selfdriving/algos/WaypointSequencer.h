@@ -11,6 +11,7 @@
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
 #include <mrpt/typemeta/TEnumType.h>
+#include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/TPS_Astar.h>
 #include <selfdriving/data/PlannerInput.h>
 #include <selfdriving/data/PlannerOutput.h>
@@ -121,10 +122,6 @@ class WaypointSequencer : public mrpt::system::COutputLogger
          * to it (Default: 1) */
         int min_timesteps_confirm_skip_waypoints = 1;
 
-        /** [rad] Angular error tolerance for waypoints with an assigned heading
-         * (Default: 5 deg) */
-        // double waypoint_angle_tolerance = mrpt::DEG2RAD(5.0);
-
         /** >=0 number of waypoints to forward to the underlying navigation
          * engine, to ease obstacles avoidance when a waypoint is blocked
          * (Default=2). */
@@ -145,7 +142,15 @@ class WaypointSequencer : public mrpt::system::COutputLogger
          * dist_check_target_is_blocked be fulfilled to raise an event */
         int hysteresis_check_target_is_blocked{3};
 
+        /** (Default=4.0) Hoy many meters to add at each side
+         * (up,down,left,right) of the bbox enclosing the starting and goal pose
+         * for each individual call to the A* planner. */
+        double planner_bbox_margin = 4.0;
+
         TPS_Astar_Parameters plannerParams;
+
+        selfdriving::CostMapParameters globalCostMapParameters;
+        selfdriving::CostMapParameters localCostMapParameters;
 
         /** @} */
 
@@ -237,9 +242,19 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         const mrpt::math::TPoint2D& wp_local_wrt_robot) const;
 #endif
 
+    struct PathPlannerOutput
+    {
+        PathPlannerOutput() = default;
+
+        selfdriving::PlannerOutput po;
+
+        /// A copy of the employed costs.
+        std::vector<CostEvaluator::Ptr> costEvaluators;
+    };
+
     /** Use the callbacks above and render_tree() to update a visualization
      * with a given plan output */
-    void send_planner_output_to_viz(const selfdriving::PlannerOutput& po);
+    void send_planner_output_to_viz(const PathPlannerOutput& ppo);
 
    protected:
     /** Current and last internal state of navigator: */
@@ -302,13 +317,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         selfdriving::PlannerInput pi;
     };
 
-    struct PathPlannerOutput
-    {
-        PathPlannerOutput() = default;
-
-        selfdriving::PlannerOutput po;
-    };
-
+    // Argument is a copy instead of a const-ref intentionally.
     PathPlannerOutput path_planner_function(PathPlannerInput ppi);
 
     /** Everything that should be cleared upon a new navigation command. */

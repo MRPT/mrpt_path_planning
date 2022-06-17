@@ -4,6 +4,8 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
+#include <mrpt/img/color_maps.h>
+#include <mrpt/opengl/CTexturedPlane.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 
 using namespace selfdriving;
@@ -15,7 +17,9 @@ CostEvaluatorCostMap::~CostEvaluatorCostMap() = default;
 CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
     const mrpt::maps::CPointsMap& obsPts, const CostMapParameters& p)
 {
-    auto cm = CostEvaluatorCostMap::Create();
+    auto cm     = CostEvaluatorCostMap::Create();
+    cm->params_ = p;
+
     ASSERT_(!obsPts.empty());
 
     const float D = p.preferredClearanceDistance;
@@ -54,12 +58,13 @@ CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
         }
     }
 
-    if (0)
+#if 0
     {
         mrpt::math::CMatrixDouble CM;
         g.getAsMatrix(CM);
         CM.saveToTextFile("costmap.txt");
     }
+#endif
 
     return cm;
 }
@@ -96,4 +101,51 @@ double CostEvaluatorCostMap::eval_single_pose(
 {
     const double* cell = costmap_.cellByPos(p.x, p.y);
     return cell ? *cell : .0;
+}
+
+mrpt::opengl::CSetOfObjects::Ptr CostEvaluatorCostMap::get_visualization() const
+{
+    const uint8_t COST_TRANSPARENCY_ALPHA = 0x80;
+
+    auto glObjs  = mrpt::opengl::CSetOfObjects::Create();
+    auto glPlane = mrpt::opengl::CTexturedPlane::Create();
+    glObjs->insert(glPlane);
+
+    glPlane->setPlaneCorners(
+        costmap_.getXMin(), costmap_.getXMax(), costmap_.getYMin(),
+        costmap_.getYMax());
+
+    const auto nCols = costmap_.getSizeX(), nRows = costmap_.getSizeY();
+
+    mrpt::img::CImage gridRGB(nCols, nRows, mrpt::img::CH_RGB);
+    mrpt::img::CImage gridALPHA(nCols, nRows, mrpt::img::CH_GRAY);
+    for (size_t icy = 0; icy < nRows; icy++)
+    {
+        for (size_t icx = 0; icx < nCols; icx++)
+        {
+            const double* c = costmap_.cellByIndex(icx, icy);
+            if (!c) continue;
+            const double val = *c;
+            if (val == 0.0)
+            {
+                *gridALPHA(icx, icy) = 0x00;  // 100% transparent
+            }
+            else
+            {
+                *gridALPHA(icx, icy) = COST_TRANSPARENCY_ALPHA;
+
+                const mrpt::img::TColor cellColor = mrpt::img::colormap(
+                    mrpt::img::cmJET, val / params_.maxCost);
+
+                uint8_t* bgr = gridRGB(icx, icy);
+                bgr[0]       = cellColor.B;
+                bgr[1]       = cellColor.G;
+                bgr[2]       = cellColor.R;
+            }
+        }
+    }
+
+    glPlane->assignImage(gridRGB, gridALPHA);
+
+    return glObjs;
 }
