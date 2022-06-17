@@ -55,6 +55,6 @@ bin/selfdriving-simulator-gui \
   --waypoints ../share/mvsim-demo-waypoints01.yaml \
   -s ../share/mvsim-demo.xml \
   -p ../share/ptgs_holonomic_robot.ini \
-  --planner-parameters ../share/mvsim-demo-rrtstar-planner-params.yaml \
+  --planner-parameters ../share/mvsim-demo-astar-planner-params.yaml \
   -v DEBUG
 ```
