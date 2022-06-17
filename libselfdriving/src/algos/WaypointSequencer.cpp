@@ -30,11 +30,7 @@ void WaypointSequencer::initialize()
     ASSERT_(config_.vehicleMotionInterface);
     ASSERT_(config_.globalMapObstacleSource);
     ASSERT_(config_.ptgs.initialized());
-
-    // sanity check: PTG max distance must be >= than RRT* step lengths:
     ASSERT_(!config_.ptgs.ptgs.empty());
-    for (const auto& ptg : config_.ptgs.ptgs)
-        ASSERT_GT_(ptg->getRefDistance(), config_.rrt_params.maxStepLength);
 
     initialized_ = true;
 
@@ -112,10 +108,13 @@ void WaypointSequencer::navigation_step()
             if (lastNavigationState_ == NavStatus::NAVIGATING &&
                 navigationStatus_ == NavStatus::NAV_ERROR)
             {
-                pendingEvents_.emplace_back([this]() {
-                    ASSERT_(config_.vehicleMotionInterface);
-                    config_.vehicleMotionInterface->on_nav_end_due_to_error();
-                });
+                pendingEvents_.emplace_back(
+                    [this]()
+                    {
+                        ASSERT_(config_.vehicleMotionInterface);
+                        config_.vehicleMotionInterface
+                            ->on_nav_end_due_to_error();
+                    });
             }
 
             // If we just arrived at this state, stop the robot:
@@ -279,8 +278,8 @@ void WaypointSequencer::update_robot_kinematic_state()
             navigationStatus_          = NavStatus::NAV_ERROR;
             navErrorReason_.error_code = NavError::EMERGENCY_STOP;
             navErrorReason_.error_msg  = std::string(
-                "ERROR: get_localization() failed, stopping robot "
-                "and finishing navigation");
+                 "ERROR: get_localization() failed, stopping robot "
+                  "and finishing navigation");
             try
             {
                 config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
@@ -309,7 +308,9 @@ void WaypointSequencer::update_robot_kinematic_state()
                innerState_.latestPoses.begin()->first,
                innerState_.latestPoses.rbegin()->first) >
                PREVIOUS_POSES_MAX_AGE)
-    { innerState_.latestPoses.erase(innerState_.latestPoses.begin()); }
+    {
+        innerState_.latestPoses.erase(innerState_.latestPoses.begin());
+    }
     while (innerState_.latestOdomPoses.size() > 1 &&
            mrpt::system::timeDifference(
                innerState_.latestOdomPoses.begin()->first,
@@ -328,10 +329,10 @@ void WaypointSequencer::impl_navigation_step()
     // Get current robot kinematic state:
     update_robot_kinematic_state();
 
-    // Checks whether we need to launch a new RRT* path planner:
+    // Checks whether we need to launch a new A* path planner:
     check_have_to_replan();
 
-    // Checks whether the RRT* planner finished and we have to send a new active
+    // Checks whether the A* planner finished and we have to send a new active
     // trajectory to the path tracker:
     check_new_rrtstar_output();
 
@@ -352,10 +353,12 @@ void WaypointSequencer::internal_on_start_new_navigation()
     // Have we just started the navigation?
     if (lastNavigationState_ == NavStatus::IDLE)
     {
-        pendingEvents_.emplace_back([this]() {
-            ASSERT_(config_.vehicleMotionInterface);
-            config_.vehicleMotionInterface->on_nav_start();
-        });
+        pendingEvents_.emplace_back(
+            [this]()
+            {
+                ASSERT_(config_.vehicleMotionInterface);
+                config_.vehicleMotionInterface->on_nav_start();
+            });
     }
 }
 
@@ -432,7 +435,7 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
         << ppi.pi.worldBboxMax.asString());
 
     // Do the path planning :
-    selfdriving::TPS_RRTstar planner;
+    selfdriving::TPS_Astar planner;
 
     // time profiler:
     planner.profiler_.enable(false);
@@ -441,16 +444,22 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     // Add cost maps
     // ~~~~~~~~~~~~~~
 
-    // cost map #1: obstacles from current sensors
-    // =============
-#if 0
-    {
-        auto costmap =
-            selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-                *obsPts);
-        planner.costEvaluators_.push_back(costmap);
-    }
-#endif
+    selfdriving::CostMapParameters cmP;
+    cmP.resolution                 = 0.05;
+    cmP.preferredClearanceDistance = 1.0;  // [m]
+
+    // cost maps: from obstacles
+    // ============================
+    // TODO: Make static list instead of recreating each time?
+    planner.costEvaluators_.clear();
+
+    planner.costEvaluators_.push_back(
+        selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
+            *config_.globalMapObstacleSource->obstacles(), cmP));
+
+    planner.costEvaluators_.push_back(
+        selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
+            *config_.localSensedObstacleSource->obstacles(), cmP));
 
     // cost map #2: prefer to go thru waypoints
     // =============
@@ -468,19 +477,19 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     // verbosity level:
     planner.setMinLoggingLevel(this->getMinLoggingLevel());
 
-    planner.params_ = config_.rrt_params;
+    planner.params_ = config_.plannerParams;
     {
         std::stringstream ss;
         planner.params_.as_yaml().printAsYAML(ss);
         MRPT_LOG_DEBUG_STREAM(
-            "[path_planner_function] RRT* planner parameters:\n"
+            "[path_planner_function] A* planner parameters:\n"
             << ss.str());
     }
 
     // PTGs:
     ppi.pi.ptgs = config_.ptgs;
 
-    // ========== ACTUAL RRT* PLANNING ================
+    // ========== ACTUAL A* PLANNING ================
     PathPlannerOutput ret;
     ret.po = planner.plan(ppi.pi);
     // ================================================
@@ -508,7 +517,7 @@ void WaypointSequencer::enqueue_path_planner_towards(
     MRPT_TODO("Add some pose delta to account for the computation time?");
     ppi.pi.stateStart.pose = lastVehicleLocalization_.pose;
     ppi.pi.stateStart.vel  = lastVehicleOdometry_.odometryVelocityLocal.rotated(
-        ppi.pi.stateGoal.pose.phi);
+         ppi.pi.stateGoal.pose.phi);
 
     ASSERT_LT_(targetWpIdx, _.waypointNavStatus.waypoints.size());
     const auto& wp          = _.waypointNavStatus.waypoints.at(targetWpIdx);
@@ -520,10 +529,7 @@ void WaypointSequencer::enqueue_path_planner_towards(
         // assign heading at target:
         ppi.pi.stateGoal.pose.phi = wp.targetHeading.value();
     }
-    else
-    {
-        MRPT_TODO("Handle no preferred heading");
-    }
+    else { MRPT_TODO("Handle no preferred heading"); }
 
     // speed at target:
     // ppi.pi.stateGoal.vel;
@@ -551,7 +557,7 @@ void WaypointSequencer::check_new_rrtstar_output()
 
     if (!result.po.success)
     {
-        MRPT_LOG_WARN("RRT* failed to plan towards the target!");
+        MRPT_LOG_WARN("A* failed to plan towards the target!");
         return;
     }
 
@@ -582,10 +588,7 @@ void WaypointSequencer::check_new_rrtstar_output()
             ASSERT_(glContainer);
             *glContainer = *planViz;
         }
-        else
-        {
-            config_.vizSceneToModify->insert(planViz);
-        }
+        else { config_.vizSceneToModify->insert(planViz); }
 
         // unlock:
         if (config_.on_viz_post_modify) config_.on_viz_post_modify();

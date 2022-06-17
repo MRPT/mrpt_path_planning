@@ -11,7 +11,7 @@
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
 #include <mrpt/typemeta/TEnumType.h>
-#include <selfdriving/algos/TPS_RRTstar.h>
+#include <selfdriving/algos/TPS_Astar.h>
 #include <selfdriving/data/PlannerInput.h>
 #include <selfdriving/data/PlannerOutput.h>
 #include <selfdriving/data/TrajectoriesAndRobotShape.h>
@@ -145,7 +145,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
          * dist_check_target_is_blocked be fulfilled to raise an event */
         int hysteresis_check_target_is_blocked{3};
 
-        TPS_RRTstar_Parameters rrt_params;
+        TPS_Astar_Parameters plannerParams;
 
         /** @} */
 

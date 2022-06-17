@@ -76,6 +76,12 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     ASSERT_(within_bbox(in.stateStart.pose, in.worldBboxMax, in.worldBboxMin));
     ASSERT_(within_bbox(in.stateGoal.pose, in.worldBboxMax, in.worldBboxMin));
 
+    MRPT_LOG_DEBUG_STREAM("Starting planning.");
+    MRPT_LOG_DEBUG_STREAM("from " << in.stateStart.asString());
+    MRPT_LOG_DEBUG_STREAM("to " << in.stateGoal.asString());
+    MRPT_LOG_DEBUG_STREAM("Obstacle sources: " << in.obstacles.size());
+    MRPT_LOG_DEBUG_STREAM("Cost evaluators: " << costEvaluators_.size());
+
     PlannerOutput po;
     po.originalInput = in;
 
@@ -287,7 +293,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
             // Delete old edge, if any:
             if (hasToRewire)
-            { tree.rewire_node_parent(neighborNode.id.value(), newEdge); }
+            {
+                tree.rewire_node_parent(neighborNode.id.value(), newEdge);
+            }
             else
             {
                 // Add edge to tree:
@@ -399,10 +407,7 @@ TPS_Astar::list_paths_to_neighbors_t
                 MRPT_TODO("Speed zone filter here too?");
                 ds.targetRelSpeed = it->second;
             }
-            else
-            {
-                ds.targetRelSpeed = 1.0;
-            }
+            else { ds.targetRelSpeed = 1.0; }
 
             ptg->updateNavDynamicState(ds);
         }

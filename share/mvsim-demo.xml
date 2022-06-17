@@ -121,7 +121,7 @@
 		Obstacle blocks
 	     ======================== -->
 	<block class="square_obstacle">
-		<init_pose>6 5 0</init_pose>  <!-- In global coords: x,y, yaw(deg) -->
+		<init_pose>6 7 0</init_pose>  <!-- In global coords: x,y, yaw(deg) -->
 	</block>
 
 </mvsim_world>
