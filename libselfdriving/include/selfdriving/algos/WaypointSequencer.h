@@ -149,7 +149,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
         /** @} */
 
-        /**  \name Visualization Callbacks
+        /**  \name Visualization callbacks and methods
          *   @{ */
 
         std::function<void(void)>                   on_viz_pre_modify;
@@ -236,6 +236,10 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     bool isRelativePointReachable(
         const mrpt::math::TPoint2D& wp_local_wrt_robot) const;
 #endif
+
+    /** Use the callbacks above and render_tree() to update a visualization
+     * with a given plan output */
+    void send_planner_output_to_viz(const selfdriving::PlannerOutput& po);
 
    protected:
     /** Current and last internal state of navigator: */
@@ -346,9 +350,9 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     /** Checks whether we need to launch a new RRT* path planner */
     void check_have_to_replan();
 
-    /** Checks whether the RRT* planner finished, then send a new active
+    /** Checks whether the A* planner finished, then send a new active
      * trajectory to the path tracker */
-    void check_new_rrtstar_output();
+    void check_new_planner_output();
 
     /** Finds the next waypt index up to which we should find a new RRT* plan */
     waypoint_idx_t find_next_waypoint_for_planner();
