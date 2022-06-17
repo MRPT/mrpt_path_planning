@@ -18,6 +18,13 @@ struct CostMapParameters
 
     double preferredClearanceDistance = 0.5;  //!< [m]
     double maxCost                    = 100.0;
+
+    /** If enabled, the cost of a path segment (MoveEdgeSE2_TPS) will be the
+     * average of the set of pointwise evaluations along it.
+     * Otherwise (default) the maximum cost (more conservative) will be kept
+     * instead.
+     */
+    bool useAverageOfPath = false;
 };
 
 class CostEvaluatorCostMap : public CostEvaluator

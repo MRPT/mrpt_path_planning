@@ -77,13 +77,27 @@ double CostEvaluatorCostMap::operator()(const MoveEdgeSE2_TPS& edge) const
     auto lambdaAddPose = [this, &cost, &n](const mrpt::math::TPose2D& p) {
         const auto c = eval_single_pose(p);
         ASSERT_GE_(c, .0);
-        cost += c;
-        ++n;
+
+        if (params_.useAverageOfPath)
+        {
+            cost += c;
+            ++n;
+        }
+        else
+        {
+            if (c >= cost)
+            {
+                cost = c;
+                n    = 1;
+            }
+        }
     };
 
     // interpolated vs goal-end segments:
     if (edge.interpolatedPath.has_value())
     {
+        ASSERT_(!edge.interpolatedPath->empty());
+
         for (const auto& p : *edge.interpolatedPath)
             lambdaAddPose(edge.stateFrom.pose + p);
     }
@@ -92,6 +106,8 @@ double CostEvaluatorCostMap::operator()(const MoveEdgeSE2_TPS& edge) const
         lambdaAddPose(edge.stateFrom.pose);
         lambdaAddPose(edge.stateTo.pose);
     }
+
+    ASSERT_(n);
 
     return cost / n;
 }
