@@ -108,13 +108,10 @@ void WaypointSequencer::navigation_step()
             if (lastNavigationState_ == NavStatus::NAVIGATING &&
                 navigationStatus_ == NavStatus::NAV_ERROR)
             {
-                pendingEvents_.emplace_back(
-                    [this]()
-                    {
-                        ASSERT_(config_.vehicleMotionInterface);
-                        config_.vehicleMotionInterface
-                            ->on_nav_end_due_to_error();
-                    });
+                pendingEvents_.emplace_back([this]() {
+                    ASSERT_(config_.vehicleMotionInterface);
+                    config_.vehicleMotionInterface->on_nav_end_due_to_error();
+                });
             }
 
             // If we just arrived at this state, stop the robot:
@@ -278,8 +275,8 @@ void WaypointSequencer::update_robot_kinematic_state()
             navigationStatus_          = NavStatus::NAV_ERROR;
             navErrorReason_.error_code = NavError::EMERGENCY_STOP;
             navErrorReason_.error_msg  = std::string(
-                 "ERROR: get_localization() failed, stopping robot "
-                  "and finishing navigation");
+                "ERROR: get_localization() failed, stopping robot "
+                "and finishing navigation");
             try
             {
                 config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
@@ -308,9 +305,7 @@ void WaypointSequencer::update_robot_kinematic_state()
                innerState_.latestPoses.begin()->first,
                innerState_.latestPoses.rbegin()->first) >
                PREVIOUS_POSES_MAX_AGE)
-    {
-        innerState_.latestPoses.erase(innerState_.latestPoses.begin());
-    }
+    { innerState_.latestPoses.erase(innerState_.latestPoses.begin()); }
     while (innerState_.latestOdomPoses.size() > 1 &&
            mrpt::system::timeDifference(
                innerState_.latestOdomPoses.begin()->first,
@@ -334,7 +329,7 @@ void WaypointSequencer::impl_navigation_step()
 
     // Checks whether the A* planner finished and we have to send a new active
     // trajectory to the path tracker:
-    check_new_rrtstar_output();
+    check_new_planner_output();
 
     // Check if the target seems to be at reach, but it's clearly
     // occupied by obstacles:
@@ -353,12 +348,10 @@ void WaypointSequencer::internal_on_start_new_navigation()
     // Have we just started the navigation?
     if (lastNavigationState_ == NavStatus::IDLE)
     {
-        pendingEvents_.emplace_back(
-            [this]()
-            {
-                ASSERT_(config_.vehicleMotionInterface);
-                config_.vehicleMotionInterface->on_nav_start();
-            });
+        pendingEvents_.emplace_back([this]() {
+            ASSERT_(config_.vehicleMotionInterface);
+            config_.vehicleMotionInterface->on_nav_start();
+        });
     }
 }
 
@@ -517,7 +510,7 @@ void WaypointSequencer::enqueue_path_planner_towards(
     MRPT_TODO("Add some pose delta to account for the computation time?");
     ppi.pi.stateStart.pose = lastVehicleLocalization_.pose;
     ppi.pi.stateStart.vel  = lastVehicleOdometry_.odometryVelocityLocal.rotated(
-         ppi.pi.stateGoal.pose.phi);
+        ppi.pi.stateGoal.pose.phi);
 
     ASSERT_LT_(targetWpIdx, _.waypointNavStatus.waypoints.size());
     const auto& wp          = _.waypointNavStatus.waypoints.at(targetWpIdx);
@@ -529,7 +522,10 @@ void WaypointSequencer::enqueue_path_planner_towards(
         // assign heading at target:
         ppi.pi.stateGoal.pose.phi = wp.targetHeading.value();
     }
-    else { MRPT_TODO("Handle no preferred heading"); }
+    else
+    {
+        MRPT_TODO("Handle no preferred heading");
+    }
 
     // speed at target:
     // ppi.pi.stateGoal.vel;
@@ -543,7 +539,7 @@ void WaypointSequencer::enqueue_path_planner_towards(
     _.pathPlannerTarget = targetWpIdx;
 }
 
-void WaypointSequencer::check_new_rrtstar_output()
+void WaypointSequencer::check_new_planner_output()
 {
     auto& _ = innerState_;
 
@@ -561,38 +557,7 @@ void WaypointSequencer::check_new_rrtstar_output()
         return;
     }
 
-    if (config_.vizSceneToModify)
-    {
-        RenderOptions ro;
-        ro.highlight_path_to_node_id = result.po.goalNodeId;
-        ro.width_normal_edge         = 0;  // hidden
-        ro.draw_obstacles            = false;
-        ro.ground_xy_grid_frequency  = 0;  // disabled
-        ro.phi2z_scale               = 0;
-
-        mrpt::opengl::CSetOfObjects::Ptr planViz =
-            render_tree(result.po.motionTree, result.po.originalInput, ro);
-        planViz->setName("rrtstar_plan_result");
-
-        planViz->setLocation(0, 0, 0.01);  // to easy the vis wrt the ground
-
-        // lock:
-        if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
-
-        if (auto glObj =
-                config_.vizSceneToModify->getByName(planViz->getName());
-            glObj)
-        {
-            auto glContainer =
-                std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
-            ASSERT_(glContainer);
-            *glContainer = *planViz;
-        }
-        else { config_.vizSceneToModify->insert(planViz); }
-
-        // unlock:
-        if (config_.on_viz_post_modify) config_.on_viz_post_modify();
-    }
+    if (config_.vizSceneToModify) send_planner_output_to_viz(result.po);
 
     const auto plannedPath =
         result.po.motionTree.backtrack_path(result.po.goalNodeId);
@@ -600,4 +565,40 @@ void WaypointSequencer::check_new_rrtstar_output()
     {  //
         std::cout << step.asString() << std::endl;
     }
+}
+
+void WaypointSequencer::send_planner_output_to_viz(
+    const selfdriving::PlannerOutput& po)
+{
+    RenderOptions ro;
+    ro.highlight_path_to_node_id = po.goalNodeId;
+    ro.width_normal_edge         = 0;  // hidden
+    ro.draw_obstacles            = false;
+    ro.ground_xy_grid_frequency  = 0;  // disabled
+    ro.phi2z_scale               = 0;
+
+    mrpt::opengl::CSetOfObjects::Ptr planViz =
+        render_tree(po.motionTree, po.originalInput, ro);
+    planViz->setName("astar_plan_result");
+
+    planViz->setLocation(0, 0, 0.01);  // to easy the vis wrt the ground
+
+    // lock:
+    if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
+
+    if (auto glObj = config_.vizSceneToModify->getByName(planViz->getName());
+        glObj)
+    {
+        auto glContainer =
+            std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
+        ASSERT_(glContainer);
+        *glContainer = *planViz;
+    }
+    else
+    {
+        config_.vizSceneToModify->insert(planViz);
+    }
+
+    // unlock:
+    if (config_.on_viz_post_modify) config_.on_viz_post_modify();
 }
