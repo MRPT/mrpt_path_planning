@@ -498,15 +498,15 @@ void prepare_selfdriving_window(
     {
         const selfdriving::SE2_KinState dummyState;
 
-        auto pnRRT = wrappers.at(2);
-        pnRRT->add<nanogui::Label>("Start pose:");
+        auto pnPlanner = wrappers.at(2);
+        pnPlanner->add<nanogui::Label>("Start pose:");
         auto edStateStartPose =
-            pnRRT->add<nanogui::TextBox>(dummyState.pose.asString());
+            pnPlanner->add<nanogui::TextBox>(dummyState.pose.asString());
         edStateStartPose->setEditable(true);
 
-        pnRRT->add<nanogui::Label>("Start global vel:");
+        pnPlanner->add<nanogui::Label>("Start global vel:");
         auto edStateStartVel =
-            pnRRT->add<nanogui::TextBox>(dummyState.vel.asString());
+            pnPlanner->add<nanogui::TextBox>(dummyState.vel.asString());
         edStateStartVel->setEditable(true);
 
         // custom 3D objects
@@ -523,7 +523,7 @@ void prepare_selfdriving_window(
         nanogui::Button* pickBtn = nullptr;
 
         {
-            auto subPn = pnRRT->add<nanogui::Widget>();
+            auto subPn = pnPlanner->add<nanogui::Widget>();
             subPn->setLayout(new nanogui::GridLayout(
                 nanogui::Orientation::Horizontal, 2, nanogui::Alignment::Fill,
                 2, 2));
@@ -532,7 +532,7 @@ void prepare_selfdriving_window(
             pickBtn = subPn->add<nanogui::Button>("Pick");
         }
         auto edStateGoalPose =
-            pnRRT->add<nanogui::TextBox>(dummyState.pose.asString());
+            pnPlanner->add<nanogui::TextBox>(dummyState.pose.asString());
         edStateGoalPose->setEditable(true);
 
         pickBtn->setCallback([glTargetSign, edStateGoalPose]() {
@@ -552,12 +552,12 @@ void prepare_selfdriving_window(
             };
         });
 
-        pnRRT->add<nanogui::Label>("Goal global vel:");
+        pnPlanner->add<nanogui::Label>("Goal global vel:");
         auto edStateGoalVel =
-            pnRRT->add<nanogui::TextBox>(dummyState.vel.asString());
+            pnPlanner->add<nanogui::TextBox>(dummyState.vel.asString());
         edStateGoalVel->setEditable(true);
 
-        auto btnDoPlan = pnRRT->add<nanogui::Button>("Do path planning...");
+        auto btnDoPlan = pnPlanner->add<nanogui::Button>("Do path planning...");
         btnDoPlan->setCallback([=]() {
             try
             {
@@ -810,7 +810,11 @@ void on_do_single_path_planning(
     const selfdriving::PlannerOutput plan = planner.plan(pi);
 
     // Visualize:
-    sd.navigator.send_planner_output_to_viz(plan);
+    selfdriving::WaypointSequencer::PathPlannerOutput ppo;
+    ppo.po             = plan;
+    ppo.costEvaluators = planner.costEvaluators_;
+
+    sd.navigator.send_planner_output_to_viz(ppo);
 
     // ############################
     // END: Run path planning

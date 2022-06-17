@@ -14,9 +14,9 @@ namespace selfdriving
 {
 struct CostMapParameters
 {
-    double resolution = 0.04;  //!< [m]
+    double resolution = 0.05;  //!< [m]
 
-    double preferredClearanceDistance = 0.4;  //!< [m]
+    double preferredClearanceDistance = 0.5;  //!< [m]
     double maxCost                    = 100.0;
 };
 
@@ -35,12 +35,15 @@ class CostEvaluatorCostMap : public CostEvaluator
     /** Evaluate cost of move-tree edge */
     double operator()(const MoveEdgeSE2_TPS& edge) const override;
 
+    mrpt::opengl::CSetOfObjects::Ptr get_visualization() const override;
+
     using cost_gridmap_t = mrpt::containers::CDynamicGrid<double>;
 
     const cost_gridmap_t cost_gridmap() const { return costmap_; }
 
    private:
-    cost_gridmap_t costmap_;
+    cost_gridmap_t    costmap_;
+    CostMapParameters params_;
 
     double eval_single_pose(const mrpt::math::TPose2D& p) const;
 };

@@ -9,7 +9,7 @@ ptg_norm_distance_sampling_granularity: 0.3   # [0,1]
 
 heuristic_heading_weight: 0.1
 SE2_metricAngleWeight: 0.1
-pathInterpolatedSegments: 4
+pathInterpolatedSegments: 7
 
 #saveDebugVisualizationDecimation: 1
 
