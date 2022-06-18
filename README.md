@@ -1,4 +1,4 @@
-[![Documentation Status](https://readthedocs.org/projects/selfdriving/badge/?version=latest)](https://selfdriving.readthedocs.io/en/latest/?badge=latest)
+[![CI Linux](https://github.com/jlblancoc/selfdriving/actions/workflows/build-linux.yml/badge.svg)](https://github.com/jlblancoc/selfdriving/actions/workflows/build-linux.yml) [![Documentation Status](https://readthedocs.org/projects/selfdriving/badge/?version=latest)](https://selfdriving.readthedocs.io/en/latest/?badge=latest)
 
 # selfdriving
 Self-driving (autonomous navigation) algorithms for robots/vehicles moving on planar environments. This builds upon mrpt-nav and the theory behind PTGs to generate libraries of "motion primitives" for vehicles with arbitrary shape and realistic kinematics and dynamics.
