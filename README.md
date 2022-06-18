@@ -1,14 +1,20 @@
 [![Documentation Status](https://readthedocs.org/projects/selfdriving/badge/?version=latest)](https://selfdriving.readthedocs.io/en/latest/?badge=latest)
 
 # selfdriving
-Self-driving (autonomous navigation) RRT* (RRT-star) algorithm for 2D robots/vehicles based on mrpt-nav, for vehicles with arbitrary shape and realistic kinematics and dynamics.
+Self-driving (autonomous navigation) algorithms for robots/vehicles moving on planar environments. This builds upon mrpt-nav and the theory behind PTGs to generate libraries of "motion primitives" for vehicles with arbitrary shape and realistic kinematics and dynamics.
 
 ## Build requisites
 
 - [MRPT](https://github.com/MRPT/mrpt/) (>=2.3.2)
 - [mvsim](https://github.com/MRPT/mvsim/) (optional to run the live control simulator).
 
-In Ubuntu, they can installed with:
+In Ubuntu 22.04 or newer, installed it with:
+
+```
+sudo apt install libmrpt-dev
+```
+
+For older versions of Ubuntu: 
 
 ```
 # MRPT >=2.3.2, for now from this PPA (or build from sources if preferred):
