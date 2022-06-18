@@ -293,9 +293,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
             // Delete old edge, if any:
             if (hasToRewire)
-            {
-                tree.rewire_node_parent(neighborNode.id.value(), newEdge);
-            }
+            { tree.rewire_node_parent(neighborNode.id.value(), newEdge); }
             else
             {
                 // Add edge to tree:
@@ -380,6 +378,8 @@ TPS_Astar::list_paths_to_neighbors_t
 
     const auto relGoal = goalState.pose - from.state.pose;
 
+    const double halfCell = grid_.getResolutionXY() * 0.5;
+
     // local obstacles as seen from this "from" pose:
     const auto localObstacles = cached_local_obstacles(
         from.state.pose, globalObstacles, MAX_XY_OBSTACLES_CLIPPING_DIST);
@@ -407,7 +407,10 @@ TPS_Astar::list_paths_to_neighbors_t
                 MRPT_TODO("Speed zone filter here too?");
                 ds.targetRelSpeed = it->second;
             }
-            else { ds.targetRelSpeed = 1.0; }
+            else
+            {
+                ds.targetRelSpeed = 1.0;
+            }
 
             ptg->updateNavDynamicState(ds);
         }
@@ -473,7 +476,8 @@ TPS_Astar::list_paths_to_neighbors_t
             if (absPose.x < grid_.getXMin() || absPose.y < grid_.getYMin() ||
                 absPose.phi < grid_.getPhiMin())
                 continue;
-            if (absPose.x > grid_.getXMax() || absPose.y > grid_.getYMax() ||
+            if (absPose.x > grid_.getXMax() - halfCell ||
+                absPose.y > grid_.getYMax() - halfCell ||
                 absPose.phi > grid_.getPhiMax())
                 continue;
 
