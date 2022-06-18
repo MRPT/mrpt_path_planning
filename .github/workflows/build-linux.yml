@@ -40,9 +40,13 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get -y update
-          sudo apt-get -y upgrade
+          
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository  ppa:joseluisblancoc/mrpt -y
+          sudo apt-get update -qq
 
-          sudo apt install cmake build-essential libmrpt-dev
+          sudo apt-get -y upgrade
+          sudo apt install -qq -y cmake build-essential libmrpt-dev
 
       - name: CMake configure
         run: |
