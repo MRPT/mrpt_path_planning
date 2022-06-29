@@ -1,0 +1,14 @@
+include(CMakeFindDependencyMacro)
+
+# Search for dependencies first:
+set(_deps "@ALL_DEPS_LIST@")
+foreach(_dep ${_deps}) # NO quotes for the list to be a CMake list!
+  find_dependency(${_dep})
+  if(${_dep}_FOUND)
+    mark_as_advanced(${_dep}_DIR)
+  endif()
+endforeach()
+@EXTRA_CONFIG_CMDS@
+
+# Include targets for this library:
+include(${CMAKE_CURRENT_LIST_DIR}/@SELFDRIVING_MODULE_NAME@-targets.cmake)

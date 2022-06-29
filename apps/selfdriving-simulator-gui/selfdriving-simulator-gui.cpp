@@ -26,7 +26,6 @@
 #include <selfdriving/data/Waypoints.h>
 #include <selfdriving/interfaces/MVSIM_VehicleInterface.h>
 
-#include <rapidxml_utils.hpp>
 #include <thread>
 
 static TCLAP::CmdLine cmd(
@@ -222,8 +221,7 @@ int launchSimulation()
             argVerbosityMVSIM.getValue()));
 
     // Load from XML:
-    rapidxml::file<> fil_xml(sXMLfilename.c_str());
-    world->load_from_XML(fil_xml.data(), sXMLfilename.c_str());
+    world->load_from_XML_file(sXMLfilename);
 
     // Attach world as a mvsim communications node:
     world->connectToServer();
