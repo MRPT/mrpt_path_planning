@@ -12,6 +12,6 @@ selfdriving_add_library(
 	SOURCES ${LIB_SRCS} ${LIB_PUBLIC_HDRS}
 	PUBLIC_LINK_LIBRARIES ${MRPT_LIBRARIES}
 #	[PRIVATE_LINK_LIBRARIES lib3 lib4]
-# [CMAKE_DEPENDENCIES pkg1 pkg2]
+	CMAKE_DEPENDENCIES mrpt-containers mrpt-graphs mrpt-gui mrpt-nav
 )
 
