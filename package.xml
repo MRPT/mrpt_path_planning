@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<!-- This is a ROS package file, intended to allow SELFDRIVING library to be built
+     side-by-side to real ROS packages in a catkin/ament environment.
+-->
+<package format="3">
+  <name>selfdrivinglib</name>
+  <version>0.1.0</version>
+  <description>Self-driving (autonomous navigation) algorithms for robots moving on planar environments. 
+     This builds upon mrpt-nav and the theory behind PTGs to generate libraries of "motion primitives" for
+     vehicles with arbitrary shape and realistic kinematics and dynamics.</description>
+
+  <author     email="joseluisblancoc@gmail.com">Jose-Luis Blanco-Claraco</author>
+  <maintainer email="joseluisblancoc@gmail.com">Jose-Luis Blanco-Claraco</maintainer>
+
+  <url type="website">https://github.com/jlblancoc/selfdriving</url>
+
+  <license>BSD</license>
+
+  <!-- Deps required by user code (they are in public headers or built as ROS (vs system) packages -->
+  <depend>mrpt2</depend>
+  <depend>mvsim</depend>
+
+  <!-- Deps required by building only -->
+<!--  <build_depend>assimp-dev</build_depend> -->
+
+  <doc_depend>doxygen</doc_depend>
+
+  <!-- Minimum entries to release non-catkin pkgs: -->
+  <buildtool_depend>cmake</buildtool_depend>
+  <export>
+    <build_type>cmake</build_type>
+    <rosdoc config="doc/rosdoc.yaml" />
+  </export>
+  <!-- End -->
+
+</package>
