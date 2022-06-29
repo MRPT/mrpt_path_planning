@@ -175,6 +175,7 @@ function(selfdriving_configure_library TARGETNAME)
   # make project importable from build_dir:
   export(
     TARGETS ${TARGETNAME}
+    NAMESPACE selfdriving::
     # export to ROOT cmake directory (when building MOLA as a superproject)
     FILE ${CMAKE_BINARY_DIR}/${TARGETNAME}-targets.cmake
   )
