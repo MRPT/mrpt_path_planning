@@ -23,6 +23,14 @@ sudo apt update
 sudo apt install libmrpt-dev
 ```
 
+## Use in your code
+
+From your CMake script:
+
+```
+find_package(selfdriving REQUIRED)
+target_link_libraries(YOUR_TARGET selfdriving::selfdriving)
+```
 
 ## Demo runs
 
