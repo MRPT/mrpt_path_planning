@@ -4,4 +4,4 @@ Write me!
 
 ![selfdriving-architecture](selfdriving-architecture.png)
 
-selfdriving::TPS_RRTstar: Implements the RRT* algorithm itself.
+selfdriving::TPS_Astar: Implements the A* algorithm itself.
