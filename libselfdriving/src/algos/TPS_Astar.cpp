@@ -119,7 +119,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     // openSet <- startNode
     {
-        auto& n = getOrCreateNodeByPose(in.stateStart, tree, nextFreeId);
+        auto& n = getOrCreateNodeByPose(in.stateStart, nextFreeId);
         n.state = in.stateStart;
 
         //   X_T ← {X_0 }    # Tree nodes (state space)
@@ -135,7 +135,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     }
 
     // Define goal node ID:
-    auto& nodeGoal = getOrCreateNodeByPose(in.stateGoal, tree, nextFreeId);
+    auto& nodeGoal = getOrCreateNodeByPose(in.stateGoal, nextFreeId);
     po.goalNodeId  = nodeGoal.id.value();
 
     // Insert a dummy edge between root -> goal, just to allow new node IDs
@@ -227,7 +227,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
                 continue;
 
             // Get or create node:
-            auto& neighborNode = getOrCreateNodeByPose(x_i, tree, nextFreeId);
+            auto& neighborNode = getOrCreateNodeByPose(x_i, nextFreeId);
 
             // Skip if already visited:
             if (neighborNode.visited) continue;

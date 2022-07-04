@@ -1,4 +1,4 @@
-/* -------------------------------------------------------------------------
+﻿/* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
  * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
@@ -7,17 +7,28 @@
 #pragma once
 
 #include <mrpt/core/lock_helper.h>
+#include <mrpt/kinematics/CVehicleSimul_DiffDriven.h>
+#include <mrpt/kinematics/CVehicleSimul_Holo.h>
 #include <mrpt/obs/CObservation2DRangeScan.h>
 #include <mvsim/Comms/Client.h>
 #include <mvsim/mvsim-msgs/GenericObservation.pb.h>
 #include <mvsim/mvsim-msgs/SrvGetPose.pb.h>
 #include <mvsim/mvsim-msgs/SrvGetPoseAnswer.pb.h>
+#include <mvsim/mvsim-msgs/SrvSetControllerTwist.pb.h>
+#include <mvsim/mvsim-msgs/SrvSetControllerTwistAnswer.pb.h>
 #include <selfdriving/interfaces/VehicleMotionInterface.h>
 
 namespace selfdriving
 {
 /** Vehicle adaptor class for the MVSIM simulator.
  *
+ * Motion commands implemented here in motion_execute():
+ *  - mrpt::nav::CVehicleSimul_DiffDriven: For ackermann-like steering.
+ *  - mrpt::nav::CVehicleSimul_Holo: For holonomic-like steering.
+ *
+ * \note This file must be implemented in the .h to avoid a direct dependency
+ *       of this library on mvsim headers. Only if the user project uses this,
+ *       it must then depend on mvsim.
  */
 class MVSIM_VehicleInterface : public VehicleMotionInterface
 {
@@ -63,8 +74,26 @@ class MVSIM_VehicleInterface : public VehicleMotionInterface
     // See base class docs
     VehicleOdometryState get_odometry() override
     {
-        //
-        return {};
+        mvsim_msgs::SrvGetPose req;
+        req.set_objectid(robotName_);
+
+        mvsim_msgs::SrvGetPoseAnswer ans;
+        connection_.callService("get_pose", req, ans);
+
+        VehicleOdometryState vos;
+        vos.odometry.x   = ans.pose().x();
+        vos.odometry.y   = ans.pose().y();
+        vos.odometry.phi = ans.pose().yaw();
+
+        vos.odometryVelocityLocal.vx    = ans.twist().vx();
+        vos.odometryVelocityLocal.vy    = ans.twist().vy();
+        vos.odometryVelocityLocal.omega = ans.twist().wz();
+
+        vos.pendedActionExists = false;  // TODO!
+        vos.timestamp          = mrpt::Clock::now();
+        vos.valid              = true;
+
+        return vos;
     }
 
     // See base class docs
@@ -72,7 +101,53 @@ class MVSIM_VehicleInterface : public VehicleMotionInterface
         const std::optional<CVehicleVelCmd::Ptr>& immediate,
         const std::optional<EnqueuedMotionCmd>&   next) override
     {
-        return true;
+        if (next.has_value())
+        {
+            THROW_EXCEPTION(
+                "Enqueued actions not implemented yet in this wrapper.");
+        }
+        if (!immediate.has_value())
+        {
+            // a NOP:
+            // TODO
+            return true;  // ok
+        }
+
+        // A regular immediate cmd:
+        // We map this request into a service call "set_controller_twist()".
+        mvsim_msgs::SrvSetControllerTwist req;
+        req.set_objectid(robotName_);
+        auto* tw = req.mutable_twistsetpoint();
+        tw->set_vz(0);
+        tw->set_wx(0);
+        tw->set_wy(0);
+
+        if (auto cmdDiff = std::dynamic_pointer_cast<
+                mrpt::kinematics::CVehicleVelCmd_DiffDriven>(immediate.value());
+            cmdDiff)
+        {
+            tw->set_vx(cmdDiff->lin_vel);
+            tw->set_vy(0);
+            tw->set_wz(cmdDiff->ang_vel);
+        }
+        else if (auto cmdHolo = std::dynamic_pointer_cast<
+                     mrpt::kinematics::CVehicleVelCmd_Holo>(immediate.value());
+                 cmdHolo)
+        {
+            tw->set_vx(cmdHolo->vel * std::cos(cmdHolo->dir_local));
+            tw->set_vy(cmdHolo->vel * std::sin(cmdHolo->dir_local));
+            tw->set_wz(cmdHolo->rot_speed);
+        }
+        else
+        {
+            MRPT_LOG_ERROR("Unhandled class received in motion_execute().");
+            return false;
+        }
+
+        mvsim_msgs::SrvSetControllerTwistAnswer ans;
+        connection_.callService("set_controller_twist", req, ans);
+
+        return ans.success();
     }
 
     // See base class docs

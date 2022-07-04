@@ -201,8 +201,7 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     /// throws on out of grid limits.
     /// Returns a ref to the node.
     Node& getOrCreateNodeByPose(
-        const selfdriving::SE2_KinState& p, MotionPrimitivesTreeSE2& tree,
-        mrpt::graphs::TNodeID& nextFreeId)
+        const selfdriving::SE2_KinState& p, mrpt::graphs::TNodeID& nextFreeId)
     {
         Node& n = *grid_.getByPos(p.pose.x, p.pose.y, p.pose.phi);
         if (!n.id.has_value())

@@ -342,6 +342,11 @@ class WaypointSequencer : public mrpt::system::COutputLogger
          */
         std::optional<waypoint_idx_t> activeFinalTarget;
 
+        /** Set by check_new_planner_output() */
+        PathPlannerOutput                    activePlanOutput;
+        MotionPrimitivesTreeSE2::path_t      activePlanPath;
+        std::optional<mrpt::graphs::TNodeID> activePlanNextNodeId;
+
         // int  counterCheckTargetIsBlocked_ = 0;
 
         /** For sending an alarm (error event) when it seems that we are not
@@ -364,7 +369,11 @@ class WaypointSequencer : public mrpt::system::COutputLogger
      * trajectory to the path tracker */
     void check_new_planner_output();
 
-    /** Finds the next waypt index up to which we should find a new RRT* plan */
+    /** Checks and send next motion command, or NOP, if we are on track */
+    void send_next_motion_cmd_or_nop();
+
+    /** Finds the next waypt index up to which we should find a new RRT*
+       plan */
     waypoint_idx_t find_next_waypoint_for_planner();
 
     /** Enqueues a task in pathPlannerPool_ running path_planner_function() and
