@@ -7,7 +7,7 @@
 	<!-- GUI options -->
 	<gui>
 		<ortho>false</ortho>
-		<show_forces>true</show_forces>  <force_scale>0.01</force_scale>
+		<show_forces>false</show_forces>  <force_scale>0.01</force_scale>
 		<cam_distance>35</cam_distance>
 		<fov_deg>35</fov_deg>
 		<refresh_fps>20</refresh_fps>

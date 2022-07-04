@@ -335,6 +335,9 @@ void WaypointSequencer::impl_navigation_step()
     // occupied by obstacles:
     // TODO... here?
     // m_counter_check_target_is_blocked = 0;
+
+    // Send actual motion command, if needed, or a NOP if we are safely on track
+    send_next_motion_cmd_or_nop();
 }
 
 void WaypointSequencer::internal_on_start_new_navigation()
@@ -560,11 +563,47 @@ void WaypointSequencer::check_new_planner_output()
 
     if (config_.vizSceneToModify) send_planner_output_to_viz(result);
 
-    const auto plannedPath =
-        result.po.motionTree.backtrack_path(result.po.goalNodeId);
-    for (const auto& step : plannedPath)
+    // TODO: anything to do with current activePath before overwritting it?
+    _.activePlanOutput = std::move(result);
+    _.activePlanNextNodeId.reset();
+    _.activePlanPath = _.activePlanOutput.po.motionTree.backtrack_path(
+        _.activePlanOutput.po.goalNodeId);
+
+    for (const auto& step : _.activePlanPath)
     {  //
         std::cout << step.asString() << std::endl;
+    }
+}
+
+void WaypointSequencer::send_next_motion_cmd_or_nop()
+{
+    auto& _ = innerState_;
+
+    if (!_.activePlanPath.empty() && !_.activePlanNextNodeId.has_value())
+    {
+        const auto& nCurr = _.activePlanPath.front();
+        const auto& nNext = *(++_.activePlanPath.begin());
+
+        _.activePlanNextNodeId = nNext.nodeID_;
+
+        const auto edge =
+            _.activePlanOutput.po.motionTree.edge_to_parent(nNext.nodeID_);
+
+        auto& ptg = config_.ptgs.ptgs.at(edge.ptgIndex);
+        ptg->updateNavDynamicState(edge.getPTGDynState());
+
+        const auto generatedMotionCmd =
+            ptg->directionToMotionCommand(edge.ptgPathIndex);
+
+        ASSERT_(generatedMotionCmd);
+
+        MRPT_LOG_INFO_STREAM(
+            "Generating motion cmd to move from node ID "
+            << nCurr.nodeID_ << " => " << nNext.nodeID_
+            << " CMD:" << generatedMotionCmd->asString());
+
+        config_.vehicleMotionInterface->motion_execute(
+            generatedMotionCmd, std::nullopt);
     }
 }
 
