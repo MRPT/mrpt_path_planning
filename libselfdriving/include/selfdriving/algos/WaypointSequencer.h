@@ -51,7 +51,7 @@ struct NavErrorReason
 
 /** The top-level interface for users to control the vehicle navigation.
  *
- *  This class is based and extends `mrpt::nav::CAbstractNavigator` with the
+ * This class is based and extends `mrpt::nav::CAbstractNavigator` with the
  * capability of following a list of waypoints. By default, waypoints are
  * followed one by one, but, refer to \c Waypoint for a discussion on
  * `allow_skip`.
@@ -60,7 +60,8 @@ struct NavErrorReason
  *  - \c initialize() must be called before running any actual navigation.
  *
  *  - Callbacks must be provided for interfacing the real (or simulated)
- * robot/vehicle. They are given as arguments to \c initialize().
+ * robot/vehicle and its sensors. They must be provided as std::function<>
+ * instances within \c config_. Note they may be actual functions, or lambdas.
  *
  *  - \c navigation_step() must be called periodically in order to effectively
  * run the navigation. This method will internally call the callbacks to gather
