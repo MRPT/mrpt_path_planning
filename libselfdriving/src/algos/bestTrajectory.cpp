@@ -64,7 +64,7 @@ bool selfdriving::bestTrajectory(
         // Sanity check: (ignore heading since relPose may not have a valid
         // one)
         const auto reconstrErr = reconstr_pose - relPose;
-        ASSERT_BELOW_(reconstrErr.norm(), 0.10);
+        ASSERT_LT_(reconstrErr.norm(), 0.10);
 
         double this_ptg_dist_at_target =
             reconstrErr.norm() +
