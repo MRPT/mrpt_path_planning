@@ -25,6 +25,7 @@
 #include <selfdriving/algos/viz.h>
 #include <selfdriving/data/Waypoints.h>
 #include <selfdriving/interfaces/MVSIM_VehicleInterface.h>
+#include <selfdriving/interfaces/VehicleMotionInterface.h>
 
 #include <thread>
 
@@ -47,6 +48,12 @@ static TCLAP::ValueArg<std::string> arg_config_file_section(
 static TCLAP::ValueArg<std::string> argMvsimFile(
     "s", "simul-file", "MVSIM XML file", true, "xxx.xml", "World XML file",
     cmd);
+
+static TCLAP::ValueArg<std::string> argVehicleInterface(
+    "", "vehicle-interface-class",
+    "Class name to use (Default: 'selfdriving::MVSIM_VehicleInterface')", false,
+    "selfdriving::MVSIM_VehicleInterface",
+    "Class name to use for vehicle interface", cmd);
 
 static TCLAP::ValueArg<std::string> arg_ptgs_file(
     "p", "ptg-config", "Input .ini file with PTG definitions.", true, "",
@@ -129,7 +136,7 @@ struct SelfDrivingStatus
     selfdriving::WaypointSequence       waypts;
     selfdriving::WaypointStatusSequence wayptsStatus;
 
-    std::shared_ptr<selfdriving::MVSIM_VehicleInterface> mvsimVehicleInterface;
+    selfdriving::VehicleMotionInterface::Ptr vehicleInterface;
 
     SelfDrivingThreadParams sdThreadParams;
     std::thread             selfDrivingThread;
@@ -174,12 +181,38 @@ void prepare_selfdriving(mvsim::World& world)
         selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
 
     // Vehicle interface:
-    sd.mvsimVehicleInterface =
-        std::make_shared<selfdriving::MVSIM_VehicleInterface>();
-    sd.mvsimVehicleInterface->setMinLoggingLevel(world.getMinLoggingLevel());
-    sd.mvsimVehicleInterface->connect();
+    if (argVehicleInterface.isSet())
+    {
+        auto obj = mrpt::rtti::classFactory(argVehicleInterface.getValue());
+        ASSERTMSG_(
+            obj, mrpt::format(
+                     "Unregistered class name '%s'",
+                     argVehicleInterface.getValue().c_str()));
 
-    sd.navigator.config_.vehicleMotionInterface = sd.mvsimVehicleInterface;
+        sd.vehicleInterface =
+            std::dynamic_pointer_cast<selfdriving::VehicleMotionInterface>(obj);
+        ASSERTMSG_(
+            sd.vehicleInterface,
+            mrpt::format(
+                "Class '%s' seems not to implement the expected interface "
+                "'selfdriving::VehicleMotionInterface'",
+                argVehicleInterface.getValue().c_str()));
+
+        sd.vehicleInterface->setMinLoggingLevel(world.getMinLoggingLevel());
+    }
+    else
+    {
+        // Default:
+        auto sim = std::make_shared<selfdriving::MVSIM_VehicleInterface>();
+        sd.vehicleInterface = sim;
+
+        sd.vehicleInterface->setMinLoggingLevel(world.getMinLoggingLevel());
+
+        // connect now:
+        sim->connect();
+    }
+
+    sd.navigator.config_.vehicleMotionInterface = sd.vehicleInterface;
 
     if (arg_planner_yaml_file.isSet())
     {
@@ -628,9 +661,10 @@ void prepare_selfdriving_window(
     };
 
     const auto lambdaCollectSensors = [&]() {
-        if (!sd.mvsimVehicleInterface) return;
+        if (!sd.vehicleInterface) return;
 
-        if (!sd.navigator.config_.localSensedObstacleSource)
+        if (!argVehicleInterface.isSet() &&
+            !sd.navigator.config_.localSensedObstacleSource)
             sd.navigator.config_.localSensedObstacleSource =
                 std::make_shared<selfdriving::ObstacleSourceGenericSensor>();
 
@@ -639,10 +673,17 @@ void prepare_selfdriving_window(
                 sd.navigator.config_.localSensedObstacleSource);
         if (!o) return;
 
-        o->set_sensor_observation(
-            sd.mvsimVehicleInterface->last_lidar_obs(),
-            mrpt::poses::CPose3D(
-                sd.mvsimVehicleInterface->get_localization().pose));
+        // handle special case:
+        if (auto d =
+                std::dynamic_pointer_cast<selfdriving::MVSIM_VehicleInterface>(
+                    sd.vehicleInterface);
+            d)
+        {
+            o->set_sensor_observation(
+                d->last_lidar_obs(),
+                mrpt::poses::CPose3D(
+                    sd.vehicleInterface->get_localization().pose));
+        }
     };
 
     gui->addLoopCallback(lambdaHandleMouseOperations);
@@ -769,6 +810,7 @@ void on_do_single_path_planning(
     cmP.preferredClearanceDistance = 1.0;  // [m]
 
     // cost map for global static obstacles:
+    if (!obsPts->empty())
     {
         auto staticCostmap =
             selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
@@ -780,12 +822,16 @@ void on_do_single_path_planning(
     // cost map for observed dynamic obstacles (lidar sensor):
     if (sd.navigator.config_.localSensedObstacleSource)
     {
-        auto lidarCostmap =
-            selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-                *sd.navigator.config_.localSensedObstacleSource->obstacles(),
-                cmP);
+        const auto obs =
+            sd.navigator.config_.localSensedObstacleSource->obstacles();
+        if (!obs->empty())
+        {
+            auto lidarCostmap =
+                selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
+                    *obs, cmP);
 
-        planner.costEvaluators_.push_back(lidarCostmap);
+            planner.costEvaluators_.push_back(lidarCostmap);
+        }
     }
 
     // Set planner required params:

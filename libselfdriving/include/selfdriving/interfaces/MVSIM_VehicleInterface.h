@@ -32,6 +32,8 @@ namespace selfdriving
  */
 class MVSIM_VehicleInterface : public VehicleMotionInterface
 {
+    DEFINE_MRPT_OBJECT(MVSIM_VehicleInterface, selfdriving)
+
    public:
     MVSIM_VehicleInterface() {}
 
@@ -199,3 +201,6 @@ class MVSIM_VehicleInterface : public VehicleMotionInterface
 };
 
 }  // namespace selfdriving
+
+IMPLEMENTS_MRPT_OBJECT(
+    MVSIM_VehicleInterface, VehicleMotionInterface, selfdriving)

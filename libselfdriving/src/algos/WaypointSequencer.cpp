@@ -445,15 +445,19 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     // TODO: Make static list instead of recreating each time?
     planner.costEvaluators_.clear();
 
-    planner.costEvaluators_.push_back(
-        selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-            *config_.globalMapObstacleSource->obstacles(),
-            config_.globalCostMapParameters));
-
-    planner.costEvaluators_.push_back(
-        selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-            *config_.localSensedObstacleSource->obstacles(),
-            config_.localCostMapParameters));
+    if (auto obs = config_.globalMapObstacleSource->obstacles(); !obs->empty())
+    {
+        planner.costEvaluators_.push_back(
+            selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
+                *obs, config_.globalCostMapParameters));
+    }
+    if (auto obs = config_.localSensedObstacleSource->obstacles();
+        !obs->empty())
+    {
+        planner.costEvaluators_.push_back(
+            selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
+                *obs, config_.localCostMapParameters));
+    }
 
     // cost map #2: prefer to go thru waypoints
     // =============
