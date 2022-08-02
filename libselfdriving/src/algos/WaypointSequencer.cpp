@@ -430,6 +430,10 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
         << ppi.pi.worldBboxMin.asString() << " - "
         << ppi.pi.worldBboxMax.asString());
 
+    MRPT_LOG_DEBUG_STREAM(
+        "[path_planner_function] Using VehicleInterface class: "
+        << config_.vehicleMotionInterface->GetRuntimeClass()->className);
+
     // Do the path planning :
     selfdriving::TPS_Astar planner;
 
@@ -445,18 +449,26 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     // TODO: Make static list instead of recreating each time?
     planner.costEvaluators_.clear();
 
-    if (auto obs = config_.globalMapObstacleSource->obstacles(); !obs->empty())
+    if (config_.globalMapObstacleSource)
     {
-        planner.costEvaluators_.push_back(
-            selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-                *obs, config_.globalCostMapParameters));
+        if (auto obs = config_.globalMapObstacleSource->obstacles();
+            obs && !obs->empty())
+        {
+            planner.costEvaluators_.push_back(
+                selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
+                    *obs, config_.globalCostMapParameters));
+        }
     }
-    if (auto obs = config_.localSensedObstacleSource->obstacles();
-        !obs->empty())
+
+    if (config_.localSensedObstacleSource)
     {
-        planner.costEvaluators_.push_back(
-            selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-                *obs, config_.localCostMapParameters));
+        if (auto obs = config_.localSensedObstacleSource->obstacles();
+            obs && !obs->empty())
+        {
+            planner.costEvaluators_.push_back(
+                selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
+                    *obs, config_.localCostMapParameters));
+        }
     }
 
     // cost map #2: prefer to go thru waypoints
