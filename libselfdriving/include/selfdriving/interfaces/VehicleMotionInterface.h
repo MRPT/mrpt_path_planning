@@ -7,6 +7,7 @@
 #pragma once
 
 #include <mrpt/kinematics/CVehicleVelCmd.h>
+#include <mrpt/rtti/CObject.h>
 #include <mrpt/system/COutputLogger.h>
 #include <selfdriving/data/EnqueuedMotionCmd.h>
 #include <selfdriving/data/VehicleLocalizationState.h>
@@ -48,16 +49,17 @@ enum class STOP_TYPE : uint8_t
  *
  *
  */
-class VehicleMotionInterface : public mrpt::system::COutputLogger
+class VehicleMotionInterface : public mrpt::system::COutputLogger,
+                               public mrpt::rtti::CObject
 {
-   public:
-    using Ptr = std::shared_ptr<VehicleMotionInterface>;
+    DEFINE_VIRTUAL_MRPT_OBJECT(VehicleMotionInterface)
 
+   public:
     VehicleMotionInterface()
         : mrpt::system::COutputLogger("VehicleMotionInterface")
     {
     }
-    virtual ~VehicleMotionInterface() = default;
+    virtual ~VehicleMotionInterface();
 
     /** Provides access to the vehicle localization data.
      *
