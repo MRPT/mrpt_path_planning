@@ -151,6 +151,45 @@ static void on_do_single_path_planning(
 
 // ======= End Self Drive status ===================
 
+static mrpt::maps::CSimplePointsMap::Ptr world_to_static_obstacle_points(
+    mvsim::World& world)
+{
+    auto obsPts = mrpt::maps::CSimplePointsMap::Create();
+
+    world.runVisitorOnWorldElements([&](mvsim::WorldElementBase& we) {
+        if (auto grid = dynamic_cast<mvsim::OccupancyGridMap*>(&we); grid)
+        {  // get grid occupied cells:
+            mrpt::maps::CSimplePointsMap pts;
+            grid->getOccGrid().getAsPointCloud(pts);
+            obsPts->insertAnotherMap(&pts, mrpt::poses::CPose3D::Identity());
+        }
+    });
+    world.runVisitorOnBlocks([&](mvsim::Block& b) {
+        mrpt::maps::CSimplePointsMap pts;
+        const auto                   shape             = b.blockShape();
+        const double                 minDistBetweenPts = 0.1;
+        ASSERT_(!shape.empty());
+        for (size_t i = 0; i < shape.size(); i++)
+        {
+            const size_t ip1 = (i + 1) % shape.size();
+            const auto   pt0 = shape.at(i);
+            const auto   pt1 = shape.at(ip1);
+            // sample:
+            const double dist      = (pt1 - pt0).norm();
+            const size_t nSamples  = std::ceil(dist / minDistBetweenPts);
+            const auto   dirVector = (pt1 - pt0).unitarize();
+            for (size_t k = 0; k < nSamples; k++)
+            {
+                const auto pt = pt0 + dirVector * k * dist / (nSamples + 1);
+                pts.insertPointFast(pt.x, pt.y, 0);
+            }
+        }
+        obsPts->insertAnotherMap(&pts, mrpt::poses::CPose3D(b.getPose()));
+    });
+
+    return obsPts;
+}
+
 void prepare_selfdriving(mvsim::World& world)
 {
     // initialize the WaypointSequencer
@@ -169,16 +208,15 @@ void prepare_selfdriving(mvsim::World& world)
     }
 
     // Obstacle source:
-    auto obsPts = mrpt::maps::CSimplePointsMap::Create();
-
-    world.runVisitorOnWorldElements([&](mvsim::WorldElementBase& we) {
-        auto grid = dynamic_cast<mvsim::OccupancyGridMap*>(&we);
-        if (!grid) return;
-        grid->getOccGrid().getAsPointCloud(*obsPts);
-    });
-
+    auto obsPts = world_to_static_obstacle_points(world);
     sd.navigator.config_.globalMapObstacleSource =
         selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
+
+    sd.navigator.logFmt(
+        mrpt::system::LVL_DEBUG,
+        "[prepare_selfdriving] Initializing globalMapObstacleSource with "
+        "%u points",
+        static_cast<unsigned int>(obsPts->size()));
 
     // Vehicle interface:
     if (argVehicleInterface.isSet())
@@ -760,14 +798,7 @@ void on_do_single_path_planning(
     // ############################
     // BEGIN: Run path planning
     // ############################
-    auto obsPts = mrpt::maps::CSimplePointsMap::Create();
-
-    world.runVisitorOnWorldElements([&](mvsim::WorldElementBase& we) {
-        auto grid = dynamic_cast<mvsim::OccupancyGridMap*>(&we);
-        if (!grid) return;
-        grid->getOccGrid().getAsPointCloud(*obsPts);
-    });
-
+    auto obsPts    = world_to_static_obstacle_points(world);
     auto obstacles = selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
 
     pi.stateStart = stateStart;
