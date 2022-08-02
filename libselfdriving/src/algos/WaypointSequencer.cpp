@@ -593,12 +593,21 @@ void WaypointSequencer::check_new_planner_output()
 
 void WaypointSequencer::send_next_motion_cmd_or_nop()
 {
+    using namespace mrpt;  // "_deg"
+
     auto& _ = innerState_;
 
     if (!_.activePlanPath.empty() && !_.activePlanNextNodeId.has_value())
     {
         const auto& nCurr = _.activePlanPath.front();
         const auto& nNext = *(++_.activePlanPath.begin());
+        std::optional<MotionPrimitivesTreeSE2::node_t> nAfterNext;
+
+        // If we have at least two actions, use the two actions at a time API:
+        MRPT_TODO("check if this robot supports pended actions");
+
+        if (_.activePlanPath.size() >= 3)
+            nAfterNext = *(++(++_.activePlanPath.begin()));
 
         _.activePlanNextNodeId = nNext.nodeID_;
 
@@ -608,18 +617,56 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
         auto& ptg = config_.ptgs.ptgs.at(edge.ptgIndex);
         ptg->updateNavDynamicState(edge.getPTGDynState());
 
-        const auto generatedMotionCmd =
+        const mrpt::kinematics::CVehicleVelCmd::Ptr generatedMotionCmd =
             ptg->directionToMotionCommand(edge.ptgPathIndex);
 
         ASSERT_(generatedMotionCmd);
 
-        MRPT_LOG_INFO_STREAM(
-            "Generating motion cmd to move from node ID "
-            << nCurr.nodeID_ << " => " << nNext.nodeID_
-            << " CMD:" << generatedMotionCmd->asString());
+        mrpt::kinematics::CVehicleVelCmd::Ptr generatedMotionCmdAfter;
+        if (nAfterNext.has_value())
+        {
+            const auto nextEdge =
+                _.activePlanOutput.po.motionTree.edge_to_parent(
+                    nAfterNext->nodeID_);
 
-        config_.vehicleMotionInterface->motion_execute(
-            generatedMotionCmd, std::nullopt);
+            auto& nextPtg = config_.ptgs.ptgs.at(nextEdge.ptgIndex);
+            nextPtg->updateNavDynamicState(nextEdge.getPTGDynState());
+
+            generatedMotionCmdAfter =
+                nextPtg->directionToMotionCommand(nextEdge.ptgPathIndex);
+
+            ASSERT_(generatedMotionCmdAfter);
+
+            const auto relPoseNext      = nNext.pose - nCurr.pose;
+            const auto relPoseAfterNext = nAfterNext->pose - nCurr.pose;
+
+            MRPT_LOG_INFO_STREAM(
+                "Generating compound motion cmd to move from node ID "
+                << nCurr.nodeID_ << " => " << nNext.nodeID_ << " => "
+                << nAfterNext->nodeID_
+                << "\n CMD1:" << generatedMotionCmd->asString()
+                << "\n CMD2: " << generatedMotionCmdAfter->asString()
+                << "\n CondPose: " << relPoseNext
+                << "\n TargetRelPose: " << relPoseAfterNext);
+
+            selfdriving::EnqueuedMotionCmd enqMotion;
+            enqMotion.nextCmd                 = generatedMotionCmdAfter;
+            enqMotion.nextCondition.position  = relPoseNext;
+            enqMotion.nextCondition.tolerance = {0.05, 0.05, 1.0_deg};
+
+            config_.vehicleMotionInterface->motion_execute(
+                generatedMotionCmd, enqMotion);
+        }
+        else
+        {
+            MRPT_LOG_INFO_STREAM(
+                "Generating single motion cmd to move from node ID "
+                << nCurr.nodeID_ << " => " << nNext.nodeID_
+                << " CMD:" << generatedMotionCmd->asString());
+
+            config_.vehicleMotionInterface->motion_execute(
+                generatedMotionCmd, std::nullopt);
+        }
     }
 }
 
