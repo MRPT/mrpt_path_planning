@@ -20,7 +20,8 @@ static std::vector<mrpt::gui::CDisplayWindow3D::Ptr> nonmodal_wins;
 
 void selfdriving::viz_nav_plan(
     const selfdriving::PlannerOutput&        plan,
-    const selfdriving::VisualizationOptions& opts)
+    const selfdriving::VisualizationOptions& opts,
+    const std::vector<CostEvaluator::Ptr>    costEvaluators)
 {
     MRPT_START
     //
@@ -35,6 +36,12 @@ void selfdriving::viz_nav_plan(
         auto glTree = render_tree(
             plan.motionTree, plan.originalInput, opts.renderOptions);
         scene->insert(glTree);
+
+        for (const auto& ce : costEvaluators)
+        {
+            if (!ce) continue;
+            scene->insert(ce->get_visualization());
+        }
     }
 
     // Camera:

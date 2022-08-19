@@ -74,6 +74,10 @@ static TCLAP::ValueArg<std::string> arg_goal_pose(
     "g", "goal-pose", "Goal 2D pose", true, "[0 0 0]", "\"[x y phi_deg]\"",
     cmd);
 
+static TCLAP::ValueArg<double> argBBoxMargin(
+    "", "bbox-margin", "Margin to add to the start-goal bbox poses", false, 1.0,
+    "A distance [meters]", cmd);
+
 static TCLAP::ValueArg<std::string> arg_goal_vel(
     "", "goal-vel", "Goal 2D velocity", false, "", "\"[vx vy omega_deg]\"",
     cmd);
@@ -87,9 +91,11 @@ static TCLAP::ValueArg<std::string> arg_plugins(
     "Optional plug-in libraries to load, for externally-defined PTGs", false,
     "", "mylib.so", cmd);
 
-static TCLAP::SwitchArg arg_costMap(
-    "", "costmap", "Enable the default costmap from obstacle point clouds",
-    cmd);
+static TCLAP::ValueArg<std::string> arg_costMap(
+    "", "costmap",
+    "Creates a costmap from obstacle point clouds with the given parameters "
+    "from a YAML file.",
+    false, "costmap.yaml", "costmap.yaml", cmd);
 
 static TCLAP::SwitchArg arg_showTree(
     "", "show-tree",
@@ -168,8 +174,9 @@ static void do_plan_path()
 
     // Make sure goal and start are within bbox:
     {
-        const auto bboxMargin = mrpt::math::TPoint3Df(1.0, 1.0, .0);
-        const auto ptStart    = mrpt::math::TPoint3Df(
+        const auto bboxMargin = mrpt::math::TPoint3Df(
+            argBBoxMargin.getValue(), argBBoxMargin.getValue(), .0);
+        const auto ptStart = mrpt::math::TPoint3Df(
             pi.stateStart.pose.x, pi.stateStart.pose.y, 0);
         const auto ptGoal =
             mrpt::math::TPoint3Df(pi.stateGoal.pose.x, pi.stateGoal.pose.y, 0);
@@ -207,9 +214,12 @@ static void do_plan_path()
     if (arg_costMap.isSet())
     {
         // cost map:
+        const auto costMapParams = selfdriving::CostMapParameters::FromYAML(
+            mrpt::containers::yaml::FromFile(arg_costMap.getValue()));
+
         auto costmap =
             selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-                *obsPts);
+                *obsPts, costMapParams);
 
         planner->costEvaluators_.push_back(costmap);
     }
@@ -253,7 +263,7 @@ static void do_plan_path()
     // Hide regular tree edges and only show best path?
     if (!arg_showTree.isSet()) vizOpts.renderOptions.width_normal_edge = 0;
 
-    selfdriving::viz_nav_plan(plan, vizOpts);
+    selfdriving::viz_nav_plan(plan, vizOpts, planner->costEvaluators_);
 }
 
 int main(int argc, char** argv)
