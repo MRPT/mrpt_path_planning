@@ -14,6 +14,7 @@
 #include <mrpt/serialization/CArchive.h>
 #include <mrpt/system/filesystem.h>
 #include <mrpt/system/os.h>  // plugins
+#include <mrpt/version.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/TPS_RRTstar.h>
 #include <selfdriving/algos/viz.h>
@@ -26,8 +27,8 @@ static TCLAP::CmdLine cmd("path-planner-cli");
 static TCLAP::ValueArg<std::string> arg_obs_file(
     "o", "obstacles",
     "Input obstacles: either (1) a .txt file with obstacle points (one 'x y' "
-    "pair per line), or (2) a .gridmap file, or a (3) png file with an "
-    "gray-scale occupancy grid (*.png, *.bmp)",
+    "pair per line), or (2) a .gridmap file, or (3) a ROS MAP YAML file, or a "
+    "(4) png file with an gray-scale occupancy grid (*.png, *.bmp)",
     true, "", "obs.txt", cmd);
 
 static TCLAP::ValueArg<std::string> argPlanner(
@@ -111,6 +112,17 @@ static mrpt::maps::CPointsMap::Ptr load_obstacles()
             THROW_EXCEPTION_FMT(
                 "Cannot read obstacle point cloud from: `%s`",
                 arg_obs_file.getValue().c_str());
+    }
+    else if (mrpt::system::strCmpI(sExt, "yaml"))
+    {
+#if MRPT_VERSION >= 0x250
+        mrpt::maps::COccupancyGridMap2D grid;
+        bool readOk = grid.loadFromROSMapServerYAML(sFile);
+        ASSERT_(readOk);
+        grid.getAsPointCloud(*obsPts);
+#else
+        THROW_EXCEPTION("Loading ROS YAML map files requires MRPT >=2.5.0");
+#endif
     }
     else if (mrpt::system::strCmpI(sExt, "gridmap"))
     {
