@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <selfdriving/algos/CostEvaluator.h>
 #include <selfdriving/data/PlannerOutput.h>
 #include <selfdriving/data/RenderOptions.h>
 
@@ -20,7 +21,8 @@ struct VisualizationOptions
 };
 
 void viz_nav_plan(
-    const PlannerOutput&        plan,
-    const VisualizationOptions& opts = VisualizationOptions());
+    const PlannerOutput&                  plan,
+    const VisualizationOptions&           opts = VisualizationOptions(),
+    const std::vector<CostEvaluator::Ptr> costEvaluators = {});
 
 }  // namespace selfdriving

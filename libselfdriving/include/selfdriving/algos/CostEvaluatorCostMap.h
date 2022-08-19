@@ -14,6 +14,11 @@ namespace selfdriving
 {
 struct CostMapParameters
 {
+    CostMapParameters()  = default;
+    ~CostMapParameters() = default;
+
+    static CostMapParameters FromYAML(const mrpt::containers::yaml& c);
+
     double resolution = 0.05;  //!< [m]
 
     double preferredClearanceDistance = 0.5;  //!< [m]
@@ -25,6 +30,9 @@ struct CostMapParameters
      * instead.
      */
     bool useAverageOfPath = false;
+
+    mrpt::containers::yaml as_yaml();
+    void                   load_from_yaml(const mrpt::containers::yaml& c);
 };
 
 class CostEvaluatorCostMap : public CostEvaluator

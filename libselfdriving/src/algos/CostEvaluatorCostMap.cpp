@@ -12,6 +12,34 @@ using namespace selfdriving;
 
 IMPLEMENTS_MRPT_OBJECT(CostEvaluatorCostMap, CostEvaluator, selfdriving)
 
+CostMapParameters CostMapParameters::FromYAML(const mrpt::containers::yaml& c)
+{
+    CostMapParameters p;
+    p.load_from_yaml(c);
+    return p;
+}
+
+mrpt::containers::yaml CostMapParameters::as_yaml()
+{
+    mrpt::containers::yaml c = mrpt::containers::yaml::Map();
+
+    MCP_SAVE(c, resolution);
+    MCP_SAVE(c, preferredClearanceDistance);
+    MCP_SAVE(c, maxCost);
+    MCP_SAVE(c, useAverageOfPath);
+
+    return c;
+}
+void CostMapParameters::load_from_yaml(const mrpt::containers::yaml& c)
+{
+    ASSERT_(c.isMap());
+
+    MCP_LOAD_REQ(c, resolution);
+    MCP_LOAD_REQ(c, preferredClearanceDistance);
+    MCP_LOAD_REQ(c, maxCost);
+    MCP_LOAD_REQ(c, useAverageOfPath);
+}
+
 CostEvaluatorCostMap::~CostEvaluatorCostMap() = default;
 
 CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
@@ -122,6 +150,7 @@ double CostEvaluatorCostMap::eval_single_pose(
 mrpt::opengl::CSetOfObjects::Ptr CostEvaluatorCostMap::get_visualization() const
 {
     const uint8_t COST_TRANSPARENCY_ALPHA = 0x80;
+    const double  MIN_COST_TO_TRANSPARENT = 0.02;
 
     auto glObjs  = mrpt::opengl::CSetOfObjects::Create();
     auto glPlane = mrpt::opengl::CTexturedPlane::Create();
@@ -142,7 +171,7 @@ mrpt::opengl::CSetOfObjects::Ptr CostEvaluatorCostMap::get_visualization() const
             const double* c = costmap_.cellByIndex(icx, icy);
             if (!c) continue;
             const double val = *c;
-            if (val == 0.0)
+            if (val < MIN_COST_TO_TRANSPARENT)
             {
                 *gridALPHA(icx, icy) = 0x00;  // 100% transparent
             }
