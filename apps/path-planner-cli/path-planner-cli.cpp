@@ -164,7 +164,8 @@ static void do_plan_path()
     if (arg_start_vel.isSet())
         pi.stateStart.vel.fromString(arg_start_vel.getValue());
 
-    pi.stateGoal.pose.fromString(arg_goal_pose.getValue());
+    pi.stateGoal.state =
+        selfdriving::PoseOrPoint::FromString(arg_goal_pose.getValue());
     if (arg_goal_vel.isSet())
         pi.stateGoal.vel.fromString(arg_goal_vel.getValue());
 
@@ -178,8 +179,9 @@ static void do_plan_path()
             argBBoxMargin.getValue(), argBBoxMargin.getValue(), .0);
         const auto ptStart = mrpt::math::TPoint3Df(
             pi.stateStart.pose.x, pi.stateStart.pose.y, 0);
-        const auto ptGoal =
-            mrpt::math::TPoint3Df(pi.stateGoal.pose.x, pi.stateGoal.pose.y, 0);
+        const auto ptGoal = mrpt::math::TPoint3Df(
+            pi.stateGoal.asSE2KinState().pose.x,
+            pi.stateGoal.asSE2KinState().pose.y, 0);
         bbox.updateWithPoint(ptStart - bboxMargin);
         bbox.updateWithPoint(ptStart + bboxMargin);
         bbox.updateWithPoint(ptGoal - bboxMargin);
@@ -189,10 +191,10 @@ static void do_plan_path()
     pi.worldBboxMax = {bbox.max.x, bbox.max.y, M_PI};
     pi.worldBboxMin = {bbox.min.x, bbox.min.y, -M_PI};
 
-    std::cout << "Start pose: " << pi.stateStart.pose.asString() << "\n";
-    std::cout << "Goal pose : " << pi.stateGoal.pose.asString() << "\n";
-    std::cout << "Obstacles : " << obs->obstacles()->size() << " points\n";
-    std::cout << "World bbox: " << pi.worldBboxMin.asString() << " - "
+    std::cout << "Start state: " << pi.stateStart.asString() << "\n";
+    std::cout << "Goal state : " << pi.stateGoal.asString() << "\n";
+    std::cout << "Obstacles  : " << obs->obstacles()->size() << " points\n";
+    std::cout << "World bbox : " << pi.worldBboxMin.asString() << " - "
               << pi.worldBboxMax.asString() << "\n";
 
     // Do the path planning :

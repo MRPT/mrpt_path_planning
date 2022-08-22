@@ -147,7 +147,7 @@ SelfDrivingStatus sd;
 static void selfdriving_run_thread(SelfDrivingThreadParams& params);
 static void on_do_single_path_planning(
     mvsim::World& world, const selfdriving::SE2_KinState& stateStart,
-    const selfdriving::SE2_KinState& stateGoal);
+    const selfdriving::SE2orR2_KinState& stateGoal);
 
 // ======= End Self Drive status ===================
 
@@ -630,12 +630,13 @@ void prepare_selfdriving_window(
         btnDoPlan->setCallback([=]() {
             try
             {
-                selfdriving::SE2_KinState stateStart, stateGoal;
-
+                selfdriving::SE2_KinState stateStart;
                 stateStart.pose.fromString(edStateStartPose->value());
                 stateStart.vel.fromString(edStateStartVel->value());
 
-                stateGoal.pose.fromString(edStateGoalPose->value());
+                selfdriving::SE2orR2_KinState stateGoal;
+                stateGoal.state = selfdriving::PoseOrPoint::FromString(
+                    edStateGoalPose->value());
                 stateGoal.vel.fromString(edStateGoalVel->value());
 
                 on_do_single_path_planning(*world, stateStart, stateGoal);
@@ -790,7 +791,7 @@ void selfdriving_run_thread(SelfDrivingThreadParams& params)
 
 void on_do_single_path_planning(
     mvsim::World& world, const selfdriving::SE2_KinState& stateStart,
-    const selfdriving::SE2_KinState& stateGoal)
+    const selfdriving::SE2orR2_KinState& stateGoal)
 {
     selfdriving::TPS_Astar    planner;
     selfdriving::PlannerInput pi;
@@ -813,8 +814,9 @@ void on_do_single_path_planning(
         const auto bboxMargin = mrpt::math::TPoint3Df(1.0, 1.0, .0);
         const auto ptStart    = mrpt::math::TPoint3Df(
             pi.stateStart.pose.x, pi.stateStart.pose.y, 0);
-        const auto ptGoal =
-            mrpt::math::TPoint3Df(pi.stateGoal.pose.x, pi.stateGoal.pose.y, 0);
+        const auto ptGoal = mrpt::math::TPoint3Df(
+            pi.stateGoal.asSE2KinState().pose.x,
+            pi.stateGoal.asSE2KinState().pose.y, 0);
         bbox.updateWithPoint(ptStart - bboxMargin);
         bbox.updateWithPoint(ptStart + bboxMargin);
         bbox.updateWithPoint(ptGoal - bboxMargin);
@@ -824,9 +826,9 @@ void on_do_single_path_planning(
     pi.worldBboxMax = {bbox.max.x, bbox.max.y, M_PI};
     pi.worldBboxMin = {bbox.min.x, bbox.min.y, -M_PI};
 
-    std::cout << "Start pose: " << pi.stateStart.pose.asString() << "\n";
-    std::cout << "Goal pose : " << pi.stateGoal.pose.asString() << "\n";
-    std::cout << "Obstacles : " << obstacles->obstacles()->size()
+    std::cout << "Start state: " << pi.stateStart.asString() << "\n";
+    std::cout << "Goal state : " << pi.stateGoal.asString() << "\n";
+    std::cout << "Obstacles  : " << obstacles->obstacles()->size()
               << " points\n";
     std::cout << "World bbox: " << pi.worldBboxMin.asString() << " - "
               << pi.worldBboxMax.asString() << "\n";

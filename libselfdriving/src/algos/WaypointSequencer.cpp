@@ -406,7 +406,8 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
         const auto ptStart = mrpt::math::TPoint3Df(
             ppi.pi.stateStart.pose.x, ppi.pi.stateStart.pose.y, 0);
         const auto ptGoal = mrpt::math::TPoint3Df(
-            ppi.pi.stateGoal.pose.x, ppi.pi.stateGoal.pose.y, 0);
+            ppi.pi.stateGoal.asSE2KinState().pose.x,
+            ppi.pi.stateGoal.asSE2KinState().pose.y, 0);
 
         bbox.min = ptStart;
         bbox.max = ptStart;
@@ -420,11 +421,10 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     ppi.pi.worldBboxMin = {bbox.min.x, bbox.min.y, -M_PI};
 
     MRPT_LOG_DEBUG_STREAM(
-        "[path_planner_function] Start pose: "
-        << ppi.pi.stateStart.pose.asString());
+        "[path_planner_function] Start state: "
+        << ppi.pi.stateStart.asString());
     MRPT_LOG_DEBUG_STREAM(
-        "[path_planner_function] Goal pose : "
-        << ppi.pi.stateGoal.pose.asString());
+        "[path_planner_function] Goal state : " << ppi.pi.stateGoal.asString());
     MRPT_LOG_DEBUG_STREAM(
         "[path_planner_function] World bbox: "
         << ppi.pi.worldBboxMin.asString() << " - "
@@ -530,21 +530,20 @@ void WaypointSequencer::enqueue_path_planner_towards(
     MRPT_TODO("Add some pose delta to account for the computation time?");
     ppi.pi.stateStart.pose = lastVehicleLocalization_.pose;
     ppi.pi.stateStart.vel  = lastVehicleOdometry_.odometryVelocityLocal.rotated(
-        ppi.pi.stateGoal.pose.phi);
+        ppi.pi.stateStart.pose.phi);
 
     ASSERT_LT_(targetWpIdx, _.waypointNavStatus.waypoints.size());
-    const auto& wp          = _.waypointNavStatus.waypoints.at(targetWpIdx);
-    ppi.pi.stateGoal.pose.x = wp.target.x;
-    ppi.pi.stateGoal.pose.y = wp.target.y;
+    const auto& wp = _.waypointNavStatus.waypoints.at(targetWpIdx);
 
+    // waypoint => pose or point:
     if (wp.targetHeading.has_value())
     {
-        // assign heading at target:
-        ppi.pi.stateGoal.pose.phi = wp.targetHeading.value();
+        ppi.pi.stateGoal.state = mrpt::math::TPose2D(
+            wp.target.x, wp.target.y, wp.targetHeading.value());
     }
     else
     {
-        MRPT_TODO("Handle no preferred heading");
+        ppi.pi.stateGoal.state = mrpt::math::TPoint2D(wp.target.x, wp.target.y);
     }
 
     // speed at target:

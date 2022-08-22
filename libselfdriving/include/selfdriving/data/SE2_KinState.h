@@ -24,6 +24,11 @@ struct PoseOrPoint
     PoseOrPoint()  = default;
     ~PoseOrPoint() = default;
 
+    /** Returns a point or a pose depending on the input string having the
+     * format `"[x y]"` or `"[x y phi_degrees]"`, respectively.
+     */
+    static PoseOrPoint FromString(const std::string& s);
+
     PoseOrPoint(const mrpt::math::TPoint2D& p) : data_(p) {}
     PoseOrPoint(const mrpt::math::TPose2D& p) : data_(p) {}
 
@@ -51,6 +56,20 @@ struct SE2_KinState
 
     mrpt::math::TPose2D  pose{0, 0, 0};  //!< global pose (x,y,phi)
     mrpt::math::TTwist2D vel{0, 0, 0};  //!< global velocity (vx,vy,omega)
+
+    std::string asString() const;
+};
+
+struct SE2orR2_KinState
+{
+    SE2orR2_KinState() = default;
+
+    PoseOrPoint          state;  //!< global pose (x,y,phi) or point(x,y)
+    mrpt::math::TTwist2D vel{0, 0, 0};  //!< global velocity (vx,vy,omega)
+
+    /** Returns a SE2_KinState exact equivalent of this object, if state is a
+    pose, or transforms the point into a pose with phi=0 otherwise. */
+    SE2_KinState asSE2KinState() const;
 
     std::string asString() const;
 };

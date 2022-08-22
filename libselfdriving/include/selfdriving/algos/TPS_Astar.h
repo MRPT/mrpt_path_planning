@@ -46,7 +46,7 @@ struct TPS_Astar_Parameters
 };
 
 using astar_heuristic_t = std::function<double(
-    const SE2_KinState& /*from*/, const SE2_KinState& /*goal*/)>;
+    const SE2_KinState& /*from*/, const SE2orR2_KinState& /*goal*/)>;
 
 /**
  * Uses a SE(2) lattice to run an A* algorithm to find a kinematicaly feasible
@@ -76,10 +76,15 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     }
 
     distance_t default_heuristic(
-        const SE2_KinState& from, const SE2_KinState& goal) const;
+        const SE2_KinState& from, const SE2orR2_KinState& goal) const;
+
+    distance_t default_heuristic_SE2(
+        const SE2_KinState& from, const mrpt::math::TPose2D& goal) const;
+    distance_t default_heuristic_R2(
+        const SE2_KinState& from, const mrpt::math::TPoint2D& goal) const;
 
     astar_heuristic_t heuristic = astar_heuristic_t(
-        [this](const SE2_KinState& from, const SE2_KinState& goal) {
+        [this](const SE2_KinState& from, const SE2orR2_KinState& goal) {
             return this->default_heuristic(from, goal);
         });
 
@@ -126,6 +131,19 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         }
         bool operator!=(const NodeCoords& o) const { return !(*this == o); }
 
+        /** Returns true if:
+         *  (1) two cells have heading and all (x,y,phi) are the same; or
+         *  (2) at least one cell has no heading defined, and (x,y) are equal.
+         */
+        bool sameLocation(const NodeCoords& o) const
+        {
+            if (idxX != o.idxX || idxY != o.idxY) return false;
+            if (idxYaw.has_value() && o.idxYaw.has_value())
+                return idxYaw.value() == o.idxYaw.value();
+            // same (x,y), indifferent heading:
+            return true;
+        }
+
         /** Integer cell indices for (x,y) in `grid_` */
         int32_t idxX = 0, idxY = 0;
 
@@ -146,8 +164,10 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         }
     };
 
+#if 0
     using nodes_with_exact_coordinates_t =
         std::unordered_map<NodeCoords, SE2_KinState, NodeCoordsHash>;
+#endif
 
     using nodes_with_desired_speed_t =
         std::unordered_map<NodeCoords, relative_speed_t, NodeCoordsHash>;
@@ -160,6 +180,7 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
                grid_.getSizeX() * n.idxY + n.idxX;
     }
 
+#if 0
     mrpt::math::TPose2D nodeCoordsToPose(
         const NodeCoords&                     n,
         const nodes_with_exact_coordinates_t& specialNodes) const
@@ -171,6 +192,7 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
             grid_.idx2x(n.idxX), grid_.idx2y(n.idxY),
             grid_.idx2phi(n.idxYaw.value())};
     }
+#endif
 
     /** Each of the nodes in the SE(2) lattice grid */
     struct Node
@@ -218,6 +240,10 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     {
         return NodeCoords(
             grid_.x2idx(p.x), grid_.y2idx(p.y), grid_.phi2idx(p.phi));
+    }
+    NodeCoords nodeGridCoords(const mrpt::math::TPoint2D& p) const
+    {
+        return NodeCoords(grid_.x2idx(p.x), grid_.y2idx(p.y));
     }
 
     struct NodePtr
@@ -268,11 +294,10 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
      */
     list_paths_to_neighbors_t find_feasible_paths_to_neighbors(
         const Node& from, const TrajectoriesAndRobotShape& trs,
-        const SE2_KinState&                             goalState,
+        const SE2orR2_KinState&                         goalState,
         const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
-        double                                MAX_XY_OBSTACLES_CLIPPING_DIST,
-        const nodes_with_exact_coordinates_t& nodesWithExactCoords,
-        const nodes_with_desired_speed_t&     nodesWithSpeed);
+        double                            MAX_XY_OBSTACLES_CLIPPING_DIST,
+        const nodes_with_desired_speed_t& nodesWithSpeed);
 
     mrpt::maps::CPointsMap::Ptr cached_local_obstacles(
         const mrpt::math::TPose2D&                      queryPose,

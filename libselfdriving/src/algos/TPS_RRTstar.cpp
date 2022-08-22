@@ -108,7 +108,14 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     ASSERT_(in.ptgs.initialized());
     ASSERT_(in.worldBboxMin != in.worldBboxMax);
     ASSERT_(within_bbox(in.stateStart.pose, in.worldBboxMax, in.worldBboxMin));
-    ASSERT_(within_bbox(in.stateGoal.pose, in.worldBboxMax, in.worldBboxMin));
+
+    ASSERT_(!in.stateGoal.state.isEmpty());
+    if (in.stateGoal.state.isPoint())
+        ASSERT_(within_bbox(
+            in.stateGoal.state.point(), in.worldBboxMax, in.worldBboxMin));
+    else if (in.stateGoal.state.isPose())
+        ASSERT_(within_bbox(
+            in.stateGoal.state.pose(), in.worldBboxMax, in.worldBboxMin));
 
     PlannerOutput po;
     po.originalInput = in;
@@ -140,9 +147,9 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         dummyEdge.cost      = std::numeric_limits<cost_t>::max();
         dummyEdge.parentId  = tree.root;
         dummyEdge.stateFrom = in.stateStart;
-        dummyEdge.stateTo   = in.stateGoal;
+        dummyEdge.stateTo   = in.stateGoal.asSE2KinState();
         tree.insert_node_and_edge(
-            tree.root, goalNodeId, in.stateGoal, dummyEdge);
+            tree.root, goalNodeId, in.stateGoal.asSE2KinState(), dummyEdge);
     }
 
     // Dynamic search radius:
@@ -613,9 +620,10 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_tps(
         if (rng.drawUniform(0.0, 1.0) < params_.drawBiasTowardsGoal)
         {
             // Bias towards goal:
-            const auto relGoalPose = p.pi_.stateGoal.pose - node.pose;
-            int        relTrg_k;
-            double     relTrg_d;
+            const auto relGoalPose =
+                p.pi_.stateGoal.asSE2KinState().pose - node.pose;
+            int    relTrg_k;
+            double relTrg_d;
             if (ptg->inverseMap_WS2TP(
                     relGoalPose.x, relGoalPose.y, relTrg_k, relTrg_d))
             {
@@ -695,10 +703,10 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_tps(
         if (!isCollision)
         {
             // Ok, good sample has been drawn:
-            closest_lie_nodes_list_t closeNodes =
+            closest_lie_nodes_list_t closeNodesLst =
                 find_nearby_nodes(p.tree_, q, p.searchRadius_ * 1.2);
 
-            return {q, std::nullopt, closeNodes};
+            return {q, std::nullopt, closeNodesLst};
         }
     }
     THROW_EXCEPTION("Could not draw collision-free random pose!");

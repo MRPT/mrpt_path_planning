@@ -10,13 +10,20 @@
 
 namespace selfdriving
 {
-
 static inline bool within_bbox(
     const mrpt::math::TPose2D& p, const mrpt::math::TPose2D& max,
     const mrpt::math::TPose2D& min)
 {
     return p.x < max.x && p.y < max.y && p.phi < max.phi + 1e-6 &&  //
            p.x > min.x && p.y > min.y && p.phi > min.phi - 1e-6;
+}
+
+static inline bool within_bbox(
+    const mrpt::math::TPoint2D& p, const mrpt::math::TPose2D& max,
+    const mrpt::math::TPose2D& min)
+{
+    return p.x < max.x && p.y < max.y &&  //
+           p.x > min.x && p.y > min.y;
 }
 
 }  // namespace selfdriving

@@ -74,7 +74,14 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     ASSERT_(in.ptgs.initialized());
     ASSERT_(in.worldBboxMin != in.worldBboxMax);
     ASSERT_(within_bbox(in.stateStart.pose, in.worldBboxMax, in.worldBboxMin));
-    ASSERT_(within_bbox(in.stateGoal.pose, in.worldBboxMax, in.worldBboxMin));
+
+    ASSERT_(!in.stateGoal.state.isEmpty());
+    if (in.stateGoal.state.isPoint())
+        ASSERT_(within_bbox(
+            in.stateGoal.state.point(), in.worldBboxMax, in.worldBboxMin));
+    else if (in.stateGoal.state.isPose())
+        ASSERT_(within_bbox(
+            in.stateGoal.state.pose(), in.worldBboxMax, in.worldBboxMin));
 
     MRPT_LOG_DEBUG_STREAM("Starting planning.");
     MRPT_LOG_DEBUG_STREAM("from " << in.stateStart.asString());
@@ -135,8 +142,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     }
 
     // Define goal node ID:
-    auto& nodeGoal = getOrCreateNodeByPose(in.stateGoal, nextFreeId);
-    po.goalNodeId  = nodeGoal.id.value();
+    auto& nodeGoal =
+        getOrCreateNodeByPose(in.stateGoal.asSE2KinState(), nextFreeId);
+    po.goalNodeId = nodeGoal.id.value();
 
     // Insert a dummy edge between root -> goal, just to allow new node IDs
     // to be generated in sequence:
@@ -145,17 +153,21 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         dummyEdge.cost      = std::numeric_limits<cost_t>::max();
         dummyEdge.parentId  = tree.root;
         dummyEdge.stateFrom = in.stateStart;
-        dummyEdge.stateTo   = in.stateGoal;
+        dummyEdge.stateTo   = in.stateGoal.asSE2KinState();
         tree.insert_node_and_edge(
-            tree.root, nodeGoal.id.value(), in.stateGoal, dummyEdge);
+            tree.root, nodeGoal.id.value(), in.stateGoal.asSE2KinState(),
+            dummyEdge);
     }
 
-    nodes_with_exact_coordinates_t nodesWithExactCoords;
-    nodesWithExactCoords[nodeGridCoords(in.stateGoal.pose)] = in.stateGoal;
+    // Goal cell indices:
+    const auto goalCellIndices =
+        in.stateGoal.state.isPoint()
+            ? nodeGridCoords(in.stateGoal.state.point())
+            : nodeGridCoords(in.stateGoal.state.pose());
 
     // goal speed=0
     nodes_with_desired_speed_t nodesWithDesiredSpeed;
-    nodesWithDesiredSpeed[nodeGridCoords(in.stateGoal.pose)] = 0;
+    nodesWithDesiredSpeed[goalCellIndices] = 0;
 
     unsigned int nIter = 0;
 
@@ -167,9 +179,24 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         Node& current = *openSet.begin()->second.ptr;
 
         // current==goal?
-        if (current.id.value() == nodeGoal.id.value())
+        // we must check the state to be on the same lattice cell to check for a
+        // match of the current SE(2) pose against the goal state, which may be
+        // either a SE(2) pose or a R2 point:
+        if (const auto curNodeGridIdx = nodeGridCoords(current.state.pose);
+            curNodeGridIdx.sameLocation(goalCellIndices))
         {
             // Path found:
+
+            // Redefine the goal cell index to the current one, for the case
+            // of goal not having a desired heading, in which case we formerly
+            // defined a temporary/instrumental goal cell with phi=0, but we now
+            // want the actual, exact final cell index:
+            if (in.stateGoal.state.isPoint())
+            {
+                nodeGoal      = current;
+                po.goalNodeId = nodeGoal.id.value();
+            }
+
             break;
         }
 
@@ -181,7 +208,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         // for each neighbor of current:
         const auto neighbors = find_feasible_paths_to_neighbors(
             current, in.ptgs, in.stateGoal, obstaclePoints, MAX_XY_DIST,
-            nodesWithExactCoords, nodesWithDesiredSpeed);
+            nodesWithDesiredSpeed);
 
 #if 0
         std::cout << " cur : " << nodeGridCoords(current.state.pose).asString()
@@ -233,8 +260,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             if (neighborNode.visited) continue;
 
             // Build a tentative new edge data structure.
-            // It will be used to be inserted in the graph, if accepted, and in
-            // any case, to evaluate the edge cost.
+            // It will be used to be inserted in the graph, if accepted, and
+            // in any case, to evaluate the edge cost.
             MoveEdgeSE2_TPS newEdge;
 
             newEdge.parentId     = current.id.value();
@@ -279,8 +306,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             neighborNode.gScore   = tentative_gScore;
 
             // fScore[neighbor] := tentative_gScore + h(neighbor)
-            neighborNode.fScore = tentative_gScore +
-                                  heuristic(neighborNode.state, nodeGoal.state);
+            neighborNode.fScore =
+                tentative_gScore + heuristic(neighborNode.state, in.stateGoal);
 
             if (!neighborNode.pendingInOpenSet)
             {
@@ -344,39 +371,58 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     MRPT_END
 }
 
-distance_t TPS_Astar::default_heuristic(
-    const SE2_KinState& from, const SE2_KinState& goal) const
+distance_t TPS_Astar::default_heuristic_SE2(
+    const SE2_KinState& from, const mrpt::math::TPose2D& goal) const
 {
     selfdriving::PoseDistanceMetric_Lie<selfdriving::SE2_KinState> metric(
         params_.SE2_metricAngleWeight);
 
     // Distance in SE(2):
-    const double distSE2 = metric.distance(from.pose, goal.pose);
+    const double distSE2 = metric.distance(from.pose, goal);
 
     // Favor heading towards the target, if we are far away:
-    const auto   relPose = goal.pose - from.pose;
+    const auto   relPose = goal - from.pose;
     const double distHeading =
         (relPose.norm() < 0.1)
             ? 0.0
             : std::abs(mrpt::math::angDistance(
-                  std::atan2(relPose.y, relPose.x), goal.pose.phi));
+                  std::atan2(relPose.y, relPose.x), goal.phi));
 
     return distSE2 + params_.heuristic_heading_weight * distHeading;
+}
+
+distance_t TPS_Astar::default_heuristic_R2(
+    const SE2_KinState& from, const mrpt::math::TPoint2D& goal) const
+{
+    return (from.pose.translation() - goal).norm();
+}
+
+distance_t TPS_Astar::default_heuristic(
+    const SE2_KinState& from, const SE2orR2_KinState& goal) const
+{
+    if (goal.state.isPoint())
+        return default_heuristic_R2(from, goal.state.point());
+    else if (goal.state.isPose())
+        return default_heuristic_SE2(from, goal.state.pose());
+    else
+        THROW_EXCEPTION("Goal of unknown type?");
 }
 
 TPS_Astar::list_paths_to_neighbors_t
     TPS_Astar::find_feasible_paths_to_neighbors(
         const TPS_Astar::Node& from, const TrajectoriesAndRobotShape& trs,
-        const SE2_KinState&                             goalState,
+        const SE2orR2_KinState&                         goalState,
         const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
-        double                                MAX_XY_OBSTACLES_CLIPPING_DIST,
-        const nodes_with_exact_coordinates_t& nodesWithExactCoords,
-        const nodes_with_desired_speed_t&     nodesWithSpeed)
+        double                            MAX_XY_OBSTACLES_CLIPPING_DIST,
+        const nodes_with_desired_speed_t& nodesWithSpeed)
 {
-    const auto iFromCoords = nodeGridCoords(from.state.pose);
-    const auto iGoalCoords = nodeGridCoords(goalState.pose);
+    // const auto iFromCoords = nodeGridCoords(from.state.pose);
 
-    const auto relGoal = goalState.pose - from.state.pose;
+    const NodeCoords iGoalCoords = goalState.state.isPoint()
+                                       ? nodeGridCoords(goalState.state.point())
+                                       : nodeGridCoords(goalState.state.pose());
+
+    const auto relGoal = goalState.asSE2KinState().pose - from.state.pose;
 
     const double halfCell = grid_.getResolutionXY() * 0.5;
 
@@ -427,8 +473,8 @@ TPS_Astar::list_paths_to_neighbors_t
             trajIdxsToConsider.insert(trjIdx);
         }
 
-        // make sure of including the trajectory towards the target, if we are
-        // close enough, plus its immediate neighboring paths:
+        // make sure of including the trajectory towards the target, if we
+        // are close enough, plus its immediate neighboring paths:
         {
             int                   relTrg_k       = 0;
             normalized_distance_t relTrg_d       = 0;
@@ -454,7 +500,8 @@ TPS_Astar::list_paths_to_neighbors_t
             }
         }
 
-        // now, check which ones of those paths are not blocked by obstacles:
+        // now, check which ones of those paths are not blocked by
+        // obstacles:
         for (const auto& tpsPt : tpsPointsToConsider)
         {
             totalConsidered++;
