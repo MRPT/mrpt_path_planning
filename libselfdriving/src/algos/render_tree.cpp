@@ -5,6 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <mrpt/opengl/CArrow.h>
+#include <mrpt/opengl/CDisk.h>
 #include <mrpt/opengl/CGridPlaneXY.h>
 #include <mrpt/opengl/COpenGLScene.h>
 #include <mrpt/opengl/CPointCloud.h>
@@ -395,13 +396,28 @@ auto selfdriving::render_tree(
     }
 
     // Target:
+    if (pi.stateGoal.state.isPose())
     {
         auto obj = CornerXYZ(xyzcorners_scale * 1.5);
         obj->setName("GOAL");
         obj->enableShowName();
         obj->setColor_u8(ro.color_goal);
-        obj->setPose(poseHeightT(pi.stateGoal.pose));
+        obj->setPose(poseHeightT(pi.stateGoal.state.pose()));
         scene.insert(obj);
+    }
+    else if (pi.stateGoal.state.isPoint())
+    {
+        auto obj = mrpt::opengl::CDisk::Create();
+        obj->setDiskRadius(xyzcorners_scale * 1.5, xyzcorners_scale * 1.25);
+        obj->setName("GOAL");
+        obj->enableShowName();
+        obj->setColor_u8(ro.color_goal);
+        obj->setLocation(pi.stateGoal.state.point());
+        scene.insert(obj);
+    }
+    else
+    {
+        THROW_EXCEPTION("Unknown type for goal.state");
     }
 
     // Log msg:
