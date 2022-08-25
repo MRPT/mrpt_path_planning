@@ -216,7 +216,7 @@ static void do_plan_path()
     if (arg_costMap.isSet())
     {
         // cost map:
-        const auto costMapParams = selfdriving::CostMapParameters::FromYAML(
+        const auto costMapParams = selfdriving::CostEvaluatorCostMap::Parameters::FromYAML(
             mrpt::containers::yaml::FromFile(arg_costMap.getValue()));
 
         auto costmap =

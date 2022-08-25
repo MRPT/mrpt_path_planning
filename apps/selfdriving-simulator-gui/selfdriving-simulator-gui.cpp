@@ -838,7 +838,7 @@ void on_do_single_path_planning(
 
     planner.costEvaluators_.clear();
 
-    selfdriving::CostMapParameters cmP;
+    selfdriving::CostEvaluatorCostMap::Parameters cmP;
     cmP.resolution                 = 0.05;
     cmP.preferredClearanceDistance = 1.0;  // [m]
 
