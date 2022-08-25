@@ -12,14 +12,19 @@ using namespace selfdriving;
 
 IMPLEMENTS_MRPT_OBJECT(CostEvaluatorCostMap, CostEvaluator, selfdriving)
 
-CostMapParameters CostMapParameters::FromYAML(const mrpt::containers::yaml& c)
+CostEvaluatorCostMap::Parameters::Parameters() = default;
+
+CostEvaluatorCostMap::Parameters::~Parameters() = default;
+
+CostEvaluatorCostMap::Parameters CostEvaluatorCostMap::Parameters::FromYAML(
+    const mrpt::containers::yaml& c)
 {
-    CostMapParameters p;
+    CostEvaluatorCostMap::Parameters p;
     p.load_from_yaml(c);
     return p;
 }
 
-mrpt::containers::yaml CostMapParameters::as_yaml()
+mrpt::containers::yaml CostEvaluatorCostMap::Parameters::as_yaml()
 {
     mrpt::containers::yaml c = mrpt::containers::yaml::Map();
 
@@ -30,7 +35,8 @@ mrpt::containers::yaml CostMapParameters::as_yaml()
 
     return c;
 }
-void CostMapParameters::load_from_yaml(const mrpt::containers::yaml& c)
+void CostEvaluatorCostMap::Parameters::load_from_yaml(
+    const mrpt::containers::yaml& c)
 {
     ASSERT_(c.isMap());
 
@@ -43,7 +49,8 @@ void CostMapParameters::load_from_yaml(const mrpt::containers::yaml& c)
 CostEvaluatorCostMap::~CostEvaluatorCostMap() = default;
 
 CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
-    const mrpt::maps::CPointsMap& obsPts, const CostMapParameters& p)
+    const mrpt::maps::CPointsMap&           obsPts,
+    const CostEvaluatorCostMap::Parameters& p)
 {
     auto cm     = CostEvaluatorCostMap::Create();
     cm->params_ = p;

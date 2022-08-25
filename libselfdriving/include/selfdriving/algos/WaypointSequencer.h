@@ -150,8 +150,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
         TPS_Astar_Parameters plannerParams;
 
-        selfdriving::CostMapParameters globalCostMapParameters;
-        selfdriving::CostMapParameters localCostMapParameters;
+        selfdriving::CostEvaluatorCostMap::Parameters globalCostParameters;
+        selfdriving::CostEvaluatorCostMap::Parameters localCostParameters;
 
         /** @} */
 
