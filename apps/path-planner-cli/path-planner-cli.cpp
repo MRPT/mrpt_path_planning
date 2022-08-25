@@ -16,6 +16,7 @@
 #include <mrpt/system/os.h>  // plugins
 #include <mrpt/version.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
+#include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/TPS_RRTstar.h>
 #include <selfdriving/algos/viz.h>
 
@@ -216,8 +217,9 @@ static void do_plan_path()
     if (arg_costMap.isSet())
     {
         // cost map:
-        const auto costMapParams = selfdriving::CostEvaluatorCostMap::Parameters::FromYAML(
-            mrpt::containers::yaml::FromFile(arg_costMap.getValue()));
+        const auto costMapParams =
+            selfdriving::CostEvaluatorCostMap::Parameters::FromYAML(
+                mrpt::containers::yaml::FromFile(arg_costMap.getValue()));
 
         auto costmap =
             selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
@@ -225,6 +227,19 @@ static void do_plan_path()
 
         planner->costEvaluators_.push_back(costmap);
     }
+
+    MRPT_TODO("WIP: add new cli flag!");
+#if 0
+    {
+        const auto p =
+            selfdriving::CostEvaluatorPreferredWaypoint::Parameters();
+
+        auto costEval = selfdriving::CostEvaluatorPreferredWaypoint::Create();
+        costEval->setPreferredWaypoints({{-1., 8.0}});
+
+        planner->costEvaluators_.push_back(costEval);
+    }
+#endif
 
     // verbosity level:
     planner->setMinLoggingLevel(

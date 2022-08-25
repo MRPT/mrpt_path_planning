@@ -6,6 +6,7 @@
 
 #include <mrpt/core/initializer.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
+#include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/TPS_Astar.h>
 #include <selfdriving/algos/TPS_RRTstar.h>
 #include <selfdriving/interfaces/VehicleMotionInterface.h>
@@ -13,16 +14,18 @@
 MRPT_INITIALIZER(selfdriving_register)
 {
     using namespace selfdriving;
+    using mrpt::rtti::registerClass;
 
     // Costs:
-    mrpt::rtti::registerClass(CLASS_ID(CostEvaluator));
-    mrpt::rtti::registerClass(CLASS_ID(CostEvaluatorCostMap));
+    registerClass(CLASS_ID(CostEvaluator));
+    registerClass(CLASS_ID(CostEvaluatorCostMap));
+    registerClass(CLASS_ID(CostEvaluatorPreferredWaypoint));
 
     // Planners:
-    mrpt::rtti::registerClass(CLASS_ID(Planner));
-    mrpt::rtti::registerClass(CLASS_ID(TPS_Astar));
-    mrpt::rtti::registerClass(CLASS_ID(TPS_RRTstar));
+    registerClass(CLASS_ID(Planner));
+    registerClass(CLASS_ID(TPS_Astar));
+    registerClass(CLASS_ID(TPS_RRTstar));
 
     // Interfaces:
-    mrpt::rtti::registerClass(CLASS_ID(VehicleMotionInterface));
+    registerClass(CLASS_ID(VehicleMotionInterface));
 }

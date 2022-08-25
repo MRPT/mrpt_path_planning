@@ -7,21 +7,21 @@
 #pragma once
 
 #include <mrpt/containers/CDynamicGrid.h>
-#include <mrpt/maps/CPointsMap.h>
+#include <mrpt/maps/CSimplePointsMap.h>
 #include <selfdriving/algos/CostEvaluator.h>
 
 namespace selfdriving
 {
-/** Defines higher costs to paths that pass closer to obstacles.
- *
+/** Defines lower (negative) costs to paths that pass closer to one or more
+ * "preferred waypoints" defined by 2D coordinates (x,y)
  */
-class CostEvaluatorCostMap : public CostEvaluator
+class CostEvaluatorPreferredWaypoint : public CostEvaluator
 {
-    DEFINE_MRPT_OBJECT(CostEvaluatorCostMap, selfdriving)
+    DEFINE_MRPT_OBJECT(CostEvaluatorPreferredWaypoint, selfdriving)
 
    public:
-    CostEvaluatorCostMap() = default;
-    ~CostEvaluatorCostMap();
+    CostEvaluatorPreferredWaypoint() = default;
+    ~CostEvaluatorPreferredWaypoint();
 
     struct Parameters
     {
@@ -30,42 +30,37 @@ class CostEvaluatorCostMap : public CostEvaluator
 
         static Parameters FromYAML(const mrpt::containers::yaml& c);
 
-        double resolution = 0.05;  //!< [m]
+        double waypointInfluenceRadius = 1.5;  //!< [m]
+        double costScale               = 10.0;
 
-        double preferredClearanceDistance = 0.4;  //!< [m]
-        double maxCost                    = 2.0;
-
-        /** If enabled, the cost of a path segment (MoveEdgeSE2_TPS) will be the
-         * average of the set of pointwise evaluations along it.
-         * Otherwise (default) the maximum cost (more conservative) will be kept
-         * instead.
+        /** If enabled (default), the cost of a path segment (MoveEdgeSE2_TPS)
+         * will be the average of the set of pointwise evaluations along it.
+         * Otherwise the maximum (negative) cost will be kept instead.
          */
-        bool useAverageOfPath = false;
+        bool useAverageOfPath = true;
 
         mrpt::containers::yaml as_yaml();
         void                   load_from_yaml(const mrpt::containers::yaml& c);
     };
 
-    static CostEvaluatorCostMap::Ptr FromStaticPointObstacles(
-        const mrpt::maps::CPointsMap& obsPts,
-        const Parameters&             p = Parameters());
+    /** Method parameters. Can be freely modified at any time after
+     * construction. */
+    Parameters params_;
+
+    /** The preferred waypoints must be defined by means of this method. */
+    void setPreferredWaypoints(const std::vector<mrpt::math::TPoint2D>& pts);
 
     /** Evaluate cost of move-tree edge */
     double operator()(const MoveEdgeSE2_TPS& edge) const override;
 
     mrpt::opengl::CSetOfObjects::Ptr get_visualization() const override;
 
-    using cost_gridmap_t = mrpt::containers::CDynamicGrid<double>;
-
-    const cost_gridmap_t cost_gridmap() const { return costmap_; }
-
     const Parameters& params() const { return params_; }
 
    private:
-    cost_gridmap_t costmap_;
-    Parameters     params_;
-
     double eval_single_pose(const mrpt::math::TPose2D& p) const;
+
+    mrpt::maps::CSimplePointsMap waypoints_;
 };
 
 }  // namespace selfdriving
