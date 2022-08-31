@@ -506,8 +506,8 @@ void prepare_selfdriving_window(
 
     // prepare custom gl objects:
     {
-        auto lckgui = mrpt::lockHelper(world->m_gui_msg_lines_mtx);
-        world->m_gui_user_objects = mrpt::opengl::CSetOfObjects::Create();
+        auto lckgui = mrpt::lockHelper(world->m_gui_user_objects_mtx);
+        world->m_gui_user_objects_viz = mrpt::opengl::CSetOfObjects::Create();
     }
 
     // -----------------------------------------
@@ -532,8 +532,8 @@ void prepare_selfdriving_window(
         std::cout << "Waypoints:\n" << sd.waypts.getAsText() << std::endl;
 
         {
-            auto lckgui = mrpt::lockHelper(world->m_gui_msg_lines_mtx);
-            world->m_gui_user_objects->insert(glWaypoints);
+            auto lckgui = mrpt::lockHelper(world->m_gui_user_objects_mtx);
+            world->m_gui_user_objects_viz->insert(glWaypoints);
         }
 
         lbNavStatus =
@@ -585,8 +585,8 @@ void prepare_selfdriving_window(
         glTargetSign->setVisibility(false);
 
         {
-            auto lckgui = mrpt::lockHelper(world->m_gui_msg_lines_mtx);
-            world->m_gui_user_objects->insert(glTargetSign);
+            auto lckgui = mrpt::lockHelper(world->m_gui_user_objects_mtx);
+            world->m_gui_user_objects_viz->insert(glTargetSign);
         }
 
         nanogui::Button* pickBtn = nullptr;
