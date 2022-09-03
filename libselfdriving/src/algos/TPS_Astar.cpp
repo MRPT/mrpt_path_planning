@@ -31,6 +31,7 @@ mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
     MCP_SAVE(c, heuristic_heading_weight);
     MCP_SAVE(c, max_ptg_trajectories_to_explore);
     MCP_SAVE(c, ptg_norm_distance_sampling_granularity);
+    MCP_SAVE(c, max_ptg_speeds_to_explore);
     MCP_SAVE_DEG(c, grid_resolution_yaw);
 
     return c;
@@ -46,6 +47,7 @@ void TPS_Astar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_REQ(c, SE2_metricAngleWeight);
     MCP_LOAD_REQ(c, max_ptg_trajectories_to_explore);
     MCP_LOAD_REQ(c, ptg_norm_distance_sampling_granularity);
+    MCP_LOAD_REQ(c, max_ptg_speeds_to_explore);
 
     MCP_LOAD_OPT(c, pathInterpolatedSegments);
     MCP_LOAD_OPT(c, saveDebugVisualizationDecimation);
@@ -442,6 +444,7 @@ TPS_Astar::list_paths_to_neighbors_t
         ASSERT_(ptg->isInitialized());
 
         // Update PTG dynamics:
+        normalized_speed_t relTrg_speed = 1.0;
         {
             ptg_t::TNavDynamicState ds;
             (ds.curVelLocal = from.state.vel).rotate(-from.state.pose.phi);
@@ -458,6 +461,7 @@ TPS_Astar::list_paths_to_neighbors_t
                 ds.targetRelSpeed = 1.0;
             }
 
+            relTrg_speed = ds.targetRelSpeed;
             ptg->updateNavDynamicState(ds);
         }
 
@@ -465,6 +469,7 @@ TPS_Astar::list_paths_to_neighbors_t
         std::set<trajectory_index_t> trajIdxsToConsider;
         std::vector<TPS_point>       tpsPointsToConsider;
 
+        ASSERT_(params_.max_ptg_trajectories_to_explore >= 2);
         for (size_t i = 0; i < params_.max_ptg_trajectories_to_explore; i++)
         {
             trajectory_index_t trjIdx = mrpt::round(
@@ -483,20 +488,39 @@ TPS_Astar::list_paths_to_neighbors_t
                     relGoal.x, relGoal.y, relTrg_k, relTrg_d, queryTolerance))
             {
                 // Add direct path to target:
-                tpsPointsToConsider.emplace_back(relTrg_k, relTrg_d);
+                tpsPointsToConsider.emplace_back(
+                    relTrg_k, relTrg_d, relTrg_speed);
                 // and also, in general, the path:
                 trajIdxsToConsider.insert(relTrg_k);
             }
         }
 
         // Build possible distances for each path:
-        for (const auto trjIdx : trajIdxsToConsider)
+        std::vector<relative_speed_t> speedsToConsider;
         {
-            for (normalized_distance_t d =
-                     params_.ptg_norm_distance_sampling_granularity;
-                 d < 0.999; d += params_.ptg_norm_distance_sampling_granularity)
-            {  //
-                tpsPointsToConsider.emplace_back(trjIdx, d);
+            // N=1 ==>  [1.0]
+            // N=2 ==>  [0.5, 1.0]
+            // N=3 ==>  [0.33, 0.66, 1.0]
+            // ....
+
+            ASSERT_(params_.max_ptg_speeds_to_explore >= 1);
+            relative_speed_t speedStep =
+                1.0 / params_.max_ptg_speeds_to_explore;
+            for (relative_speed_t s = speedStep; s < 1.001; s += speedStep)
+                speedsToConsider.push_back(s);
+        }
+
+        for (const auto speed : speedsToConsider)
+        {
+            for (const auto trjIdx : trajIdxsToConsider)
+            {
+                for (normalized_distance_t d =
+                         params_.ptg_norm_distance_sampling_granularity;
+                     d < 0.999;
+                     d += params_.ptg_norm_distance_sampling_granularity)
+                {  //
+                    tpsPointsToConsider.emplace_back(trjIdx, d, speed);
+                }
             }
         }
 
@@ -505,6 +529,14 @@ TPS_Astar::list_paths_to_neighbors_t
         for (const auto& tpsPt : tpsPointsToConsider)
         {
             totalConsidered++;
+
+            // Update target pose speed in PTG dynamics:
+            if (auto dyn = ptg->getCurrentNavDynamicState();
+                dyn.targetRelSpeed != tpsPt.speed)
+            {
+                dyn.targetRelSpeed = tpsPt.speed;
+                ptg->updateNavDynamicState(dyn);
+            }
 
             // Reconstruct the actual global pose:
             distance_t dist = tpsPt.d * ptg->getRefDistance();

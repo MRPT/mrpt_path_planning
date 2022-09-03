@@ -715,6 +715,7 @@ void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
     if (auto glObj = config_.vizSceneToModify->getByName(planViz->getName());
         glObj)
     {
+        MRPT_LOG_DEBUG("Overwriting existing CSetOfObjects for plan viz.");
         auto glContainer =
             std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
         ASSERT_(glContainer);
@@ -723,6 +724,7 @@ void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
     else
     {
         config_.vizSceneToModify->insert(planViz);
+        MRPT_LOG_DEBUG("Inserting new CSetOfObjects for plan viz.");
     }
 
     // unlock:

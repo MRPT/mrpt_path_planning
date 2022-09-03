@@ -33,6 +33,7 @@ struct TPS_Astar_Parameters
 
     uint32_t max_ptg_trajectories_to_explore        = 20;
     double   ptg_norm_distance_sampling_granularity = 0.2;
+    uint32_t max_ptg_speeds_to_explore              = 3;
 
     /** Required to smooth interpolation of rendered paths, evaluation of
      * path cost, etc. */

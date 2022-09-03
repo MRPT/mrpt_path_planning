@@ -455,7 +455,13 @@ void prepare_selfdriving_window(
     sd.navigator.config_.on_viz_post_modify = [&gui]() {
         gui->background_scene_mtx.unlock();
     };
-    sd.navigator.config_.vizSceneToModify = gui->background_scene;
+
+    // prepare custom gl objects for selfdriving lib:
+    {
+        auto lckgui = mrpt::lockHelper(world->m_gui_user_objects_mtx);
+        world->m_gui_user_objects_viz = mrpt::opengl::CSetOfObjects::Create();
+        sd.navigator.config_.vizSceneToModify = world->m_gui_user_objects_viz;
+    }
 
     ASSERT_(gui);
 #if MRPT_VERSION >= 0x211
@@ -502,12 +508,6 @@ void prepare_selfdriving_window(
 
         wr->setFixedSize({pnWidth - 7, pnHeight});
         wrappers.emplace_back(wr);
-    }
-
-    // prepare custom gl objects:
-    {
-        auto lckgui = mrpt::lockHelper(world->m_gui_user_objects_mtx);
-        world->m_gui_user_objects_viz = mrpt::opengl::CSetOfObjects::Create();
     }
 
     // -----------------------------------------
