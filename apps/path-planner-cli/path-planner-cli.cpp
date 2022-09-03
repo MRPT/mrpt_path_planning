@@ -93,7 +93,7 @@ static TCLAP::ValueArg<std::string> arg_plugins(
     "", "mylib.so", cmd);
 
 static TCLAP::ValueArg<std::string> arg_costMap(
-    "", "costmap",
+    "", "costmap-obstacles",
     "Creates a costmap from obstacle point clouds with the given parameters "
     "from a YAML file.",
     false, "costmap.yaml", "costmap.yaml", cmd);

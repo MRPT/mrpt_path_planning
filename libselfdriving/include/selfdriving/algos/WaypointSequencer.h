@@ -158,9 +158,9 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         /**  \name Visualization callbacks and methods
          *   @{ */
 
-        std::function<void(void)>                   on_viz_pre_modify;
-        std::shared_ptr<mrpt::opengl::COpenGLScene> vizSceneToModify;
-        std::function<void(void)>                   on_viz_post_modify;
+        std::function<void(void)>                    on_viz_pre_modify;
+        std::shared_ptr<mrpt::opengl::CSetOfObjects> vizSceneToModify;
+        std::function<void(void)>                    on_viz_post_modify;
 
         /** @} */
     };

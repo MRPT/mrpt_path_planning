@@ -41,33 +41,34 @@ target_link_libraries(YOUR_TARGET selfdriving::selfdriving)
 Command-line app to test the A* planner:
 
 ```
-bin/path-planner-cli -g "[4 2.5 45]" -s "[0.5 0 0]" \
+build-Release/bin/path-planner-cli -g "[4 2.5 45]" -s "[0.5 0 0]" \
     --planner "selfdriving::TPS_Astar"  \
-    -c ../share/ptgs_holonomic_robot.ini  \
-    --obstacles ../share/obstacles_01.txt  \
-    --planner-parameters ../share/mvsim-demo-astar-planner-params.yaml  \
-    --costmap
+    -c share/ptgs_holonomic_robot.ini  \
+    --obstacles share/obstacles_01.txt  \
+    --planner-parameters share/mvsim-demo-astar-planner-params.yaml  \
+    --costmap-obstacles share/costmap-obstacles.yaml
 ```
 
 ```
-bin/path-planner-cli --write-planner-parameters tps-rrtstar.yaml
-bin/path-planner-cli -g "[4 2.5 45]" -s "[0.5 0 0]" \
-  -p ../share/ptgs_holonomic_robot.ini \
-  --obstacles ../share/obstacles_01.txt \
+build-Release/bin/path-planner-cli --write-planner-parameters tps-rrtstar.yaml
+# Edit tps-rrtstar.yaml as desired
+build-Release/bin/path-planner-cli \
+  -g "[4 2.5 45]" -s "[0.5 0 0]" \
+  -p share/ptgs_holonomic_robot.ini \
+  --obstacles share/obstacles_01.txt \
   --planner-parameters tps-rrtstar.yaml \
   --max-iterations 1000 \
-  --costmap \
+  --costmap-obstacles share/costmap-obstacles.yaml \
   --random-seed 3
-# Edit tps-rrtstar.yaml as desired and re-run
 ```
 
 GUI with live navigation simulator:
 
 ```
-bin/selfdriving-simulator-gui \
-  --waypoints ../share/mvsim-demo-waypoints01.yaml \
-  -s ../share/mvsim-demo.xml \
-  -p ../share/ptgs_holonomic_robot.ini \
-  --planner-parameters ../share/mvsim-demo-astar-planner-params.yaml \
+build-Release/bin/selfdriving-simulator-gui \
+  --waypoints share/mvsim-demo-waypoints01.yaml \
+  -s share/mvsim-demo.xml \
+  -p share/ptgs_holonomic_robot.ini \
+  --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
   -v DEBUG
 ```
