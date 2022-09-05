@@ -10,6 +10,7 @@
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/WaypointSequencer.h>
 #include <selfdriving/algos/render_tree.h>
+#include <selfdriving/algos/viz.h>
 
 using namespace selfdriving;
 
@@ -671,6 +672,8 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
 
 void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
 {
+    ASSERT_(config_.vizSceneToModify);
+
     // Visualize the motion tree:
     // ----------------------------------
     RenderOptions ro;
@@ -691,6 +694,7 @@ void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
     if (!ppo.costEvaluators.empty())
     {
         auto glCostMaps = mrpt::opengl::CSetOfObjects::Create();
+        glCostMaps->setName("glCostMaps");
 
         float zOffset = 0.01f;  // to help visualize several costmaps at once
 
@@ -715,7 +719,6 @@ void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
     if (auto glObj = config_.vizSceneToModify->getByName(planViz->getName());
         glObj)
     {
-        MRPT_LOG_DEBUG("Overwriting existing CSetOfObjects for plan viz.");
         auto glContainer =
             std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
         ASSERT_(glContainer);
@@ -724,7 +727,6 @@ void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
     else
     {
         config_.vizSceneToModify->insert(planViz);
-        MRPT_LOG_DEBUG("Inserting new CSetOfObjects for plan viz.");
     }
 
     // unlock:

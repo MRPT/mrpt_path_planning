@@ -24,7 +24,8 @@ auto selfdriving::render_tree(
     using mrpt::opengl::stock_objects::CornerXYZ;
     using mrpt::opengl::stock_objects::CornerXYZSimple;
 
-    auto  ret   = mrpt::opengl::CSetOfObjects::Create();
+    auto ret = mrpt::opengl::CSetOfObjects::Create();
+    ret->setName("render_tree");
     auto& scene = *ret;
 
     const auto poseHeight = [&ro](const mrpt::poses::CPose3D& p) {

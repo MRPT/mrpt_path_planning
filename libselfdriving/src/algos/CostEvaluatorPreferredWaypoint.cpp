@@ -128,6 +128,7 @@ mrpt::opengl::CSetOfObjects::Ptr
     CostEvaluatorPreferredWaypoint::get_visualization() const
 {
     auto glObjs = mrpt::opengl::CSetOfObjects::Create();
+    glObjs->setName("CostEvaluatorPreferredWaypoint");
 
     for (size_t i = 0; i < waypoints_.size(); i++)
     {

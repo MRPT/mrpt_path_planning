@@ -25,11 +25,8 @@ class CostEvaluator : public mrpt::rtti::CObject
     /** Evaluate cost of move-tree edge */
     virtual double operator()(const MoveEdgeSE2_TPS& edge) const = 0;
 
-    virtual mrpt::opengl::CSetOfObjects::Ptr get_visualization() const
-    {
-        // Default: empty viz
-        return mrpt::opengl::CSetOfObjects::Create();
-    }
+    // Default: empty viz
+    virtual mrpt::opengl::CSetOfObjects::Ptr get_visualization() const;
 };
 
 }  // namespace selfdriving
