@@ -11,3 +11,11 @@ using namespace selfdriving;
 IMPLEMENTS_VIRTUAL_MRPT_OBJECT(CostEvaluator, mrpt::rtti::CObject, selfdriving)
 
 CostEvaluator::~CostEvaluator() = default;
+
+mrpt::opengl::CSetOfObjects::Ptr CostEvaluator::get_visualization() const
+{
+    // Default: empty viz
+    auto glObj = mrpt::opengl::CSetOfObjects::Create();
+    glObj->setName("CostEvaluator.default");
+    return glObj;
+}

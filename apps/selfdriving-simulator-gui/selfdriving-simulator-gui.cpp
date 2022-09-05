@@ -446,13 +446,17 @@ void prepare_selfdriving_window(
     const mrpt::gui::CDisplayWindowGUI::Ptr& gui,
     std::shared_ptr<mvsim::World>            world)
 {
+    ASSERT_(gui);
+
     auto lck = mrpt::lockHelper(gui->background_scene_mtx);
 
-    // navigator 3D visualization interface :
-    sd.navigator.config_.on_viz_pre_modify = [&gui]() {
+    // navigator 3D visualization interface:
+    sd.navigator.config_.on_viz_pre_modify = [world, &gui]() {
+        world->m_gui_user_objects_mtx.lock();
         gui->background_scene_mtx.lock();
     };
-    sd.navigator.config_.on_viz_post_modify = [&gui]() {
+    sd.navigator.config_.on_viz_post_modify = [world, &gui]() {
+        world->m_gui_user_objects_mtx.unlock();
         gui->background_scene_mtx.unlock();
     };
 
@@ -460,10 +464,11 @@ void prepare_selfdriving_window(
     {
         auto lckgui = mrpt::lockHelper(world->m_gui_user_objects_mtx);
         world->m_gui_user_objects_viz = mrpt::opengl::CSetOfObjects::Create();
+        world->m_gui_user_objects_viz->setName("gui_user_objects_viz");
+
         sd.navigator.config_.vizSceneToModify = world->m_gui_user_objects_viz;
     }
 
-    ASSERT_(gui);
 #if MRPT_VERSION >= 0x211
     nanogui::Window* w = gui->createManagedSubWindow("SelfDriving");
 #else
@@ -525,6 +530,7 @@ void prepare_selfdriving_window(
         // custom 3D objects
         auto glWaypoints = mrpt::opengl::CSetOfObjects::Create();
         glWaypoints->setLocation(0, 0, 0.01);
+        glWaypoints->setName("glWaypoints");
         selfdriving::WaypointsRenderingParams rp;
         // rp.xx = x;
 

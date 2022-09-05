@@ -159,7 +159,8 @@ mrpt::opengl::CSetOfObjects::Ptr CostEvaluatorCostMap::get_visualization() const
     const uint8_t COST_TRANSPARENCY_ALPHA = 0x80;
     const double  MIN_COST_TO_TRANSPARENT = 0.02;
 
-    auto glObjs  = mrpt::opengl::CSetOfObjects::Create();
+    auto glObjs = mrpt::opengl::CSetOfObjects::Create();
+    glObjs->setName("CostEvaluatorCostMap");
     auto glPlane = mrpt::opengl::CTexturedPlane::Create();
     glObjs->insert(glPlane);
 
@@ -171,6 +172,12 @@ mrpt::opengl::CSetOfObjects::Ptr CostEvaluatorCostMap::get_visualization() const
 
     mrpt::img::CImage gridRGB(nCols, nRows, mrpt::img::CH_RGB);
     mrpt::img::CImage gridALPHA(nCols, nRows, mrpt::img::CH_GRAY);
+
+    gridRGB.filledRectangle(
+        0, 0, nCols - 1, nRows - 1, mrpt::img::TColor::black());
+    gridALPHA.filledRectangle(
+        0, 0, nCols - 1, nRows - 1, mrpt::img::TColor::black());
+
     for (size_t icy = 0; icy < nRows; icy++)
     {
         for (size_t icx = 0; icx < nCols; icx++)

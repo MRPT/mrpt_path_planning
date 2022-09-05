@@ -30,8 +30,7 @@ class CostEvaluatorCostMap : public CostEvaluator
 
         static Parameters FromYAML(const mrpt::containers::yaml& c);
 
-        double resolution = 0.05;  //!< [m]
-
+        double resolution                 = 0.05;  //!< [m]
         double preferredClearanceDistance = 0.4;  //!< [m]
         double maxCost                    = 2.0;
 
