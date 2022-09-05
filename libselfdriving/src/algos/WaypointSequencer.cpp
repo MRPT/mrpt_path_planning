@@ -8,6 +8,7 @@
 #include <mrpt/math/TSegment2D.h>
 #include <mrpt/opengl/COpenGLScene.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
+#include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/WaypointSequencer.h>
 #include <selfdriving/algos/render_tree.h>
 #include <selfdriving/algos/viz.h>
@@ -444,11 +445,31 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     // ~~~~~~~~~~~~~~
     // Add cost maps
     // ~~~~~~~~~~~~~~
+    // TODO: Make static list instead of recreating each time?
+    planner.costEvaluators_.clear();
+
+    // cost map: prefer to go thru waypoints
+    // =========================================
+    {
+        std::vector<mrpt::math::TPoint2D> lstPts;
+        for (const auto& wp : innerState_.waypointNavStatus.waypoints)
+        {
+            if (wp.reached) continue;
+            lstPts.emplace_back(wp.target);
+        }
+
+        if (!lstPts.empty())
+        {
+            auto cmWps = selfdriving::CostEvaluatorPreferredWaypoint::Create();
+            cmWps->params_ = config_.preferWaypointsParameters;
+            cmWps->setPreferredWaypoints(lstPts);
+
+            planner.costEvaluators_.push_back(cmWps);
+        }
+    }
 
     // cost maps: from obstacles
     // ============================
-    // TODO: Make static list instead of recreating each time?
-    planner.costEvaluators_.clear();
 
     if (config_.globalMapObstacleSource)
     {
@@ -471,10 +492,6 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
                     *obs, config_.localCostParameters));
         }
     }
-
-    // cost map #2: prefer to go thru waypoints
-    // =============
-    MRPT_TODO("Add this cost map");
 
     // ~~~~~~~~~~~~~~~~~~
     // Obstacles sources
@@ -505,7 +522,8 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     ret.po = planner.plan(ppi.pi);
     // ================================================
 
-    // Keep a copy of the costs, for reference of the caller, visualization,...
+    // Keep a copy of the costs, for reference of the caller,
+    // visualization,...
     ret.costEvaluators = planner.costEvaluators_;
 
     return ret;
@@ -603,7 +621,8 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
         const auto& nNext = *(++_.activePlanPath.begin());
         std::optional<MotionPrimitivesTreeSE2::node_t> nAfterNext;
 
-        // If we have at least two actions, use the two actions at a time API:
+        // If we have at least two actions, use the two actions at a time
+        // API:
         MRPT_TODO("check if this robot supports pended actions");
 
         if (_.activePlanPath.size() >= 3)

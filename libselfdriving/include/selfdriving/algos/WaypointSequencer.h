@@ -12,6 +12,7 @@
 #include <mrpt/system/CTimeLogger.h>
 #include <mrpt/typemeta/TEnumType.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
+#include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/TPS_Astar.h>
 #include <selfdriving/data/PlannerInput.h>
 #include <selfdriving/data/PlannerOutput.h>
@@ -152,6 +153,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
         selfdriving::CostEvaluatorCostMap::Parameters globalCostParameters;
         selfdriving::CostEvaluatorCostMap::Parameters localCostParameters;
+        selfdriving::CostEvaluatorPreferredWaypoint::Parameters
+            preferWaypointsParameters;
 
         /** @} */
 
