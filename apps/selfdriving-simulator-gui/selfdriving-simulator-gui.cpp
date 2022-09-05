@@ -63,6 +63,11 @@ static TCLAP::ValueArg<std::string> arg_planner_yaml_file(
     "", "planner-parameters", "Input .yaml file with planner parameters", false,
     "", "tps-astar.yaml", cmd);
 
+static TCLAP::ValueArg<std::string> arg_cost_prefer_waypoints_yaml_file(
+    "", "prefer-waypoints-parameters",
+    "Input .yaml file with costmap parameters", false, "",
+    "cost-prefer-waypoints.yaml", cmd);
+
 static TCLAP::ValueArg<std::string> arg_waypoints_yaml_file(
     "", "waypoints", "Input .yaml file with waypoints", false, "",
     "waypoints.yaml", cmd);
@@ -258,6 +263,14 @@ void prepare_selfdriving(mvsim::World& world)
             selfdriving::TPS_Astar_Parameters::FromYAML(
                 mrpt::containers::yaml::FromFile(
                     arg_planner_yaml_file.getValue()));
+    }
+
+    if (arg_cost_prefer_waypoints_yaml_file.isSet())
+    {
+        sd.navigator.config_.preferWaypointsParameters =
+            selfdriving::CostEvaluatorPreferredWaypoint::Parameters::FromYAML(
+                mrpt::containers::yaml::FromFile(
+                    arg_cost_prefer_waypoints_yaml_file.getValue()));
     }
 
     // all mandaroty fields filled in now:
