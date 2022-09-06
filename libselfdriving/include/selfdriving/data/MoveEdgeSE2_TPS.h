@@ -40,18 +40,22 @@ struct MoveEdgeSE2_TPS
      * motion segment */
     double ptgDist = std::numeric_limits<double>::max();
 
-    double targetRelSpeed = 1.0;
+    normalized_speed_t targetRelSpeed = 1.0;
 
-    double ptgSpeedScale     = 1.0;
-    double estimatedExecTime = .0;
+    duration_seconds_t estimatedExecTime = .0;
 
     ptg_t::TNavDynamicState getPTGDynState() const;
 
     /** Subsampled path, in coordinates relative to "stateFrom", stored here
-     *  mainly for rendering purposes, and to avoid having to re-seed the PTG
-     *  with the initial velocity state while visualization.
+     *  for rendering purposes, to avoid having to re-seed the PTG
+     *  with the initial velocity state while visualization,
+     *  and to estimate the pose at each time.
+     *  Minimum length: 2=start and final pose.
      */
-    std::optional<std::vector<mrpt::math::TPose2D>> interpolatedPath;
+    std::map<duration_seconds_t, mrpt::math::TPose2D> interpolatedPath;
+
+    /** For debugging purposes. */
+    std::string asString() const;
 };
 
 }  // namespace selfdriving

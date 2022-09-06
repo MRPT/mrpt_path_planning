@@ -129,18 +129,9 @@ double CostEvaluatorCostMap::operator()(const MoveEdgeSE2_TPS& edge) const
     };
 
     // interpolated vs goal-end segments:
-    if (edge.interpolatedPath.has_value())
-    {
-        ASSERT_(!edge.interpolatedPath->empty());
-
-        for (const auto& p : *edge.interpolatedPath)
-            lambdaAddPose(edge.stateFrom.pose + p);
-    }
-    else
-    {
-        lambdaAddPose(edge.stateFrom.pose);
-        lambdaAddPose(edge.stateTo.pose);
-    }
+    ASSERT_(!edge.interpolatedPath.empty());
+    for (const auto& kv : edge.interpolatedPath)
+        lambdaAddPose(edge.stateFrom.pose + kv.second);
 
     ASSERT_(n);
 

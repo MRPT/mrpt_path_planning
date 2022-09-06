@@ -6,6 +6,8 @@
 
 #include <selfdriving/data/MoveEdgeSE2_TPS.h>
 
+#include <sstream>
+
 using namespace selfdriving;
 
 ptg_t::TNavDynamicState MoveEdgeSE2_TPS::getPTGDynState() const
@@ -20,4 +22,41 @@ ptg_t::TNavDynamicState MoveEdgeSE2_TPS::getPTGDynState() const
     newDyn.targetRelSpeed = targetRelSpeed;
 
     return newDyn;
+}
+
+std::string MoveEdgeSE2_TPS::asString() const
+{
+    using namespace std::string_literals;
+
+    std::stringstream ss;
+    ss << "MoveEdgeSE2_TPS:\n"
+          " - parentId: "
+       << parentId
+       << "\n"
+          " - from: "
+       << stateFrom.asString()
+       << "\n"
+          " - to: "
+       << stateTo.asString()
+       << "\n"
+          " - {cost: "
+       << cost
+       << ", "
+          "ptgIndex: "
+       << static_cast<int>(ptgIndex)
+       << ", "
+          "ptgPathIndex: "
+       << ptgPathIndex
+       << ", "
+          "ptgDist: "
+       << ptgDist
+       << ", "
+          "targetRelSpeed: "
+       << targetRelSpeed
+       << ", "
+          "estimatedExecTime: "
+       << estimatedExecTime << "}\n"
+       << "- interpolatedPath size: " << interpolatedPath.size() << "\n";
+
+    return ss.str();
 }

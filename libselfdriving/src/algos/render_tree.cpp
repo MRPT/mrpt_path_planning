@@ -289,26 +289,18 @@ auto selfdriving::render_tree(
             auto obj = mrpt::opengl::CSetOfLines::Create();
             obj->setPose(poseHeight(mrpt::poses::CPose3D(poseParent)));
 
-            // Avoid having to update PTG's dynamic state and calling to
-            // ptg->renderPathAsSimpleLine():
-            if (etp->interpolatedPath)
-            {
-                // dummy, just to allow the easy use of "strip" below:
-                obj->appendLine(0, 0, 0, 0, 0, 0);
-                const auto& ip = etp->interpolatedPath.value();
-                for (const auto& relPose : ip)
-                {
-                    obj->appendLineStrip(
-                        relPose.x, relPose.y, ro.phi2z_scale * relPose.phi);
-                }
-            }
-            else
-            {
-                // gross approximation with one single segment:
-                const auto pIncr = etp->stateTo.pose - etp->stateFrom.pose;
+            // Use stored interpolated path to avoid having to update PTG's
+            // dynamic state and calling to ptg->renderPathAsSimpleLine():
+            ASSERT_(!etp->interpolatedPath.empty());
 
-                obj->appendLine(
-                    0, 0, 0, pIncr.x, pIncr.y, ro.phi2z_scale * pIncr.phi);
+            // dummy, just to allow the easy use of "strip" below:
+            obj->appendLine(0, 0, 0, 0, 0, 0);
+            const auto& ip = etp->interpolatedPath;
+            for (const auto& timeRelPose : ip)
+            {
+                const auto& relPose = timeRelPose.second;
+                obj->appendLineStrip(
+                    relPose.x, relPose.y, ro.phi2z_scale * relPose.phi);
             }
 
             if (isLastNode && ro.highlight_last_added_edge)
@@ -339,7 +331,7 @@ auto selfdriving::render_tree(
                 obj->enableShowName();
             }
 
-            if (obj->getLineWidth() > 0) { scene.insert(obj); }
+            if (obj->getLineWidth() > 0) scene.insert(obj);
         }
     }
 

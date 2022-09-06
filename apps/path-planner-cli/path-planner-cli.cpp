@@ -23,84 +23,87 @@
 #include <fstream>
 #include <iostream>
 
-static TCLAP::CmdLine cmd("path-planner-cli");
+TCLAP::CmdLine cmd("path-planner-cli");
 
-static TCLAP::ValueArg<std::string> arg_obs_file(
+TCLAP::ValueArg<std::string> arg_obs_file(
     "o", "obstacles",
     "Input obstacles: either (1) a .txt file with obstacle points (one 'x y' "
     "pair per line), or (2) a .gridmap file, or (3) a ROS MAP YAML file, or a "
     "(4) png file with an gray-scale occupancy grid (*.png, *.bmp)",
     true, "", "obs.txt", cmd);
 
-static TCLAP::ValueArg<std::string> argPlanner(
+TCLAP::ValueArg<std::string> argPlanner(
     "p", "planner", "Planner C++ class name to use", false,
     "selfdriving::TPS_Astar", "selfdriving::TPS_Astar", cmd);
 
-static TCLAP::ValueArg<std::string> argVerbosity(
+TCLAP::ValueArg<std::string> argVerbosity(
     "v", "verbose", "Verbosity level for path planner", false, "INFO",
     "ERROR|WARN|INFO|DEBUG", cmd);
 
-static TCLAP::ValueArg<float> argObstaclesGridResolution(
+TCLAP::ValueArg<float> argObstaclesGridResolution(
     "", "obstacles-gridimage-resolution",
     "Only if --obstacles points to an image file, this sets the length of each "
     "pixel in meters.",
     false, 0.05, "0.05", cmd);
 
-static TCLAP::ValueArg<std::string> arg_ptgs_file(
+TCLAP::ValueArg<std::string> arg_ptgs_file(
     "c", "ptg-config", "Input .ini file with PTG definitions.", true, "",
     "ptgs.ini", cmd);
 
-static TCLAP::ValueArg<std::string> argPlanner_yaml_file(
+TCLAP::ValueArg<std::string> argPlanner_yaml_file(
     "", "planner-parameters", "Input .yaml file with planner parameters", false,
     "", "tps-rrtstar.yaml", cmd);
 
-static TCLAP::ValueArg<std::string> argPlanner_yaml_output_file(
+TCLAP::ValueArg<std::string> argPlanner_yaml_output_file(
     "", "write-planner-parameters",
     "If defined, it will save default planner params to a .yaml file and exit.",
     false, "", "tps-rrtstar.yaml", cmd);
 
-static TCLAP::ValueArg<std::string> arg_config_file_section(
+TCLAP::ValueArg<std::string> arg_config_file_section(
     "", "config-section",
     "If loading from an INI file, the name of the section to load", false,
     "SelfDriving", "SelfDriving", cmd);
 
-static TCLAP::ValueArg<std::string> arg_start_pose(
+TCLAP::ValueArg<std::string> arg_start_pose(
     "s", "start-pose", "Start 2D pose", true, "", "\"[x y phi_deg]\"", cmd);
 
-static TCLAP::ValueArg<std::string> arg_start_vel(
+TCLAP::ValueArg<std::string> arg_start_vel(
     "", "start-vel", "Start 2D velocity", false, "[0 0 0]",
     "\"[vx vy omega_deg]\"", cmd);
 
-static TCLAP::ValueArg<std::string> arg_goal_pose(
+TCLAP::ValueArg<std::string> arg_goal_pose(
     "g", "goal-pose", "Goal 2D pose", true, "[0 0 0]", "\"[x y phi_deg]\"",
     cmd);
 
-static TCLAP::ValueArg<double> argBBoxMargin(
+TCLAP::ValueArg<double> argBBoxMargin(
     "", "bbox-margin", "Margin to add to the start-goal bbox poses", false, 1.0,
     "A distance [meters]", cmd);
 
-static TCLAP::ValueArg<std::string> arg_goal_vel(
+TCLAP::ValueArg<std::string> arg_goal_vel(
     "", "goal-vel", "Goal 2D velocity", false, "", "\"[vx vy omega_deg]\"",
     cmd);
 
-static TCLAP::ValueArg<unsigned int> argRandomSeed(
+TCLAP::ValueArg<unsigned int> argRandomSeed(
     "", "random-seed", "Pseudorandom generator seed (default: from time)",
     false, 0, "0", cmd);
 
-static TCLAP::ValueArg<std::string> arg_plugins(
+TCLAP::ValueArg<std::string> arg_plugins(
     "", "plugins",
     "Optional plug-in libraries to load, for externally-defined PTGs", false,
     "", "mylib.so", cmd);
 
-static TCLAP::ValueArg<std::string> arg_costMap(
+TCLAP::ValueArg<std::string> arg_costMap(
     "", "costmap-obstacles",
     "Creates a costmap from obstacle point clouds with the given parameters "
     "from a YAML file.",
     false, "costmap.yaml", "costmap.yaml", cmd);
 
-static TCLAP::SwitchArg arg_showTree(
+TCLAP::SwitchArg arg_showTree(
     "", "show-tree",
     "Shows the whole search tree instead of just the best path", cmd);
+
+TCLAP::SwitchArg arg_showEdgeWeights(
+    "", "show-edge-weights", "Shows the weight of path edges", cmd);
 
 static mrpt::maps::CPointsMap::Ptr load_obstacles()
 {
@@ -275,7 +278,7 @@ static void do_plan_path()
     vizOpts.renderOptions.highlight_path_to_node_id = plan.goalNodeId;
     vizOpts.renderOptions.color_normal_edge         = {0xb0b0b0, 0x20};  // RGBA
 
-    // vizOpts.renderOptions.showEdgeWeights           = true;
+    vizOpts.renderOptions.showEdgeWeights = arg_showEdgeWeights.isSet();
 
     // Hide regular tree edges and only show best path?
     if (!arg_showTree.isSet()) vizOpts.renderOptions.width_normal_edge = 0;
