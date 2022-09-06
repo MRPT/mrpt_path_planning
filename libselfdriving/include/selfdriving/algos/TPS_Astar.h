@@ -36,7 +36,10 @@ struct TPS_Astar_Parameters
     uint32_t max_ptg_speeds_to_explore              = 3;
 
     /** Required to smooth interpolation of rendered paths, evaluation of
-     * path cost, etc. */
+     * path cost, etc.
+     * Even if this is 0, the interpolated path container `interpolatedPath`
+     * will contain the start and final pose, along with their times.
+     */
     size_t pathInterpolatedSegments = 5;
 
     /** 0:disabled */
@@ -280,9 +283,10 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 
     struct path_to_neighbor_t
     {
-        std::optional<ptg_index_t>        ptgIndex;
-        std::optional<trajectory_index_t> ptgTrajIndex;
-        std::optional<uint32_t>           relTrgStep;  //!< traj step index
+        std::optional<ptg_index_t>             ptgIndex;
+        std::optional<trajectory_index_t>      ptgTrajIndex;
+        std::optional<uint32_t>                relTrgStep;  //!< traj step index
+        std::optional<ptg_t::TNavDynamicState> ptgDynState;
         distance_t          ptgDist = std::numeric_limits<distance_t>::max();
         mrpt::math::TPose2D relReconstrPose;
         NodeCoords          neighborNodeCoords;

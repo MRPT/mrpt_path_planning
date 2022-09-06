@@ -1,4 +1,4 @@
-/* -------------------------------------------------------------------------
+﻿/* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
  * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
@@ -29,21 +29,6 @@ struct PoseDistanceMetric_TPS;
 
 template <class node_t>
 struct PoseDistanceMetric_Lie;
-
-/** Distances measured by PoseDistanceMetric, or "pseudodistances" of PTGs, that
- * is, distances along SE(2), including a weighted distance for rotations */
-using distance_t = double;
-
-/** TPS normalized distances in range [0,1] */
-using normalized_distance_t = double;
-
-/** Index of a trajectory in a PTG */
-using trajectory_index_t = int;
-
-using ptg_index_t = size_t;
-
-/** Normalized speed in range [0,1] */
-using normalized_speed_t = double;
 
 struct TPS_point
 {
@@ -153,9 +138,9 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
         const mrpt::graphs::TNodeID childId, const EDGE_TYPE& newEdgeData)
     {
         // edge:
-        auto&      parentEdges      = base_t::edges_to_children[parentId];
-        const bool dirChildToParent = false;
-        bool       updateDone       = false;
+        auto& parentEdges = base_t::edges_to_children[parentId];
+        bool  updateDone  = false;
+        // const bool dirChildToParent = false;
         for (auto& edge : parentEdges)
         {
             if (edge.id == childId)

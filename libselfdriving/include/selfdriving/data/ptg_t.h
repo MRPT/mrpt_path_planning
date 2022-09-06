@@ -11,4 +11,23 @@
 namespace selfdriving
 {
 using ptg_t = mrpt::nav::CParameterizedTrajectoryGenerator;
-}
+
+/** Distances measured by PoseDistanceMetric, or "pseudodistances" of PTGs, that
+ * is, distances along SE(2), including a weighted distance for rotations */
+using distance_t = double;
+
+/** TPS normalized distances in range [0,1] */
+using normalized_distance_t = double;
+
+/** Index of a trajectory in a PTG */
+using trajectory_index_t = int;
+
+using ptg_index_t = size_t;
+
+/** Normalized speed in range [0,1] */
+using normalized_speed_t = double;
+
+/** Time duration in seconds */
+using duration_seconds_t = double;
+
+}  // namespace selfdriving

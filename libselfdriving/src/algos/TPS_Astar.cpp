@@ -229,7 +229,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
             // tentative_gScore := gScore[current] + d(current, neighbor)
 
-            const auto& ptg = *in.ptgs.ptgs.at(edge.ptgIndex.value());
+            auto& ptg = *in.ptgs.ptgs.at(edge.ptgIndex.value());
+            ptg.updateNavDynamicState(edge.ptgDynState.value());
 
             const uint32_t ptg_step        = edge.relTrgStep.value();
             const auto&    reconstrRelPose = edge.relReconstrPose;
@@ -266,27 +267,40 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // in any case, to evaluate the edge cost.
             MoveEdgeSE2_TPS newEdge;
 
-            newEdge.parentId     = current.id.value();
-            newEdge.ptgDist      = edge.ptgDist;
-            newEdge.ptgIndex     = edge.ptgIndex.value();
-            newEdge.ptgPathIndex = edge.ptgTrajIndex.value();
-            MRPT_TODO("targetRelSpeed?");
-            // tentativeEdge.targetRelSpeed = ds.targetRelSpeed;
-            newEdge.stateFrom = current.state;
-            newEdge.stateTo   = x_i;
+            newEdge.parentId       = current.id.value();
+            newEdge.ptgDist        = edge.ptgDist;
+            newEdge.ptgIndex       = edge.ptgIndex.value();
+            newEdge.ptgPathIndex   = edge.ptgTrajIndex.value();
+            newEdge.targetRelSpeed = edge.ptgDynState->targetRelSpeed;
+            newEdge.stateFrom      = current.state;
+            newEdge.stateTo        = x_i;
+
             // interpolated path:
-            if (const auto nSeg = params_.pathInterpolatedSegments; nSeg > 0)
             {
-                auto& ip = newEdge.interpolatedPath.emplace();
-                ip.emplace_back(0, 0, 0);  // fixed
-                // interpolated:
+                const auto nSeg             = params_.pathInterpolatedSegments;
+                const duration_seconds_t dt = ptg.getPathStepDuration();
+
+                auto& ip = newEdge.interpolatedPath;
+
+                // t=0: fixed start relative pose
+                // ---------------------------------
+                ip[0 * dt] = {0, 0, 0};
+
+                // interpolated path in between start and goal
+                // ----------------------------------------------
                 for (size_t i = 0; i < nSeg; i++)
                 {
                     const auto iStep = ((i + 1) * ptg_step) / (nSeg + 2);
-                    ip.emplace_back(
-                        ptg.getPathPose(newEdge.ptgPathIndex, iStep));
+                    const duration_seconds_t t = iStep * dt;
+                    ip[t] = ptg.getPathPose(newEdge.ptgPathIndex, iStep);
                 }
-                ip.emplace_back(reconstrRelPose);  // already known
+
+                // Final, known pose and time
+                // ----------------------------------------------
+                ip[ptg_step * dt] = reconstrRelPose;
+
+                // Motion execution time:
+                newEdge.estimatedExecTime = ptg_step * dt;
             }
 
             // Let's compute its cost:
@@ -589,9 +603,9 @@ TPS_Astar::list_paths_to_neighbors_t
                 path.relReconstrPose    = relReconstrPose;
                 path.relTrgStep         = relTrgStep;
                 path.neighborNodeCoords = nc;
+                path.ptgDynState        = ptg->getCurrentNavDynamicState();
             }
         }
-
     }  // end for each PTG
 
     // Fill "neighbors" from valid "bestPaths":

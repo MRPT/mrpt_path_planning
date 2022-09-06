@@ -282,18 +282,26 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             tentativeEdge.targetRelSpeed = ds.targetRelSpeed;
             tentativeEdge.stateFrom      = srcNode;
             tentativeEdge.stateTo        = x_i;
+
             // interpolated path:
-            if (const auto nSeg = params_.pathInterpolatedSegments; nSeg > 0)
             {
-                auto& ip = tentativeEdge.interpolatedPath.emplace();
-                ip.emplace_back(0, 0, 0);  // fixed
+                const auto nSeg = params_.pathInterpolatedSegments;
+
+                const auto dt = ptg.getPathStepDuration();
+                auto&      ip = tentativeEdge.interpolatedPath;
+
+                ip[0] = {0, 0, 0};  // fixed
+
                 // interpolated:
                 for (size_t i = 0; i < nSeg; i++)
                 {
                     const auto iStep = ((i + 1) * ptg_step) / (nSeg + 2);
-                    ip.emplace_back(ptg.getPathPose(trajIdx, iStep));
+                    ip[iStep * dt]   = ptg.getPathPose(trajIdx, iStep);
                 }
-                ip.emplace_back(reconstrRelPose);  // already known
+                ip[ptg_step * dt] = reconstrRelPose;  // already known
+
+                // Motion execution time:
+                tentativeEdge.estimatedExecTime = ptg_step * dt;
             }
 
             // Let's compute its cost:
@@ -420,18 +428,27 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             rewiredEdge.targetRelSpeed = ds.targetRelSpeed;
             rewiredEdge.stateFrom      = newNodeState;
             rewiredEdge.stateTo        = trgNode;
+
             // interpolated path:
-            if (const auto nSeg = params_.pathInterpolatedSegments; nSeg > 0)
             {
-                auto& ip = rewiredEdge.interpolatedPath.emplace();
-                ip.emplace_back(0, 0, 0);  // fixed
+                const auto nSeg = params_.pathInterpolatedSegments;
+
+                const auto dt = ptg.getPathStepDuration();
+                auto&      ip = rewiredEdge.interpolatedPath;
+
+                ip[0] = {0, 0, 0};  // fixed
+
                 // interpolated:
                 for (size_t i = 0; i < nSeg; i++)
                 {
                     const auto iStep = ((i + 1) * ptg_step) / (nSeg + 2);
-                    ip.emplace_back(ptg.getPathPose(trajIdx, iStep));
+                    ip[dt * iStep]   = ptg.getPathPose(trajIdx, iStep);
                 }
-                ip.emplace_back(reconstrRelPose);  // already known
+
+                ip[ptg_step * dt] = reconstrRelPose;  // already known
+
+                // Motion execution time:
+                rewiredEdge.estimatedExecTime = ptg_step * dt;
             }
 
             // Let's compute the tentative cost of rewiring the tree
