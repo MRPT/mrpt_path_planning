@@ -600,8 +600,14 @@ void WaypointSequencer::check_new_planner_output()
     // TODO: anything to do with current activePath before overwritting it?
     _.activePlanOutput = std::move(result);
     _.activePlanNextNodeId.reset();
-    _.activePlanPath = _.activePlanOutput.po.motionTree.backtrack_path(
-        _.activePlanOutput.po.goalNodeId);
+
+    {
+        auto [path, edges] = _.activePlanOutput.po.motionTree.backtrack_path(
+            _.activePlanOutput.po.goalNodeId);
+
+        _.activePlanPath      = std::move(path);
+        _.activePlanPathEdges = std::move(edges);
+    }
 
     for (const auto& step : _.activePlanPath)
     {  //

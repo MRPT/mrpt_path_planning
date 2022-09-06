@@ -154,7 +154,11 @@ auto selfdriving::render_tree(
     MotionPrimitivesTreeSE2::path_t best_path;
 
     if (ro.highlight_path_to_node_id)
-        best_path = tree.backtrack_path(*ro.highlight_path_to_node_id);
+    {
+        auto [path, edges] = tree.backtrack_path(*ro.highlight_path_to_node_id);
+
+        best_path = std::move(path);
+    }
 
     // make list of nodes in the way of the best path:
     std::set<const MotionPrimitivesTreeSE2::edge_t*> edges_best_path,

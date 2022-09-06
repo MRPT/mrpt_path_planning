@@ -368,8 +368,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     // A* ended, now collect the result:
     // ----------------------------------------
-    const auto foundPath      = tree.backtrack_path(nodeGoal.id.value());
-    bool       foundPathValid = true;
+    const auto [foundPath, pathEdges] =
+        tree.backtrack_path(nodeGoal.id.value());
+    bool foundPathValid = true;
 
     for (const auto& step : foundPath)
     {
