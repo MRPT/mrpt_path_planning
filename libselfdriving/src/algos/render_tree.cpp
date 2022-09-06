@@ -283,7 +283,7 @@ auto selfdriving::render_tree(
         }
 
         // Draw actual PTG path between parent and children nodes:
-        if (etp)
+        if (etp && !etp->interpolatedPath.empty())
         {
             // Create the path shape, in relative coords to the parent node:
             auto obj = mrpt::opengl::CSetOfLines::Create();
