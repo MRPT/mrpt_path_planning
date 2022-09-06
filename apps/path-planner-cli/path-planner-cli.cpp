@@ -17,7 +17,7 @@
 #include <mrpt/version.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
-#include <selfdriving/algos/TPS_RRTstar.h>
+#include <selfdriving/algos/TPS_Astar.h>
 #include <selfdriving/algos/viz.h>
 
 #include <fstream>
@@ -52,12 +52,12 @@ TCLAP::ValueArg<std::string> arg_ptgs_file(
 
 TCLAP::ValueArg<std::string> argPlanner_yaml_file(
     "", "planner-parameters", "Input .yaml file with planner parameters", false,
-    "", "tps-rrtstar.yaml", cmd);
+    "", "tps-astar.yaml", cmd);
 
 TCLAP::ValueArg<std::string> argPlanner_yaml_output_file(
     "", "write-planner-parameters",
     "If defined, it will save default planner params to a .yaml file and exit.",
-    false, "", "tps-rrtstar.yaml", cmd);
+    false, "", "tps-astar.yaml", cmd);
 
 TCLAP::ValueArg<std::string> arg_config_file_section(
     "", "config-section",
@@ -72,8 +72,8 @@ TCLAP::ValueArg<std::string> arg_start_vel(
     "\"[vx vy omega_deg]\"", cmd);
 
 TCLAP::ValueArg<std::string> arg_goal_pose(
-    "g", "goal-pose", "Goal 2D pose", true, "[0 0 0]", "\"[x y phi_deg]\"",
-    cmd);
+    "g", "goal-pose", "Goal 2D pose or point", true, "[0 0 0]",
+    "\"[x y phi_deg]\" or \"[x y]\"", cmd);
 
 TCLAP::ValueArg<double> argBBoxMargin(
     "", "bbox-margin", "Margin to add to the start-goal bbox poses", false, 1.0,
@@ -104,6 +104,10 @@ TCLAP::SwitchArg arg_showTree(
 
 TCLAP::SwitchArg arg_showEdgeWeights(
     "", "show-edge-weights", "Shows the weight of path edges", cmd);
+
+TCLAP::SwitchArg arg_printPathEdges(
+    "", "print-path-edges", "Prints details on the found planned path edges",
+    cmd);
 
 static mrpt::maps::CPointsMap::Ptr load_obstacles()
 {
@@ -283,6 +287,21 @@ static void do_plan_path()
     // Hide regular tree edges and only show best path?
     if (!arg_showTree.isSet()) vizOpts.renderOptions.width_normal_edge = 0;
 
+    // generate path sequence:
+    if (plan.success)
+    {
+        // backtrack:
+        const auto [plannedPath, pathEdges] =
+            plan.motionTree.backtrack_path(plan.goalNodeId);
+
+        if (arg_printPathEdges.isSet())
+        {
+            std::cout << "Planned path edges:\n";
+            for (const auto& edge : pathEdges) std::cout << edge->asString();
+        }
+    }
+
+    // GUI:
     selfdriving::viz_nav_plan(plan, vizOpts, planner->costEvaluators_);
 }
 
@@ -294,8 +313,8 @@ int main(int argc, char** argv)
 
         if (argPlanner_yaml_output_file.isSet())
         {
-            selfdriving::TPS_RRTstar_Parameters defaults;
-            const auto                          c = defaults.as_yaml();
+            selfdriving::TPS_Astar_Parameters defaults;
+            const auto                        c = defaults.as_yaml();
             const auto    sFile = argPlanner_yaml_output_file.getValue();
             std::ofstream fileYaml(sFile);
             ASSERT_(fileYaml.is_open());

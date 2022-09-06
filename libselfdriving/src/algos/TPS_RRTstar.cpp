@@ -498,8 +498,8 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 
     // RRT ended, now collect the result:
     // ----------------------------------------
-    const auto foundPath      = tree.backtrack_path(goalNodeId);
-    bool       foundPathValid = true;
+    const auto [foundPath, pathEdges] = tree.backtrack_path(goalNodeId);
+    bool foundPathValid               = true;
 
     for (const auto& step : foundPath)
     {

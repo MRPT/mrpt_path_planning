@@ -346,9 +346,10 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         std::optional<waypoint_idx_t> activeFinalTarget;
 
         /** Set by check_new_planner_output() */
-        PathPlannerOutput                    activePlanOutput;
-        MotionPrimitivesTreeSE2::path_t      activePlanPath;
-        std::optional<mrpt::graphs::TNodeID> activePlanNextNodeId;
+        PathPlannerOutput                        activePlanOutput;
+        MotionPrimitivesTreeSE2::path_t          activePlanPath;
+        MotionPrimitivesTreeSE2::edge_sequence_t activePlanPathEdges;
+        std::optional<mrpt::graphs::TNodeID>     activePlanNextNodeId;
 
         // int  counterCheckTargetIsBlocked_ = 0;
 

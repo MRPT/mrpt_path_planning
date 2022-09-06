@@ -20,6 +20,7 @@
 #include <deque>
 #include <list>
 #include <set>
+#include <tuple>
 
 namespace selfdriving
 {
@@ -94,8 +95,9 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
         }
     };
 
-    using base_t = mrpt::graphs::CDirectedTree<EDGE_TYPE>;
-    using edge_t = EDGE_TYPE;
+    using base_t          = mrpt::graphs::CDirectedTree<EDGE_TYPE>;
+    using edge_t          = EDGE_TYPE;
+    using edge_sequence_t = std::list<const edge_t*>;
 
     /**  Use deque to reduce memory reallocs. */
     struct map_traits_map_as_deque
@@ -244,19 +246,23 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
 
     /** Builds the path (sequence of nodes, with info about next edge) up-tree
      * from a `target_node` towards the root
-     * Nodes are ordered in the direction ROOT -> start_node
+     * - path_t nodes are ordered in the direction ROOT -> start_node
+     * - ed
      */
-    path_t backtrack_path(const mrpt::graphs::TNodeID target_node) const
+    std::tuple<path_t, edge_sequence_t> backtrack_path(
+        const mrpt::graphs::TNodeID target_node) const
     {
-        path_t out_path;
-        auto   it_src = nodes_.find(target_node);
+        path_t          outPath;
+        edge_sequence_t edgeList;
+
+        auto it_src = nodes_.find(target_node);
         if (it_src == nodes_.end())
             throw std::runtime_error(
                 "backtrackPath: target_node not found in tree!");
         const node_t* node = &it_src->second;
         for (;;)
         {
-            out_path.push_front(*node);
+            outPath.push_front(*node);
 
             auto next_node_id = node->parentID_;
             if (!next_node_id.has_value())
@@ -266,6 +272,9 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
             }
             else
             {
+                const EDGE_TYPE& edge = edge_to_parent(node->nodeID_);
+                edgeList.push_front(&edge);
+
                 auto it_next = nodes_.find(next_node_id.value());
                 if (it_next == nodes_.end())
                     throw std::runtime_error(
@@ -274,7 +283,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
                 node = &it_next->second;
             }
         }
-        return out_path;
+        return {outPath, edgeList};
     }
 
    private:
