@@ -559,8 +559,14 @@ void prepare_selfdriving_window(
             pnNav->add<nanogui::Label>("Nav Status:                    ");
 
         auto btnReq = pnNav->add<nanogui::Button>("requestNavigation()");
-        btnReq->setCallback(
-            []() { sd.navigator.request_navigation(sd.waypts); });
+        btnReq->setCallback([world]() {
+            // Update global obstacles, in case the MVSIM world has changed:
+            auto obsPts = world_to_static_obstacle_points(*world);
+            sd.navigator.config_.globalMapObstacleSource =
+                selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
+
+            sd.navigator.request_navigation(sd.waypts);
+        });
 
         pnNav->add<nanogui::Button>("suspend()")->setCallback([]() {
             sd.navigator.suspend();
