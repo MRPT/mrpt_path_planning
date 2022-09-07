@@ -6,20 +6,23 @@
 
 #pragma once
 
-#include <selfdriving/data/MotionPrimitivesTree.h>
 #include <selfdriving/data/SE2_KinState.h>
-#include <selfdriving/data/TrajectoriesAndRobotShape.h>
 #include <selfdriving/data/basic_types.h>
 
 #include <map>
 
 namespace selfdriving
 {
-using trajectory_t = std::map<duration_seconds_t, SE2_KinState>;
+struct trajectory_state_t
+{
+    trajectory_state_t() = default;
 
-trajectory_t interpolate_path(
-    const TrajectoriesAndRobotShape&                ptgInfo,
-    const MotionPrimitivesTreeSE2::edge_sequence_t& edges,
-    const duration_seconds_t                        samplePeriod = 50e-3);
+    SE2_KinState       state;
+    ptg_index_t        ptgIndex     = 0;
+    trajectory_index_t ptgPathIndex = 0;
+    uint32_t           ptgStep      = 0;
+};
+
+using trajectory_t = std::map<duration_seconds_t, trajectory_state_t>;
 
 }  // namespace selfdriving

@@ -19,7 +19,7 @@
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/TPS_Astar.h>
-#include <selfdriving/algos/interpolate_path.h>
+#include <selfdriving/algos/trajectories.h>
 #include <selfdriving/algos/viz.h>
 
 #include <fstream>
@@ -314,13 +314,16 @@ static void do_plan_path()
 
             const auto t0 = mrpt::Clock::nowDouble();
 
-            selfdriving::trajectory_t traj =
-                selfdriving::interpolate_path(pi.ptgs, pathEdges);
+            const selfdriving::trajectory_t traj =
+                selfdriving::plan_to_trajectory(pathEdges, pi.ptgs);
 
             const auto dt = mrpt::Clock::nowDouble() - t0;
 
             std::cout << "Interpolated path done in "
-                      << mrpt::system::intervalFormat(dt) << std::endl;
+                      << mrpt::system::intervalFormat(dt) << ". Saving to "
+                      << arg_InterpolatePath.getValue() << std::endl;
+
+            selfdriving::save_to_txt(traj, arg_InterpolatePath.getValue());
         }
     }
 
