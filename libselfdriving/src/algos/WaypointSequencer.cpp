@@ -80,8 +80,7 @@ void WaypointSequencer::navigation_step()
 
     ASSERTMSG_(initialized_, "navigation_step() called before initialize()");
 
-    mrpt::system::CTimeLoggerEntry tle(
-        navProfiler_, "WaypointSequencer::navigation_step()");
+    mrpt::system::CTimeLoggerEntry tle(navProfiler_, "navigation_step()");
 
     // Record execution period:
     {
@@ -398,6 +397,8 @@ waypoint_idx_t WaypointSequencer::find_next_waypoint_for_planner()
 WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     WaypointSequencer::PathPlannerInput ppi)
 {
+    mrpt::system::CTimeLoggerEntry tle(navProfiler_, "path_planner_function");
+
     const double BBOX_MARGIN = config_.planner_bbox_margin;  // [meters]
 
     mrpt::math::TBoundingBoxf bbox;
@@ -441,7 +442,7 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     selfdriving::TPS_Astar planner;
 
     // time profiler:
-    planner.profiler_.enable(false);
+    planner.attachExternalProfiler_(navProfiler_);
 
     // ~~~~~~~~~~~~~~
     // Add cost maps
@@ -518,10 +519,15 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     // PTGs:
     ppi.pi.ptgs = config_.ptgs;
 
+    mrpt::system::CTimeLoggerEntry tle2(
+        navProfiler_, "path_planner_function.a_star");
+
     // ========== ACTUAL A* PLANNING ================
     PathPlannerOutput ret;
     ret.po = planner.plan(ppi.pi);
     // ================================================
+
+    tle2.stop();
 
     // Keep a copy of the costs, for reference of the caller,
     // visualization,...

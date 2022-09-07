@@ -226,7 +226,7 @@ static void do_plan_path()
     }
 
     // Enable time profiler:
-    planner->profiler_.enable(true);
+    planner->profiler_().enable(true);
 
     if (arg_costMap.isSet())
     {

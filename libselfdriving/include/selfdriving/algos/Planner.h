@@ -13,6 +13,7 @@
 #include <selfdriving/data/PlannerInput.h>
 #include <selfdriving/data/PlannerOutput.h>
 
+#include <optional>
 #include <vector>
 
 namespace selfdriving
@@ -32,10 +33,22 @@ class Planner : public mrpt::rtti::CObject,
     virtual mrpt::containers::yaml params_as_yaml()                = 0;
     virtual void params_from_yaml(const mrpt::containers::yaml& c) = 0;
 
-    /** Time profiler (Default: enabled)*/
-    mrpt::system::CTimeLogger profiler_{true, "Planner"};
+    mrpt::system::CTimeLogger& profiler_()
+    {
+        return customProfiler_ ? *customProfiler_ : defaultProfiler_;
+    }
+
+    void attachExternalProfiler_(mrpt::system::CTimeLogger& p)
+    {
+        customProfiler_ = &p;
+    }
 
     cost_t cost_path_segment(const MoveEdgeSE2_TPS& edge) const;
+
+   private:
+    /** Time profiler (Default: enabled)*/
+    mrpt::system::CTimeLogger  defaultProfiler_{true, "Planner"};
+    mrpt::system::CTimeLogger* customProfiler_ = nullptr;
 };
 
 }  // namespace selfdriving

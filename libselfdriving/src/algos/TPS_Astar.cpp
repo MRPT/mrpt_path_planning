@@ -64,13 +64,13 @@ TPS_Astar_Parameters TPS_Astar_Parameters::FromYAML(
 
 TPS_Astar::TPS_Astar() : mrpt::system::COutputLogger("TPS_Astar")
 {
-    profiler_.setName("TPS_Astar");
+    profiler_().setName("TPS_Astar");
 }
 
 PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 {
     MRPT_START
-    mrpt::system::CTimeLoggerEntry tleg(profiler_, "plan");
+    mrpt::system::CTimeLoggerEntry tleg(profiler_(), "plan");
 
     // Sanity checks on inputs:
     ASSERT_(in.ptgs.initialized());
@@ -175,6 +175,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     while (!openSet.empty())
     {
+        mrpt::system::CTimeLoggerEntry tle(profiler_(), "plan.iter");
+
         nIter++;  // just for debugging purposes
 
         // node with the lowest fScore:
@@ -433,6 +435,8 @@ TPS_Astar::list_paths_to_neighbors_t
         double                            MAX_XY_OBSTACLES_CLIPPING_DIST,
         const nodes_with_desired_speed_t& nodesWithSpeed)
 {
+    mrpt::system::CTimeLoggerEntry tle(profiler_(), "find_feasible");
+
     // const auto iFromCoords = nodeGridCoords(from.state.pose);
 
     const NodeCoords iGoalCoords = goalState.state.isPoint()
@@ -455,6 +459,9 @@ TPS_Astar::list_paths_to_neighbors_t
     // For each PTG:
     for (size_t ptgIdx = 0; ptgIdx < trs.ptgs.size(); ptgIdx++)
     {
+        mrpt::system::CTimeLoggerEntry tleL1(
+            profiler_(), "find_feasible.loop1");
+
         auto& ptg = trs.ptgs.at(ptgIdx);
         ASSERT_(ptg->isInitialized());
 
@@ -477,7 +484,13 @@ TPS_Astar::list_paths_to_neighbors_t
             }
 
             relTrg_speed = ds.targetRelSpeed;
+
+            mrpt::system::CTimeLoggerEntry tle3(
+                profiler_(), "find_feasible.ptgUpdateDyn");
+
             ptg->updateNavDynamicState(ds);
+
+            tle3.stop();
         }
 
         // explore a subset of all trajectories only:
@@ -539,6 +552,11 @@ TPS_Astar::list_paths_to_neighbors_t
             }
         }
 
+        tleL1.stop();
+
+        mrpt::system::CTimeLoggerEntry tleL2(
+            profiler_(), "find_feasible.loop2");
+
         // now, check which ones of those paths are not blocked by
         // obstacles:
         for (const auto& tpsPt : tpsPointsToConsider)
@@ -550,6 +568,9 @@ TPS_Astar::list_paths_to_neighbors_t
                 dyn.targetRelSpeed != tpsPt.speed)
             {
                 dyn.targetRelSpeed = tpsPt.speed;
+
+                mrpt::system::CTimeLoggerEntry tle4(
+                    profiler_(), "find_feasible.ptgUpdateDyn");
                 ptg->updateNavDynamicState(dyn);
             }
 
@@ -577,9 +598,14 @@ TPS_Astar::list_paths_to_neighbors_t
 
             const NodeCoords nc = nodeGridCoords(absPose);
 
+            mrpt::system::CTimeLoggerEntry tleObs(
+                profiler_(), "find_feasible.tp_obstacles_single");
+
             // check for collisions:
             const distance_t freeDistance =
                 tp_obstacles_single_path(tpsPt.k, *localObstacles, *ptg);
+
+            tleObs.stop();
 
             if (tpsPt.d * ptg->getRefDistance() >= freeDistance)
             {
@@ -607,7 +633,12 @@ TPS_Astar::list_paths_to_neighbors_t
                 path.ptgDynState        = ptg->getCurrentNavDynamicState();
             }
         }
+
+        tleL2.stop();
+
     }  // end for each PTG
+
+    mrpt::system::CTimeLoggerEntry tleF(profiler_(), "find_feasible.finalFill");
 
     // Fill "neighbors" from valid "bestPaths":
     list_paths_to_neighbors_t neighbors;
@@ -622,10 +653,12 @@ TPS_Astar::list_paths_to_neighbors_t
 
 #if 0
     MRPT_LOG_DEBUG_STREAM(
-        "find_feasible_paths_to_neighbors() for p="
+        "find_feasible() for p="
         << from.state.pose << " => " << totalConsidered << "/" << totalCollided
         << "/" << neighbors.size() << " considered/collided/accepted.");
 #endif
+
+    tleF.stop();
 
     return neighbors;
 }
@@ -635,6 +668,8 @@ mrpt::maps::CPointsMap::Ptr TPS_Astar::cached_local_obstacles(
     const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
     double                                          MAX_PTG_XY_DIST)
 {
+    mrpt::system::CTimeLoggerEntry tle(profiler_(), "cached_local_obstacles");
+
     MRPT_TODO("Impl actual cache");
 
     auto outObs = mrpt::maps::CSimplePointsMap::Create();

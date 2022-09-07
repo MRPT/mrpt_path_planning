@@ -859,7 +859,7 @@ void on_do_single_path_planning(
               << pi.worldBboxMax.asString() << "\n";
 
     // Enable time profiler:
-    planner.profiler_.enable(true);
+    planner.profiler_().enable(true);
 
     planner.costEvaluators_.clear();
 
