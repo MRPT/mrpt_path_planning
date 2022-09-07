@@ -96,13 +96,13 @@ TPS_RRTstar_Parameters TPS_RRTstar_Parameters::FromYAML(
 
 TPS_RRTstar::TPS_RRTstar() : mrpt::system::COutputLogger("TPS_RRTstar")
 {
-    profiler_.setName("TPS_RRTstar");
+    profiler_().setName("TPS_RRTstar");
 }
 
 PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
 {
     MRPT_START
-    mrpt::system::CTimeLoggerEntry tleg(profiler_, "plan");
+    mrpt::system::CTimeLoggerEntry tleg(profiler_(), "plan");
 
     // Sanity checks on inputs:
     ASSERT_(in.ptgs.initialized());
@@ -166,7 +166,7 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
     //  3  |  for i \in [1,N] do
     for (size_t rrtIter = 0; rrtIter < params_.maxIterations; rrtIter++)
     {
-        mrpt::system::CTimeLoggerEntry tle1(profiler_, "plan.iter");
+        mrpt::system::CTimeLoggerEntry tle1(profiler_(), "plan.iter");
 
         // 4  |   q_i ← SAMPLE( Q_free )
         // ------------------------------------------------------------------
@@ -521,7 +521,7 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_free_pose(
     const TPS_RRTstar::DrawFreePoseParams& p)
 {
     auto tle =
-        mrpt::system::CTimeLoggerEntry(profiler_, "draw_random_free_pose");
+        mrpt::system::CTimeLoggerEntry(profiler_(), "draw_random_free_pose");
 
     if (params_.drawInTPS)
         return draw_random_tps(p);
@@ -533,7 +533,7 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_euclidean(
     const TPS_RRTstar::DrawFreePoseParams& p)
 {
     auto tle = mrpt::system::CTimeLoggerEntry(
-        profiler_, "draw_random_free_pose.euclidean");
+        profiler_(), "draw_random_free_pose.euclidean");
 
     auto& rng = mrpt::random::getRandomGenerator();
 
@@ -596,8 +596,8 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_euclidean(
 TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_tps(
     const TPS_RRTstar::DrawFreePoseParams& p)
 {
-    auto tle =
-        mrpt::system::CTimeLoggerEntry(profiler_, "draw_random_free_pose.tps");
+    auto tle = mrpt::system::CTimeLoggerEntry(
+        profiler_(), "draw_random_free_pose.tps");
 
     auto& rng = mrpt::random::getRandomGenerator();
 
@@ -736,8 +736,8 @@ TPS_RRTstar::path_to_nodes_list_t TPS_RRTstar::find_source_nodes_towards(
     const TNodeID                   goalNodeToIgnore,
     const closest_lie_nodes_list_t& hintCloseNodes)
 {
-    auto tle =
-        mrpt::system::CTimeLoggerEntry(profiler_, "find_source_nodes_towards");
+    auto tle = mrpt::system::CTimeLoggerEntry(
+        profiler_(), "find_source_nodes_towards");
 
     const auto& nodes = tree.nodes();
     ASSERT_(!nodes.empty());
@@ -814,8 +814,8 @@ TPS_RRTstar::path_to_nodes_list_t TPS_RRTstar::find_reachable_nodes_from(
     const closest_lie_nodes_list_t& hintCloseNodes,
     const std::optional<TNodeID>&   nodeToIgnoreHeading)
 {
-    auto tle =
-        mrpt::system::CTimeLoggerEntry(profiler_, "find_reachable_nodes_from");
+    auto tle = mrpt::system::CTimeLoggerEntry(
+        profiler_(), "find_reachable_nodes_from");
 
     const auto& nodes = tree.nodes();
     ASSERT_(!nodes.empty());
@@ -927,7 +927,7 @@ TPS_RRTstar::closest_lie_nodes_list_t TPS_RRTstar::find_nearby_nodes(
     const MotionPrimitivesTreeSE2& tree, const mrpt::math::TPose2D& query,
     const double maxDistance)
 {
-    auto tle = mrpt::system::CTimeLoggerEntry(profiler_, "find_nearby_nodes");
+    auto tle = mrpt::system::CTimeLoggerEntry(profiler_(), "find_nearby_nodes");
 
     closest_lie_nodes_list_t             out;
     PoseDistanceMetric_Lie<SE2_KinState> de(params_.SE2_metricAngleWeight);
