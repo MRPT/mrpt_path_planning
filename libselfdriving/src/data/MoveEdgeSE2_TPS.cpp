@@ -29,17 +29,17 @@ std::string MoveEdgeSE2_TPS::asString() const
     using namespace std::string_literals;
 
     std::stringstream ss;
-    ss << "MoveEdgeSE2_TPS:\n"
-          " - parentId: "
+    ss << "-\n"
+          "  parentId: "
        << parentId
        << "\n"
-          " - from: "
+          "  from: "
        << stateFrom.asString()
        << "\n"
-          " - to: "
+          "  to: "
        << stateTo.asString()
        << "\n"
-          " - {cost: "
+          "  {cost: "
        << cost
        << ", "
           "ptgIndex: "
@@ -56,7 +56,7 @@ std::string MoveEdgeSE2_TPS::asString() const
        << ", "
           "estimatedExecTime: "
        << estimatedExecTime << "}\n"
-       << "- interpolatedPath size: " << interpolatedPath.size() << "\n";
+       << "  interpolatedPathSize: " << interpolatedPath.size() << "\n";
 
     return ss.str();
 }

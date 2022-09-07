@@ -8,6 +8,7 @@
 
 #include <mrpt/graphs/TNodeID.h>
 #include <selfdriving/data/SE2_KinState.h>
+#include <selfdriving/data/basic_types.h>
 #include <selfdriving/data/ptg_t.h>
 
 #include <cstdint>
@@ -37,8 +38,8 @@ struct MoveEdgeSE2_TPS
     int16_t ptgPathIndex = -1;
 
     /** identify the PTG "pseudometers" distance of the trajectory for this
-     * motion segment */
-    double ptgDist = std::numeric_limits<double>::max();
+     * motion segment (NOT normalized distances) */
+    distance_t ptgDist = std::numeric_limits<distance_t>::max();
 
     normalized_speed_t targetRelSpeed = 1.0;
 

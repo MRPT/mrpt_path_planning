@@ -12,12 +12,14 @@
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/random/RandomGenerators.h>
 #include <mrpt/serialization/CArchive.h>
+#include <mrpt/system/datetime.h>  // intervalFormat()
 #include <mrpt/system/filesystem.h>
 #include <mrpt/system/os.h>  // plugins
 #include <mrpt/version.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/TPS_Astar.h>
+#include <selfdriving/algos/interpolate_path.h>
 #include <selfdriving/algos/viz.h>
 
 #include <fstream>
@@ -108,6 +110,11 @@ TCLAP::SwitchArg arg_showEdgeWeights(
 TCLAP::SwitchArg arg_printPathEdges(
     "", "print-path-edges", "Prints details on the found planned path edges",
     cmd);
+
+TCLAP::ValueArg<std::string> arg_InterpolatePath(
+    "", "save-interpolated-path",
+    "Interpolates the path and saves it into a .csv file", false, "path.csv",
+    "path.csv", cmd);
 
 static mrpt::maps::CPointsMap::Ptr load_obstacles()
 {
@@ -298,6 +305,22 @@ static void do_plan_path()
         {
             std::cout << "Planned path edges:\n";
             for (const auto& edge : pathEdges) std::cout << edge->asString();
+        }
+
+        // interpolate path:
+        if (arg_InterpolatePath.isSet())
+        {
+            std::cout << "Computing interpolated path..." << std::endl;
+
+            const auto t0 = mrpt::Clock::nowDouble();
+
+            selfdriving::trajectory_t traj =
+                selfdriving::interpolate_path(pi.ptgs, pathEdges);
+
+            const auto dt = mrpt::Clock::nowDouble() - t0;
+
+            std::cout << "Interpolated path done in "
+                      << mrpt::system::intervalFormat(dt) << std::endl;
         }
     }
 
