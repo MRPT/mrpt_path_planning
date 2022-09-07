@@ -11,6 +11,7 @@
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/WaypointSequencer.h>
 #include <selfdriving/algos/render_tree.h>
+#include <selfdriving/algos/trajectories.h>
 #include <selfdriving/algos/viz.h>
 
 using namespace selfdriving;
@@ -607,6 +608,12 @@ void WaypointSequencer::check_new_planner_output()
 
         _.activePlanPath      = std::move(path);
         _.activePlanPathEdges = std::move(edges);
+
+#if 0
+        const auto traj = selfdriving::plan_to_trajectory(
+            _.activePlanPathEdges, config_.ptgs);
+        selfdriving::save_to_txt(traj, "traj.txt");
+#endif
     }
 
     for (const auto& step : _.activePlanPath)
