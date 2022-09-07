@@ -71,7 +71,7 @@ bool selfdriving::save_to_txt(
     if (!f.is_open()) return false;
 
     f << mrpt::format(
-        "# %15s  %15s %15s %15s  %15s %15s %15s"
+        "%% %15s  %15s %15s %15s  %15s %15s %15s"
         " %15s %15s %15s\n",  //
         "Time [s]",  //
         "x_global [m]", "y_global [m]", "phi [rad]",  //
