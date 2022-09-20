@@ -32,6 +32,10 @@ struct EnqueuedCondition
      *
      */
     mrpt::math::TPose2D tolerance;
+
+    /** In seconds. This should hold a larger time than the ETA to the given
+     * position. */
+    double timeout = 10.0;
 };
 
 /** A "pending" motion command to be used in

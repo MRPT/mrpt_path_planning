@@ -681,7 +681,7 @@ void prepare_selfdriving_window(
         const auto cbViewCostmaps =
             pnViz->add<nanogui::CheckBox>("View costmap");
         cbViewCostmaps->setChecked(true);
-        cbViewCostmaps->setCallback([](bool checked) {
+        cbViewCostmaps->setCallback([](bool /*checked*/) {
             //
         });
     }
