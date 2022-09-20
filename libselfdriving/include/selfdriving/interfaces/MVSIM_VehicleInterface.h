@@ -153,7 +153,7 @@ class MVSIM_VehicleInterface : public VehicleMotionInterface
     }
 
     // See base class docs
-    void stop(const STOP_TYPE stopType) override
+    void stop([[maybe_unused]] const STOP_TYPE stopType) override
     {
         //
     }
