@@ -688,9 +688,17 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
                 << "\n TargetRelPose: " << relPoseAfterNext);
 
             selfdriving::EnqueuedMotionCmd enqMotion;
-            enqMotion.nextCmd                 = generatedMotionCmdAfter;
-            enqMotion.nextCondition.position  = relPoseNext;
-            enqMotion.nextCondition.tolerance = {0.05, 0.05, 1.0_deg};
+            enqMotion.nextCmd                = generatedMotionCmdAfter;
+            enqMotion.nextCondition.position = relPoseNext;
+
+            enqMotion.nextCondition.tolerance = {
+                config_.enqueuedActionsToleranceXY,
+                config_.enqueuedActionsToleranceXY,
+                config_.enqueuedActionsTolerancePhi};
+
+            enqMotion.nextCondition.timeout =
+                std::max(1.0, edge.estimatedExecTime) *
+                config_.enqueuedActionsTimeoutMultiplier;
 
             config_.vehicleMotionInterface->motion_execute(
                 generatedMotionCmd, enqMotion);
