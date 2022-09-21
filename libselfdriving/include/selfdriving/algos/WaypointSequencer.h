@@ -156,6 +156,10 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         selfdriving::CostEvaluatorPreferredWaypoint::Parameters
             preferWaypointsParameters;
 
+        double enqueuedActionsToleranceXY       = 0.05;
+        double enqueuedActionsTolerancePhi      = mrpt::DEG2RAD(2.0);
+        double enqueuedActionsTimeoutMultiplier = 1.3;
+
         /** @} */
 
         /**  \name Visualization callbacks and methods
