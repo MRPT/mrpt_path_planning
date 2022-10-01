@@ -190,9 +190,6 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         // node with the lowest fScore:
         Node& current = *openSet.begin()->second.ptr;
 
-        // The node with the smallest cost to goal is the best one, so far:
-        po.bestNodeId = current.id.value();
-
         // current==goal?
         // we must check the state to be on the same lattice cell to check
         // for a match of the current SE(2) pose against the goal state,
@@ -210,6 +207,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             {
                 nodeGoal      = current;
                 po.goalNodeId = nodeGoal.id.value();
+                po.bestNodeId = po.goalNodeId;
             }
 
             break;
@@ -335,8 +333,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             neighborNode.gScore   = tentative_gScore;
 
             // fScore[neighbor] := tentative_gScore + h(neighbor)
-            neighborNode.fScore =
-                tentative_gScore + heuristic(neighborNode.state, in.stateGoal);
+            const cost_t costToGoal =
+                heuristic(neighborNode.state, in.stateGoal);
+            neighborNode.fScore = tentative_gScore + costToGoal;
 
             if (!neighborNode.pendingInOpenSet)
             {
@@ -349,13 +348,24 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
             // Delete old edge, if any:
             if (hasToRewire)
-            { tree.rewire_node_parent(neighborNode.id.value(), newEdge); }
+            {
+                // do rewire:
+                tree.rewire_node_parent(neighborNode.id.value(), newEdge);
+            }
             else
             {
                 // Add edge to tree:
                 tree.insert_node_and_edge(
                     newEdge.parentId, neighborNode.id.value(),
                     neighborNode.state, newEdge);
+            }
+
+            // Keep an updated pointer to the best, so-far, node (under the
+            // heuristic criterion):
+            if (costToGoal < po.bestNodeIdCostToGoal)
+            {
+                po.bestNodeIdCostToGoal = costToGoal;
+                po.bestNodeId           = neighborNode.id.value();
             }
 
         }  // end for each edge to neighbor
@@ -400,7 +410,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             const auto bestCost = tree.nodes().at(po.bestNodeId).cost_;
 
             // call user callback:
-            progressCallback_(bestCost, pathEdges);
+            progressCallback_(
+                bestCost, pathEdges, po.bestNodeId, tree, in, costEvaluators_);
         }
 
     }  // end while openSet!=empty

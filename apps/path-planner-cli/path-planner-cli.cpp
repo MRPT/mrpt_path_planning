@@ -275,7 +275,12 @@ static void do_plan_path()
     planner->progressCallback_ =
         [](selfdriving::cost_t currentBestCost,
            selfdriving::MotionPrimitivesTreeSE2::edge_sequence_t
-               currentBestPath) {
+               currentBestPath,
+           selfdriving::TNodeID /*currentBestFinalNode*/,
+           const selfdriving::MotionPrimitivesTreeSE2& /*tree*/,
+           const selfdriving::PlannerInput& /*originalPlanInput*/,
+           const std::vector<selfdriving::CostEvaluator::Ptr>& /*costEvals*/
+        ) {
             std::cout << "[progressCallback] currentBestCost: "
                       << currentBestCost
                       << " currentBestPath: " << currentBestPath.size()

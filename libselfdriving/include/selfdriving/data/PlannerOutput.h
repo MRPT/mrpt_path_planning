@@ -43,7 +43,8 @@ struct PlannerOutput
      *  to goalNodeId for successful plans reaching the desired goal state, or
      *  something different for unfinished or unsuccessful plans.
      */
-    TNodeID bestNodeId = mrpt::graphs::INVALID_NODEID;
+    TNodeID bestNodeId           = mrpt::graphs::INVALID_NODEID;
+    cost_t  bestNodeIdCostToGoal = std::numeric_limits<cost_t>::max();
 
     /** The generated motion tree that explores free space starting at "start"
      */

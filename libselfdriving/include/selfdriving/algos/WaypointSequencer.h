@@ -263,6 +263,12 @@ class WaypointSequencer : public mrpt::system::COutputLogger
      * with a given plan output */
     void send_planner_output_to_viz(const PathPlannerOutput& ppo);
 
+    /** Update the GUI with a partial or final path only (no whole tree) */
+    void send_path_to_viz(
+        const MotionPrimitivesTreeSE2& tree, const TNodeID finalNode,
+        const PlannerInput&                    originalPlanInput,
+        const std::vector<CostEvaluator::Ptr>& costEvaluators);
+
    protected:
     /** Current and last internal state of navigator: */
     NavStatus      navigationStatus_    = NavStatus::IDLE;

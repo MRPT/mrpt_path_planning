@@ -520,6 +520,28 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     // PTGs:
     ppi.pi.ptgs = config_.ptgs;
 
+    // Insert custom progress callback for the GUI, if enabled:
+    if (config_.vizSceneToModify)
+    {
+        planner.progressCallback_ =
+            [this](
+                cost_t                                   currentBestCost,
+                MotionPrimitivesTreeSE2::edge_sequence_t currentBestPath,
+                TNodeID                                  currentBestFinalNode,
+                const MotionPrimitivesTreeSE2&           tree,
+                const PlannerInput&                      originalPlanInput,
+                const std::vector<CostEvaluator::Ptr>&   costEvaluators) {
+                MRPT_LOG_DEBUG_STREAM(
+                    "[progressCallback] currentBestCost: "
+                    << currentBestCost << " currentBestPath: "
+                    << currentBestPath.size() << " edges.");
+
+                send_path_to_viz(
+                    tree, currentBestFinalNode, originalPlanInput,
+                    costEvaluators);
+            };
+    }
+
     mrpt::system::CTimeLoggerEntry tle2(
         navProfiler_, "path_planner_function.a_star");
 
@@ -746,6 +768,72 @@ void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
         float zOffset = 0.01f;  // to help visualize several costmaps at once
 
         for (const auto& ce : ppo.costEvaluators)
+        {
+            if (!ce) continue;
+            auto glCostMap = ce->get_visualization();
+
+            zOffset += 0.01f;
+            glCostMap->setLocation(0, 0, zOffset);
+            glCostMaps->insert(glCostMap);
+        }
+
+        planViz->insert(glCostMaps);
+    }
+
+    // Send to the viz "server":
+    // ----------------------------------
+    // lock:
+    if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
+
+    if (auto glObj = config_.vizSceneToModify->getByName(planViz->getName());
+        glObj)
+    {
+        auto glContainer =
+            std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
+        ASSERT_(glContainer);
+        *glContainer = *planViz;
+    }
+    else
+    {
+        config_.vizSceneToModify->insert(planViz);
+    }
+
+    // unlock:
+    if (config_.on_viz_post_modify) config_.on_viz_post_modify();
+}
+
+void WaypointSequencer::send_path_to_viz(
+    const MotionPrimitivesTreeSE2& tree, const TNodeID finalNode,
+    const PlannerInput&                    originalPlanInput,
+    const std::vector<CostEvaluator::Ptr>& costEvaluators)
+{
+    ASSERT_(config_.vizSceneToModify);
+
+    // Visualize the motion tree:
+    // ----------------------------------
+    RenderOptions ro;
+    ro.highlight_path_to_node_id = finalNode;
+    ro.width_normal_edge         = 0;  // hidden
+    ro.draw_obstacles            = false;
+    ro.ground_xy_grid_frequency  = 0;  // disabled
+    ro.phi2z_scale               = 0;
+
+    mrpt::opengl::CSetOfObjects::Ptr planViz =
+        render_tree(tree, originalPlanInput, ro);
+    planViz->setName("astar_plan_result");
+
+    planViz->setLocation(0, 0, 0.01);  // to easy the vis wrt the ground
+
+    // Overlay the costmaps, if any:
+    // ----------------------------------
+    if (!costEvaluators.empty())
+    {
+        auto glCostMaps = mrpt::opengl::CSetOfObjects::Create();
+        glCostMaps->setName("glCostMaps");
+
+        float zOffset = 0.01f;  // to help visualize several costmaps at once
+
+        for (const auto& ce : costEvaluators)
         {
             if (!ce) continue;
             auto glCostMap = ce->get_visualization();
