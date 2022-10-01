@@ -6,6 +6,8 @@ file(GLOB_RECURSE LIB_PUBLIC_HDRS include/*.h)
 # find dependencies:
 find_package(MRPT 2.3.2 REQUIRED COMPONENTS containers graphs gui nav)
 
+set(MRPT_VERSION ${MRPT_VERSION} PARENT_SCOPE) # to show it in root cmake final summary
+
 # define lib:
 selfdriving_add_library(
   TARGET selfdriving
