@@ -32,11 +32,20 @@ struct PlannerOutput
     /** Distance from best found path to goal */
     double goalDistance = std::numeric_limits<double>::max();
 
-    /** Total cost of the best found path (cost; Euclidean distance) */
+    /** Total cost of the best found path.
+     * Cost is the Euclidean distance, modified by the additional cost map
+     * layers.
+     */
     double pathCost = std::numeric_limits<double>::max();
 
-    /** The ID of the best target node in the tree */
+    /** The tree node ID for the goal pose */
     TNodeID goalNodeId = mrpt::graphs::INVALID_NODEID;
+
+    /** The tree node with the smallest cost-to-goal. This will be identical
+     *  to goalNodeId for successful plans reaching the desired goal state, or
+     *  something different for unfinished or unsuccessful plans.
+     */
+    TNodeID bestNodeId = mrpt::graphs::INVALID_NODEID;
 
     /** The generated motion tree that explores free space starting at "start"
      */
