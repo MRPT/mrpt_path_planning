@@ -123,6 +123,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     // A* algorithm
     //
     // ----------------------------------------
+    // Open set is keyed by fScore (estimated cost to goal).
     std::multimap<distance_t, NodePtr> openSet;
     mrpt::graphs::TNodeID              nextFreeId = 0;
 
@@ -182,10 +183,13 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         // node with the lowest fScore:
         Node& current = *openSet.begin()->second.ptr;
 
+        // The node with the smallest cost to goal is the best one, so far:
+        po.bestNodeId = current.id.value();
+
         // current==goal?
-        // we must check the state to be on the same lattice cell to check for a
-        // match of the current SE(2) pose against the goal state, which may be
-        // either a SE(2) pose or a R2 point:
+        // we must check the state to be on the same lattice cell to check
+        // for a match of the current SE(2) pose against the goal state,
+        // which may be either a SE(2) pose or a R2 point:
         if (const auto curNodeGridIdx = nodeGridCoords(current.state.pose);
             curNodeGridIdx.sameLocation(goalCellIndices))
         {
