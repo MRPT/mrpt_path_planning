@@ -33,6 +33,7 @@ mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
     MCP_SAVE(c, ptg_norm_distance_sampling_granularity);
     MCP_SAVE(c, max_ptg_speeds_to_explore);
     MCP_SAVE_DEG(c, grid_resolution_yaw);
+    MCP_SAVE(c, maximumComputationTime);
 
     return c;
 }
@@ -52,6 +53,8 @@ void TPS_Astar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_OPT(c, pathInterpolatedSegments);
     MCP_LOAD_OPT(c, saveDebugVisualizationDecimation);
     MCP_LOAD_OPT(c, heuristic_heading_weight);
+
+    MCP_LOAD_OPT(c, maximumComputationTime);
 }
 
 TPS_Astar_Parameters TPS_Astar_Parameters::FromYAML(
@@ -71,6 +74,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 {
     MRPT_START
     mrpt::system::CTimeLoggerEntry tleg(profiler_(), "plan");
+
+    const double planInitTime = mrpt::Clock::nowDouble();
 
     // Sanity checks on inputs:
     ASSERT_(in.ptgs.initialized());
@@ -173,6 +178,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     nodesWithDesiredSpeed[goalCellIndices] = 0;
 
     unsigned int nIter = 0;
+
+    double tLastCallback = planInitTime;
 
     while (!openSet.empty())
     {
@@ -370,6 +377,32 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             scene.saveToFile(mrpt::format("debug_astar_%05u.3Dscene", nIter));
         }
 
+        // Time-based events:
+        const double tNow = mrpt::Clock::nowDouble();
+
+        // timeout?
+        if ((tNow - planInitTime) > params_.maximumComputationTime)
+        {
+            // timeout
+            MRPT_LOG_DEBUG("Timeout.");
+            break;
+        }
+
+        // Periodically report what is the so-far best path:
+        if (progressCallback_ &&
+            (tNow - tLastCallback) > progressCallbackCallPeriod_)
+        {
+            tLastCallback = tNow;
+
+            const auto [foundPath, pathEdges] =
+                tree.backtrack_path(po.bestNodeId);
+
+            const auto bestCost = tree.nodes().at(po.bestNodeId).cost_;
+
+            // call user callback:
+            progressCallback_(bestCost, pathEdges);
+        }
+
     }  // end while openSet!=empty
 
     // A* ended, now collect the result:
@@ -390,11 +423,13 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     po.pathCost = tree.nodes().at(nodeGoal.id.value()).cost_;
 
+    po.computationTime = mrpt::Clock::nowDouble() - planInitTime;
+
     return po;
     MRPT_END
 }
 
-distance_t TPS_Astar::default_heuristic_SE2(
+cost_t TPS_Astar::default_heuristic_SE2(
     const SE2_KinState& from, const mrpt::math::TPose2D& goal) const
 {
     selfdriving::PoseDistanceMetric_Lie<selfdriving::SE2_KinState> metric(
@@ -414,13 +449,13 @@ distance_t TPS_Astar::default_heuristic_SE2(
     return distSE2 + params_.heuristic_heading_weight * distHeading;
 }
 
-distance_t TPS_Astar::default_heuristic_R2(
+cost_t TPS_Astar::default_heuristic_R2(
     const SE2_KinState& from, const mrpt::math::TPoint2D& goal) const
 {
     return (from.pose.translation() - goal).norm();
 }
 
-distance_t TPS_Astar::default_heuristic(
+cost_t TPS_Astar::default_heuristic(
     const SE2_KinState& from, const SE2orR2_KinState& goal) const
 {
     if (goal.state.isPoint())

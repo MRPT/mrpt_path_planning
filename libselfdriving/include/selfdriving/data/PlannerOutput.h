@@ -14,8 +14,6 @@
 
 namespace selfdriving
 {
-using TNodeID = mrpt::graphs::TNodeID;
-
 /** The output of the path planner */
 struct PlannerOutput
 {

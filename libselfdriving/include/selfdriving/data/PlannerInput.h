@@ -11,6 +11,8 @@
 #include <selfdriving/data/TrajectoriesAndRobotShape.h>
 #include <selfdriving/interfaces/ObstacleSource.h>
 
+#include <functional>
+
 namespace selfdriving
 {
 struct PlannerInput

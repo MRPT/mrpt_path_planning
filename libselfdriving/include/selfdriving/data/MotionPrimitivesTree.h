@@ -24,6 +24,8 @@
 
 namespace selfdriving
 {
+using TNodeID = mrpt::graphs::TNodeID;
+
 /** Generic base for metrics */
 template <class node_t>
 struct PoseDistanceMetric_TPS;
@@ -74,18 +76,17 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     {
         /** Duplicated ID (it's also in the map::iterator->first), but put here
          * to make it available in path_t */
-        mrpt::graphs::TNodeID nodeID_ = mrpt::graphs::INVALID_NODEID;
+        TNodeID nodeID_ = mrpt::graphs::INVALID_NODEID;
 
         /** Does not have value for the root, a valid ID otherwise */
-        std::optional<mrpt::graphs::TNodeID> parentID_;
+        std::optional<TNodeID> parentID_;
 
         /** cost of reaching this node from the root (=0 for the root) */
         cost_t cost_;
 
         node_t() = default;
         node_t(
-            mrpt::graphs::TNodeID                       nodeID,
-            const std::optional<mrpt::graphs::TNodeID>& parentID,
+            TNodeID nodeID, const std::optional<TNodeID>& parentID,
             const NODE_TYPE_DATA& data, cost_t cost)
             : NODE_TYPE_DATA(data),
               nodeID_(nodeID),
@@ -108,8 +109,8 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     };
 
     /** Map: TNode_ID => Node info */
-    using node_map_t = typename map_traits_map_as_deque::template map<
-        mrpt::graphs::TNodeID, node_t>;
+    using node_map_t =
+        typename map_traits_map_as_deque::template map<TNodeID, node_t>;
 
     /** A topological path up-tree.
      *
@@ -118,8 +119,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     using path_t = std::list<node_t>;
 
     void insert_node_and_edge(
-        const mrpt::graphs::TNodeID parentId,
-        const mrpt::graphs::TNodeID newChildId,
+        const TNodeID parentId, const TNodeID newChildId,
         const NODE_TYPE_DATA& newChildNodeData, const EDGE_TYPE& newEdgeData)
     {
         // edge:
@@ -136,8 +136,8 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     }
 
     void update_node_and_edge(
-        const mrpt::graphs::TNodeID parentId,
-        const mrpt::graphs::TNodeID childId, const EDGE_TYPE& newEdgeData)
+        const TNodeID parentId, const TNodeID childId,
+        const EDGE_TYPE& newEdgeData)
     {
         // edge:
         auto& parentEdges = base_t::edges_to_children[parentId];
@@ -170,7 +170,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     }
 
     void rewire_node_parent(
-        const mrpt::graphs::TNodeID nodeId, const EDGE_TYPE& newEdgeFromParent)
+        const TNodeID nodeId, const EDGE_TYPE& newEdgeFromParent)
     {
         auto& node = nodes_.at(nodeId);
 
@@ -197,7 +197,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
         }
 
         // add edge:
-        const mrpt::graphs::TNodeID  parentId = newEdgeFromParent.parentId;
+        const TNodeID                parentId = newEdgeFromParent.parentId;
         typename base_t::TListEdges& parentEdges =
             base_t::edges_to_children[parentId];
         const bool dirChildToParent = false;
@@ -213,7 +213,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
         node.cost_     = newCost;
     }
 
-    const EDGE_TYPE& edge_to_parent(const mrpt::graphs::TNodeID nodeId) const
+    const EDGE_TYPE& edge_to_parent(const TNodeID nodeId) const
     {
         auto&       node        = nodes_.at(nodeId);
         const auto& parentEdges = base_t::edges_to_children.at(*node.parentID_);
@@ -229,7 +229,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     /** Insert a node without edges (should be used only for a tree root node)
      */
     void insert_root_node(
-        const mrpt::graphs::TNodeID node_id, const NODE_TYPE_DATA& node_data)
+        const TNodeID node_id, const NODE_TYPE_DATA& node_data)
     {
         ASSERTMSG_(
             nodes_.empty(), "insert_root_node() called on a non-empty tree");
@@ -237,7 +237,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
         nodes_[node_id] = node_t(node_id, {}, node_data, zeroCost);
     }
 
-    mrpt::graphs::TNodeID next_free_node_ID() const { return nodes_.size(); }
+    TNodeID next_free_node_ID() const { return nodes_.size(); }
 
     /** read-only access to nodes.
      * \sa  insert_node_and_edge, insert_node
@@ -250,7 +250,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
      * - ed
      */
     std::tuple<path_t, edge_sequence_t> backtrack_path(
-        const mrpt::graphs::TNodeID target_node) const
+        const TNodeID target_node) const
     {
         path_t          outPath;
         edge_sequence_t edgeList;
