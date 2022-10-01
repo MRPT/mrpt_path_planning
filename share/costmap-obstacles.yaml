@@ -4,3 +4,6 @@ preferredClearanceDistance: 0.40
 maxCost: 2.0
 
 useAverageOfPath: false
+
+maxRadiusFromRobot: 15.0  # [meters]
+

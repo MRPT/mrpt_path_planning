@@ -71,5 +71,7 @@ build-Release/bin/selfdriving-simulator-gui \
   -p share/ptgs_holonomic_robot.ini \
   --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
   --prefer-waypoints-parameters share/costmap-prefer-waypoints.yaml \
+  --global-costmap-parameters share/costmap-obstacles.yaml \
+  --local-costmap-parameters share/costmap-obstacles.yaml \
   -v DEBUG
 ```

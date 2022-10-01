@@ -127,8 +127,10 @@ mrpt::opengl::CSetOfObjects::Ptr
         waypoints_.getPoint(i, x, y);
 
         auto glDisk = mrpt::opengl::CDisk::Create();
-        glDisk->setColor_u8(0x00, 0x00, 0xff, 0x50);
-        glDisk->setDiskRadius(params_.waypointInfluenceRadius);
+        glDisk->setColor_u8(0x20, 0x20, 0xff, 0x20);
+        glDisk->setDiskRadius(
+            params_.waypointInfluenceRadius,
+            params_.waypointInfluenceRadius * 0.90);
         glDisk->setLocation(x, y, 0);
         glObjs->insert(glDisk);
     }

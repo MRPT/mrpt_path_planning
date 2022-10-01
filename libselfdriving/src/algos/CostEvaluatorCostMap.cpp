@@ -32,6 +32,7 @@ mrpt::containers::yaml CostEvaluatorCostMap::Parameters::as_yaml()
     MCP_SAVE(c, preferredClearanceDistance);
     MCP_SAVE(c, maxCost);
     MCP_SAVE(c, useAverageOfPath);
+    MCP_SAVE(c, maxRadiusFromRobot);
 
     return c;
 }
@@ -44,13 +45,15 @@ void CostEvaluatorCostMap::Parameters::load_from_yaml(
     MCP_LOAD_REQ(c, preferredClearanceDistance);
     MCP_LOAD_REQ(c, maxCost);
     MCP_LOAD_REQ(c, useAverageOfPath);
+    MCP_LOAD_REQ(c, maxRadiusFromRobot);
 }
 
 CostEvaluatorCostMap::~CostEvaluatorCostMap() = default;
 
 CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
-    const mrpt::maps::CPointsMap&           obsPts,
-    const CostEvaluatorCostMap::Parameters& p)
+    const mrpt::maps::CPointsMap&             obsPts,
+    const CostEvaluatorCostMap::Parameters&   p,
+    const std::optional<mrpt::math::TPose2D>& curRobotPose)
 {
     auto cm     = CostEvaluatorCostMap::Create();
     cm->params_ = p;
@@ -64,6 +67,17 @@ CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
 
     bbox.min -= {D, D, 0.f};
     bbox.max += {D, D, 0.f};
+
+    // optional limit to costmap area:
+    if (p.maxRadiusFromRobot > 0)
+    {
+        ASSERT_(curRobotPose.has_value());
+        const auto t = curRobotPose->translation();
+        const auto R = p.maxRadiusFromRobot + D;
+
+        bbox.min = mrpt::math::TPoint3Df(t.x - R, t.y - R, 0);
+        bbox.max = mrpt::math::TPoint3Df(t.x + R, t.y + R, 0);
+    }
 
     double defaultCost = .0;
     cm->costmap_.setSize(

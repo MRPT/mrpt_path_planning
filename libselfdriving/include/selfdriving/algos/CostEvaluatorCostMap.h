@@ -41,13 +41,19 @@ class CostEvaluatorCostMap : public CostEvaluator
          */
         bool useAverageOfPath = false;
 
+        /** If !=0, defines the costmap only around a given maximum squared ROI
+         * around the current robot pose. Otherwise, the limits are given by the
+         * obstacle points. */
+        double maxRadiusFromRobot = .0;
+
         mrpt::containers::yaml as_yaml();
         void                   load_from_yaml(const mrpt::containers::yaml& c);
     };
 
     static CostEvaluatorCostMap::Ptr FromStaticPointObstacles(
-        const mrpt::maps::CPointsMap& obsPts,
-        const Parameters&             p = Parameters());
+        const mrpt::maps::CPointsMap&             obsPts,
+        const Parameters&                         p            = Parameters(),
+        const std::optional<mrpt::math::TPose2D>& curRobotPose = std::nullopt);
 
     /** Evaluate cost of move-tree edge */
     double operator()(const MoveEdgeSE2_TPS& edge) const override;
