@@ -237,7 +237,7 @@ static void do_plan_path()
 
         auto costmap =
             selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-                *obsPts, costMapParams);
+                *obsPts, costMapParams, pi.stateStart.pose);
 
         planner->costEvaluators_.push_back(costmap);
     }

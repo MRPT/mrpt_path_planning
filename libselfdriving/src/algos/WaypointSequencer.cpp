@@ -480,7 +480,8 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
         {
             planner.costEvaluators_.push_back(
                 selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-                    *obs, config_.globalCostParameters));
+                    *obs, config_.globalCostParameters,
+                    ppi.pi.stateStart.pose));
         }
     }
 
@@ -491,7 +492,7 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
         {
             planner.costEvaluators_.push_back(
                 selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-                    *obs, config_.localCostParameters));
+                    *obs, config_.localCostParameters, ppi.pi.stateStart.pose));
         }
     }
 

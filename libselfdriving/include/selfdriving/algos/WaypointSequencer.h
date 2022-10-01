@@ -151,10 +151,9 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
         TPS_Astar_Parameters plannerParams;
 
-        selfdriving::CostEvaluatorCostMap::Parameters globalCostParameters;
-        selfdriving::CostEvaluatorCostMap::Parameters localCostParameters;
-        selfdriving::CostEvaluatorPreferredWaypoint::Parameters
-            preferWaypointsParameters;
+        CostEvaluatorCostMap::Parameters           globalCostParameters;
+        CostEvaluatorCostMap::Parameters           localCostParameters;
+        CostEvaluatorPreferredWaypoint::Parameters preferWaypointsParameters;
 
         double enqueuedActionsToleranceXY       = 0.05;
         double enqueuedActionsTolerancePhi      = mrpt::DEG2RAD(2.0);

@@ -29,55 +29,65 @@
 
 #include <thread>
 
-static TCLAP::CmdLine cmd(
+TCLAP::CmdLine cmd(
     "selfdriving-simulator-gui", ' ', "version", false /* no --help */);
 
-static TCLAP::ValueArg<std::string> argVerbosity(
+TCLAP::ValueArg<std::string> argVerbosity(
     "v", "verbose", "Verbosity level for path planner", false, "INFO",
     "ERROR|WARN|INFO|DEBUG", cmd);
 
-static TCLAP::ValueArg<std::string> argVerbosityMVSIM(
+TCLAP::ValueArg<std::string> argVerbosityMVSIM(
     "", "verbose-mvsim", "Verbosity level for the mvsim subsystem", false,
     "INFO", "ERROR|WARN|INFO|DEBUG", cmd);
 
-static TCLAP::ValueArg<std::string> arg_config_file_section(
+TCLAP::ValueArg<std::string> arg_config_file_section(
     "", "config-section",
     "If loading from an INI file, the name of the section to load", false,
     "SelfDriving", "SelfDriving", cmd);
 
-static TCLAP::ValueArg<std::string> argMvsimFile(
+TCLAP::ValueArg<std::string> argMvsimFile(
     "s", "simul-file", "MVSIM XML file", true, "xxx.xml", "World XML file",
     cmd);
 
-static TCLAP::ValueArg<std::string> argVehicleInterface(
+TCLAP::ValueArg<std::string> argVehicleInterface(
     "", "vehicle-interface-class",
     "Class name to use (Default: 'selfdriving::MVSIM_VehicleInterface')", false,
     "selfdriving::MVSIM_VehicleInterface",
     "Class name to use for vehicle interface", cmd);
 
-static TCLAP::ValueArg<std::string> arg_ptgs_file(
+TCLAP::ValueArg<std::string> arg_ptgs_file(
     "p", "ptg-config", "Input .ini file with PTG definitions.", true, "",
     "ptgs.ini", cmd);
 
-static TCLAP::ValueArg<std::string> arg_planner_yaml_file(
+TCLAP::ValueArg<std::string> arg_planner_yaml_file(
     "", "planner-parameters", "Input .yaml file with planner parameters", false,
     "", "tps-astar.yaml", cmd);
 
-static TCLAP::ValueArg<std::string> arg_cost_prefer_waypoints_yaml_file(
+TCLAP::ValueArg<std::string> arg_cost_prefer_waypoints_yaml_file(
     "", "prefer-waypoints-parameters",
     "Input .yaml file with costmap parameters", false, "",
     "cost-prefer-waypoints.yaml", cmd);
 
-static TCLAP::ValueArg<std::string> arg_waypoints_yaml_file(
+TCLAP::ValueArg<std::string> arg_cost_global_yaml_file(
+    "", "global-costmap-parameters",
+    "Input .yaml file with global obstacle points costmap parameters", false,
+    "", "points-costmap.yaml", cmd);
+
+TCLAP::ValueArg<std::string> arg_cost_local_yaml_file(
+    "", "local-costmap-parameters",
+    "Input .yaml file with local obstacle points costmap parameters", false, "",
+    "points-costmap.yaml", cmd);
+
+TCLAP::ValueArg<std::string> arg_waypoints_yaml_file(
     "", "waypoints", "Input .yaml file with waypoints", false, "",
     "waypoints.yaml", cmd);
 
-static TCLAP::ValueArg<std::string> arg_plugins(
+TCLAP::ValueArg<std::string> arg_plugins(
     "", "plugins",
     "Optional plug-in libraries to load, for externally-defined PTGs", false,
     "", "mylib.so", cmd);
 
-static std::shared_ptr<mvsim::Server> server;
+std::shared_ptr<mvsim::Server> server;
 
 void commonLaunchServer()
 {
@@ -263,6 +273,22 @@ void prepare_selfdriving(mvsim::World& world)
             selfdriving::TPS_Astar_Parameters::FromYAML(
                 mrpt::containers::yaml::FromFile(
                     arg_planner_yaml_file.getValue()));
+    }
+
+    if (arg_cost_global_yaml_file.isSet())
+    {
+        sd.navigator.config_.globalCostParameters =
+            selfdriving::CostEvaluatorCostMap::Parameters::FromYAML(
+                mrpt::containers::yaml::FromFile(
+                    arg_cost_global_yaml_file.getValue()));
+    }
+
+    if (arg_cost_local_yaml_file.isSet())
+    {
+        sd.navigator.config_.localCostParameters =
+            selfdriving::CostEvaluatorCostMap::Parameters::FromYAML(
+                mrpt::containers::yaml::FromFile(
+                    arg_cost_local_yaml_file.getValue()));
     }
 
     if (arg_cost_prefer_waypoints_yaml_file.isSet())
@@ -872,7 +898,7 @@ void on_do_single_path_planning(
     {
         auto staticCostmap =
             selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-                *obsPts, cmP);
+                *obsPts, cmP, pi.stateStart.pose);
 
         planner.costEvaluators_.push_back(staticCostmap);
     }
@@ -886,7 +912,7 @@ void on_do_single_path_planning(
         {
             auto lidarCostmap =
                 selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-                    *obs, cmP);
+                    *obs, cmP, pi.stateStart.pose);
 
             planner.costEvaluators_.push_back(lidarCostmap);
         }
