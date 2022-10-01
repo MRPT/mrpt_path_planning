@@ -6,6 +6,10 @@ find_package(MRPT REQUIRED COMPONENTS gui nav tclap)
 selfdriving_add_executable(
   TARGET ${PROJECT_NAME}
   SOURCES path-planner-cli.cpp
-	LINK_LIBRARIES ${MRPT_LIBRARIES} selfdriving
+	LINK_LIBRARIES 
+    mrpt::gui
+    mrpt::nav
+    mrpt::tclap
+    selfdriving
 )
 
