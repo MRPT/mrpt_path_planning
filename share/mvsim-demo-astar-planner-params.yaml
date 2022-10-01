@@ -12,5 +12,7 @@ heuristic_heading_weight: 0.1
 SE2_metricAngleWeight: 0.1
 pathInterpolatedSegments: 7
 
+maximumComputationTime: 6.0  # [seconds]
+
 #saveDebugVisualizationDecimation: 1
 
