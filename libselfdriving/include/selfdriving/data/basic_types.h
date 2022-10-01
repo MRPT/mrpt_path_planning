@@ -17,6 +17,9 @@ using distance_t = double;
 /** TPS normalized distances in range [0,1] */
 using normalized_distance_t = double;
 
+/** Cost of a given trajectory or trajectory segment */
+using cost_t = double;
+
 /** Index of a trajectory in a PTG */
 using trajectory_index_t = int;
 

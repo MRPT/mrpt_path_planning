@@ -271,10 +271,24 @@ static void do_plan_path()
         planner->params_as_yaml().printAsYAML();
     }
 
+    // Insert custom progress callback:
+    planner->progressCallback_ =
+        [](selfdriving::cost_t currentBestCost,
+           selfdriving::MotionPrimitivesTreeSE2::edge_sequence_t
+               currentBestPath) {
+            std::cout << "[progressCallback] currentBestCost: "
+                      << currentBestCost
+                      << " currentBestPath: " << currentBestPath.size()
+                      << " edges." << std::endl;
+        };
+
     // PTGs config file:
     mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
     pi.ptgs.initFromConfigFile(cfg, arg_config_file_section.getValue());
 
+    // ==================================================
+    // ACTUAL PATH PLANNING
+    // ==================================================
     const selfdriving::PlannerOutput plan = planner->plan(pi);
 
     std::cout << "\nDone.\n";

@@ -19,6 +19,9 @@
 
 namespace selfdriving
 {
+using astar_heuristic_t = std::function<cost_t(
+    const SE2_KinState& /*from*/, const SE2orR2_KinState& /*goal*/)>;
+
 struct TPS_Astar_Parameters
 {
     TPS_Astar_Parameters() = default;
@@ -45,12 +48,13 @@ struct TPS_Astar_Parameters
     /** 0:disabled */
     size_t saveDebugVisualizationDecimation = 0;
 
+    /** Maximum time to spend looking for a solution */
+    duration_seconds_t maximumComputationTime =
+        std::numeric_limits<duration_seconds_t>::max();
+
     mrpt::containers::yaml as_yaml();
     void                   load_from_yaml(const mrpt::containers::yaml& c);
 };
-
-using astar_heuristic_t = std::function<double(
-    const SE2_KinState& /*from*/, const SE2orR2_KinState& /*goal*/)>;
 
 /**
  * Uses a SE(2) lattice to run an A* algorithm to find a kinematicaly feasible
@@ -79,12 +83,12 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         params_.load_from_yaml(c);
     }
 
-    distance_t default_heuristic(
+    cost_t default_heuristic(
         const SE2_KinState& from, const SE2orR2_KinState& goal) const;
 
-    distance_t default_heuristic_SE2(
+    cost_t default_heuristic_SE2(
         const SE2_KinState& from, const mrpt::math::TPose2D& goal) const;
-    distance_t default_heuristic_R2(
+    cost_t default_heuristic_R2(
         const SE2_KinState& from, const mrpt::math::TPoint2D& goal) const;
 
     astar_heuristic_t heuristic = astar_heuristic_t(
@@ -210,10 +214,10 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         SE2_KinState state;
 
         /// Total cost from initialState to this node (default=Inf)
-        distance_t gScore = std::numeric_limits<distance_t>::max();
+        cost_t gScore = std::numeric_limits<cost_t>::max();
 
         /// Guess of cost from this node to goal (default=Inf)
-        distance_t fScore = std::numeric_limits<distance_t>::max();
+        cost_t fScore = std::numeric_limits<cost_t>::max();
 
         /// parent (precedent) of this node in the path.
         std::optional<const Node*> cameFrom;

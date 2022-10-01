@@ -18,6 +18,10 @@
 
 namespace selfdriving
 {
+using planner_progress_callback_t = std::function<void(
+    cost_t /*currentBestCost*/,
+    MotionPrimitivesTreeSE2::edge_sequence_t /*currentBestPath*/)>;
+
 class Planner : public mrpt::rtti::CObject,
                 virtual public mrpt::system::COutputLogger
 {
@@ -44,6 +48,10 @@ class Planner : public mrpt::rtti::CObject,
     }
 
     cost_t cost_path_segment(const MoveEdgeSE2_TPS& edge) const;
+
+    /** optional progress callback */
+    planner_progress_callback_t progressCallback_;
+    duration_seconds_t          progressCallbackCallPeriod_ = 0.1;
 
    private:
     /** Time profiler (Default: enabled)*/
