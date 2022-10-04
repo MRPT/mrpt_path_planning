@@ -627,14 +627,19 @@ void WaypointSequencer::check_new_planner_output()
 
     // TODO: anything to do with current activePath before overwritting it?
     _.activePlanOutput = std::move(result);
-    _.activePlanNextNodeId.reset();
+    _.active_plan_reset();
 
     {
         auto [path, edges] = _.activePlanOutput.po.motionTree.backtrack_path(
             _.activePlanOutput.po.goalNodeId);
 
-        _.activePlanPath      = std::move(path);
-        _.activePlanPathEdges = std::move(edges);
+        // std::list -> std::vector for convenience:
+        _.activePlanPath.clear();
+        for (const auto& node : path) _.activePlanPath.push_back(node);
+
+        // std::list -> std::vector for convenience:
+        _.activePlanPathEdges.clear();
+        for (const auto& edge : edges) _.activePlanPathEdges.push_back(edge);
 
 #if 0
         const auto traj = selfdriving::plan_to_trajectory(
@@ -655,23 +660,39 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
 
     auto& _ = innerState_;
 
-    if (!_.activePlanPath.empty() && !_.activePlanNextNodeId.has_value())
+    // Nothing to do?
+    if (_.activePlanPath.empty()) return;
+
+    if (!_.activePlanEdgeIndex.has_value())
     {
-        const auto& nCurr = _.activePlanPath.front();
-        const auto& nNext = *(++_.activePlanPath.begin());
+        ASSERT_EQUAL_(
+            _.activePlanPath.size(), _.activePlanPathEdges.size() + 1);
+
+        _.activePlanEdgeIndex = 0;  // first edge
+    }
+
+    // Time to send out a new edge:
+    if (!_.activePlanEdgeSentIndex.has_value() ||
+        *_.activePlanEdgeSentIndex != *_.activePlanEdgeIndex)
+    {
+        const auto& nCurr = _.activePlanPath.at(*_.activePlanEdgeIndex);
+        const auto& nNext = _.activePlanPath.at(*_.activePlanEdgeIndex + 1);
+
         std::optional<MotionPrimitivesTreeSE2::node_t> nAfterNext;
+        if (_.activePlanPath.size() >= *_.activePlanEdgeIndex + 2)
+            nAfterNext = _.activePlanPath.at(*_.activePlanEdgeIndex + 2);
 
-        // If we have at least two actions, use the two actions at a time
-        // API:
-        MRPT_TODO("check if this robot supports pended actions");
+        // Mark the next "motion edge" as "sent":
+        _.activePlanEdgeSentIndex = *_.activePlanEdgeIndex;
 
-        if (_.activePlanPath.size() >= 3)
-            nAfterNext = *(++(++_.activePlanPath.begin()));
+        // If we have at least two actions, use the two actions at a time API:
 
-        _.activePlanNextNodeId = nNext.nodeID_;
+        // Check if this robot supports enqueued actions:
+        const auto supportsEnqueued =
+            config_.vehicleMotionInterface->supports_enqeued_motions();
+        ASSERT_(supportsEnqueued);  // TODO: Implement adaptor layer
 
-        const auto edge =
-            _.activePlanOutput.po.motionTree.edge_to_parent(nNext.nodeID_);
+        const auto edge = *_.activePlanPathEdges.at(*_.activePlanEdgeIndex);
 
         auto& ptg = config_.ptgs.ptgs.at(edge.ptgIndex);
         ptg->updateNavDynamicState(edge.getPTGDynState());
@@ -685,8 +706,7 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
         if (nAfterNext.has_value())
         {
             const auto nextEdge =
-                _.activePlanOutput.po.motionTree.edge_to_parent(
-                    nAfterNext->nodeID_);
+                *_.activePlanPathEdges.at(*_.activePlanEdgeIndex + 1);
 
             auto& nextPtg = config_.ptgs.ptgs.at(nextEdge.ptgIndex);
             nextPtg->updateNavDynamicState(nextEdge.getPTGDynState());

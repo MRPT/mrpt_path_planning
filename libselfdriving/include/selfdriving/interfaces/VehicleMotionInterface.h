@@ -121,11 +121,16 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger,
      *
      *
      * \return false on any error.
-     * \sa startWatchdog
+     * \sa startWatchdog(), supports_enqeued_motions()
      */
     virtual bool motion_execute(
         const std::optional<CVehicleVelCmd::Ptr>& immediate,
         const std::optional<EnqueuedMotionCmd>&   next) = 0;
+
+    /** Reimplement to return true if enqueued motions are supported in
+     * motion_execute()
+     */
+    virtual bool supports_enqeued_motions() const { return false; }
 
     /** Stops the vehicle. Different levels of abruptness in the stop can be
      * considered given the emergency condition or not of the command.

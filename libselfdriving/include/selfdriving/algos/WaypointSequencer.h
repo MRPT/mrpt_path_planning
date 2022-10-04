@@ -355,10 +355,33 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         std::optional<waypoint_idx_t> activeFinalTarget;
 
         /** Set by check_new_planner_output() */
-        PathPlannerOutput                        activePlanOutput;
-        MotionPrimitivesTreeSE2::path_t          activePlanPath;
-        MotionPrimitivesTreeSE2::edge_sequence_t activePlanPathEdges;
-        std::optional<mrpt::graphs::TNodeID>     activePlanNextNodeId;
+        PathPlannerOutput                                   activePlanOutput;
+        std::vector<MotionPrimitivesTreeSE2::node_t>        activePlanPath;
+        std::vector<const MotionPrimitivesTreeSE2::edge_t*> activePlanPathEdges;
+
+        void active_plan_reset()
+        {
+            activePlanEdgeIndex.reset();
+            activePlanEdgeSentIndex.reset();
+            activePlanEdgeDoneIndex.reset();
+        }
+
+        /** 0-based index of which edge in activePlanPathEdges[] is currently
+         * being executed by the robot. Empty if the plan is new and no order
+         * has been sent out to the robot yet.
+         * The i-th edge is moving between nodes [i] and [i+1] in
+         * activePlanPath.
+         */
+        std::optional<size_t> activePlanEdgeIndex;
+
+        /** Will be equal to activePlanEdgeIndex once the command has been sent
+         * out to the robot */
+        std::optional<size_t> activePlanEdgeSentIndex;
+
+        /** This will be set by the watcher when a current motion edge has been
+         * completed and it is time to move on to the next one.
+         */
+        std::optional<size_t> activePlanEdgeDoneIndex;
 
         // int  counterCheckTargetIsBlocked_ = 0;
 
