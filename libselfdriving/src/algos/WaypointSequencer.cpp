@@ -671,6 +671,22 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
         _.activePlanEdgeIndex = 0;  // first edge
     }
 
+    // Waiting for the end of this edge motion?
+    // Must be done *before* the next if() block:
+    if (_.activePlanEdgeSentIndex.has_value() &&
+        *_.activePlanEdgeSentIndex == *_.activePlanEdgeIndex)
+    {
+        if (!config_.vehicleMotionInterface->has_enqeued_motion())
+        {
+            // We are ready for the next one:
+            _.activePlanEdgeIndex.value()++;
+
+            MRPT_LOG_INFO_STREAM(
+                "Enqueued motion seems to have been done. Moving to next edge #"
+                << *_.activePlanEdgeIndex);
+        }
+    }
+
     // Time to send out a new edge:
     if (!_.activePlanEdgeSentIndex.has_value() ||
         *_.activePlanEdgeSentIndex != *_.activePlanEdgeIndex)
@@ -723,7 +739,7 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
                 "Generating compound motion cmd to move from node ID "
                 << nCurr.nodeID_ << " => " << nNext.nodeID_ << " => "
                 << nAfterNext->nodeID_
-                << "\n CMD1:" << generatedMotionCmd->asString()
+                << "\n CMD1: " << generatedMotionCmd->asString()
                 << "\n CMD2: " << generatedMotionCmdAfter->asString()
                 << "\n CondPose: " << relPoseNext
                 << "\n TargetRelPose: " << relPoseAfterNext);
@@ -741,8 +757,25 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
                 std::max(1.0, edge.estimatedExecTime) *
                 config_.enqueuedActionsTimeoutMultiplier;
 
-            config_.vehicleMotionInterface->motion_execute(
-                generatedMotionCmd, enqMotion);
+            // if the immediate cmd was already sent out, skip it and just send
+            // the enqueued part:
+            if (_.activePlanEdgesSentOut.count(*_.activePlanEdgeIndex) == 0)
+            {
+                // send both, both are new:
+                config_.vehicleMotionInterface->motion_execute(
+                    generatedMotionCmd, enqMotion);
+
+                _.activePlanEdgesSentOut.insert(*_.activePlanEdgeIndex);
+                _.activePlanEdgesSentOut.insert(*_.activePlanEdgeIndex + 1);
+            }
+            else
+            {
+                // Only the enqueued part is new:
+                config_.vehicleMotionInterface->motion_execute(
+                    std::nullopt, enqMotion);
+
+                _.activePlanEdgesSentOut.insert(*_.activePlanEdgeIndex + 1);
+            }
         }
         else
         {
@@ -753,6 +786,8 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
 
             config_.vehicleMotionInterface->motion_execute(
                 generatedMotionCmd, std::nullopt);
+
+            _.activePlanEdgesSentOut.insert(*_.activePlanEdgeIndex);
         }
     }
 }

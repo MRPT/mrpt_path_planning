@@ -155,8 +155,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         CostEvaluatorCostMap::Parameters           localCostParameters;
         CostEvaluatorPreferredWaypoint::Parameters preferWaypointsParameters;
 
-        double enqueuedActionsToleranceXY       = 0.05;
-        double enqueuedActionsTolerancePhi      = mrpt::DEG2RAD(2.0);
+        double enqueuedActionsToleranceXY       = 0.10;
+        double enqueuedActionsTolerancePhi      = mrpt::DEG2RAD(5.0);
         double enqueuedActionsTimeoutMultiplier = 1.3;
 
         /** @} */
@@ -364,6 +364,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
             activePlanEdgeIndex.reset();
             activePlanEdgeSentIndex.reset();
             activePlanEdgeDoneIndex.reset();
+            activePlanEdgesSentOut.clear();
         }
 
         /** 0-based index of which edge in activePlanPathEdges[] is currently
@@ -382,6 +383,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
          * completed and it is time to move on to the next one.
          */
         std::optional<size_t> activePlanEdgeDoneIndex;
+
+        std::set<size_t> activePlanEdgesSentOut;
 
         // int  counterCheckTargetIsBlocked_ = 0;
 
