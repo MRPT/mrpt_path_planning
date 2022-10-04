@@ -523,23 +523,21 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     // Insert custom progress callback for the GUI, if enabled:
     if (config_.vizSceneToModify)
     {
-        planner.progressCallback_ =
-            [this](
-                cost_t                                   currentBestCost,
-                MotionPrimitivesTreeSE2::edge_sequence_t currentBestPath,
-                TNodeID                                  currentBestFinalNode,
-                const MotionPrimitivesTreeSE2&           tree,
-                const PlannerInput&                      originalPlanInput,
-                const std::vector<CostEvaluator::Ptr>&   costEvaluators) {
-                MRPT_LOG_DEBUG_STREAM(
-                    "[progressCallback] currentBestCost: "
-                    << currentBestCost << " currentBestPath: "
-                    << currentBestPath.size() << " edges.");
+        planner.progressCallback_ = [this](const ProgressCallbackData& pcd) {
+            MRPT_LOG_INFO_STREAM(
+                "[progressCallback] bestCostFromStart: "
+                << pcd.bestCostFromStart
+                << " bestCostToGoal: " << pcd.bestCostToGoal
+                << " bestPathLength: " << pcd.bestPath.size());
 
-                send_path_to_viz(
-                    tree, currentBestFinalNode, originalPlanInput,
-                    costEvaluators);
-            };
+            ASSERT_(pcd.tree);
+            ASSERT_(pcd.originalPlanInput);
+            ASSERT_(pcd.costEvaluators);
+
+            send_path_to_viz(
+                *pcd.tree, pcd.bestFinalNode, *pcd.originalPlanInput,
+                *pcd.costEvaluators);
+        };
     }
 
     mrpt::system::CTimeLoggerEntry tle2(

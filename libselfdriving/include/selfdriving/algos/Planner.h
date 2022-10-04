@@ -12,20 +12,13 @@
 #include <selfdriving/algos/CostEvaluator.h>
 #include <selfdriving/data/PlannerInput.h>
 #include <selfdriving/data/PlannerOutput.h>
+#include <selfdriving/data/ProgressCallbackData.h>
 
 #include <optional>
 #include <vector>
 
 namespace selfdriving
 {
-using planner_progress_callback_t = std::function<void(
-    cost_t /*currentBestCost*/,
-    MotionPrimitivesTreeSE2::edge_sequence_t /*currentBestPath*/,
-    TNodeID /*currentBestFinalNode*/, const MotionPrimitivesTreeSE2& /*tree*/,
-    const PlannerInput& /*originalPlanInput*/,
-    const std::vector<CostEvaluator::Ptr>& /*costEvaluators */
-    )>;
-
 class Planner : public mrpt::rtti::CObject,
                 virtual public mrpt::system::COutputLogger
 {

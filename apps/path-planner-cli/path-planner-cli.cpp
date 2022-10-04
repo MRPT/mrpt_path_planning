@@ -273,18 +273,12 @@ static void do_plan_path()
 
     // Insert custom progress callback:
     planner->progressCallback_ =
-        [](selfdriving::cost_t currentBestCost,
-           selfdriving::MotionPrimitivesTreeSE2::edge_sequence_t
-               currentBestPath,
-           selfdriving::TNodeID /*currentBestFinalNode*/,
-           const selfdriving::MotionPrimitivesTreeSE2& /*tree*/,
-           const selfdriving::PlannerInput& /*originalPlanInput*/,
-           const std::vector<selfdriving::CostEvaluator::Ptr>& /*costEvals*/
-        ) {
-            std::cout << "[progressCallback] currentBestCost: "
-                      << currentBestCost
-                      << " currentBestPath: " << currentBestPath.size()
-                      << " edges." << std::endl;
+        [](const selfdriving::ProgressCallbackData& pcd) {
+            std::cout << "[progressCallback] bestCostFromStart: "
+                      << pcd.bestCostFromStart
+                      << " bestCostToGoal: " << pcd.bestCostToGoal
+                      << " bestPathLength: " << pcd.bestPath.size()
+                      << std::endl;
         };
 
     // PTGs config file:

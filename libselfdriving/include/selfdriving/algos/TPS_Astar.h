@@ -178,7 +178,7 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 #endif
 
     using nodes_with_desired_speed_t =
-        std::unordered_map<NodeCoords, relative_speed_t, NodeCoordsHash>;
+        std::unordered_map<NodeCoords, normalized_speed_t, NodeCoordsHash>;
 
     using absolute_cell_index_t = size_t;
 
