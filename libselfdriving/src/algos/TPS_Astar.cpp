@@ -407,11 +407,17 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             const auto [foundPath, pathEdges] =
                 tree.backtrack_path(po.bestNodeId);
 
-            const auto bestCost = tree.nodes().at(po.bestNodeId).cost_;
-
             // call user callback:
-            progressCallback_(
-                bestCost, pathEdges, po.bestNodeId, tree, in, costEvaluators_);
+            ProgressCallbackData pcd;
+            pcd.bestCostFromStart = tree.nodes().at(po.bestNodeId).cost_;
+            pcd.bestCostToGoal    = po.bestNodeIdCostToGoal;
+            pcd.bestFinalNode     = po.bestNodeId;
+            pcd.bestPath          = std::move(pathEdges);
+            pcd.costEvaluators    = &costEvaluators_;
+            pcd.originalPlanInput = &in;
+            pcd.tree              = &tree;
+
+            progressCallback_(pcd);
         }
 
     }  // end while openSet!=empty
@@ -574,7 +580,7 @@ TPS_Astar::list_paths_to_neighbors_t
         }
 
         // Build possible distances for each path:
-        std::vector<relative_speed_t> speedsToConsider;
+        std::vector<normalized_speed_t> speedsToConsider;
         {
             // N=1 ==>  [1.0]
             // N=2 ==>  [0.5, 1.0]
@@ -582,9 +588,9 @@ TPS_Astar::list_paths_to_neighbors_t
             // ....
 
             ASSERT_(params_.max_ptg_speeds_to_explore >= 1);
-            relative_speed_t speedStep =
+            normalized_speed_t speedStep =
                 1.0 / params_.max_ptg_speeds_to_explore;
-            for (relative_speed_t s = speedStep; s < 1.001; s += speedStep)
+            for (normalized_speed_t s = speedStep; s < 1.001; s += speedStep)
                 speedsToConsider.push_back(s);
         }
 

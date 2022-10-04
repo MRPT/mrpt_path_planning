@@ -14,6 +14,7 @@
 #include <mrpt/poses/CPose2D.h>
 #include <selfdriving/data/MoveEdgeSE2_TPS.h>
 #include <selfdriving/data/SE2_KinState.h>
+#include <selfdriving/data/basic_types.h>
 #include <selfdriving/data/ptg_t.h>
 
 #include <cstdint>
@@ -24,7 +25,8 @@
 
 namespace selfdriving
 {
-using TNodeID = mrpt::graphs::TNodeID;
+using mrpt::graphs::INVALID_NODEID;
+using mrpt::graphs::TNodeID;
 
 /** Generic base for metrics */
 template <class node_t>
@@ -49,11 +51,6 @@ struct TPS_point
     normalized_distance_t d;
     normalized_speed_t    speed;
 };
-
-using cost_t = double;
-
-/** Relative speed ratio [0,1] */
-using relative_speed_t = double;
 
 /** A tree with nodes being vehicle poses, and edges potential valid motion
  * primitives between them.

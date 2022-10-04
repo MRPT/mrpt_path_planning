@@ -25,7 +25,7 @@ using trajectory_index_t = int;
 
 using ptg_index_t = size_t;
 
-/** Normalized speed in range [0,1] */
+/** Normalized (or relative) speed in range [0,1] */
 using normalized_speed_t = double;
 
 /** Time duration in seconds */
