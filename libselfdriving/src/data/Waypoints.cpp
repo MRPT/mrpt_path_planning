@@ -67,7 +67,7 @@ mrpt::containers::yaml Waypoint::asYAML() const
     d["target"] = mrpt::containers::yaml::Sequence({target.x, target.y});
     d["target"].node().printInShortFormat = true;
 
-    if (targetHeading) d["targetHeading"] = *targetHeading;
+    if (targetHeading) d["targetHeading"] = mrpt::RAD2DEG(*targetHeading);
 
     d["targetFrameId"]   = targetFrameId;
     d["allowedDistance"] = allowedDistance;
@@ -89,7 +89,7 @@ Waypoint Waypoint::FromYAML(const mrpt::containers::yaml& d)
         s.asSequence()[0].as<double>(), s.asSequence()[1].as<double>()};
 
     if (d.has("targetHeading"))
-        wp.targetHeading = d["targetHeading"].as<double>();
+        wp.targetHeading = mrpt::DEG2RAD(d["targetHeading"].as<double>());
 
     wp.targetFrameId   = d["targetFrameId"].as<std::string>();
     wp.allowedDistance = d["allowedDistance"].as<double>();
