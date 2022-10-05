@@ -149,15 +149,18 @@ class WaypointSequencer : public mrpt::system::COutputLogger
          * for each individual call to the A* planner. */
         double planner_bbox_margin = 4.0;
 
+        double enqueuedActionsToleranceXY       = 0.05;
+        double enqueuedActionsTolerancePhi      = mrpt::DEG2RAD(2.0);
+        double enqueuedActionsTimeoutMultiplier = 1.3;
+
+        void                   loadFrom(const mrpt::containers::yaml& c);
+        mrpt::containers::yaml saveTo() const;
+
         TPS_Astar_Parameters plannerParams;
 
         CostEvaluatorCostMap::Parameters           globalCostParameters;
         CostEvaluatorCostMap::Parameters           localCostParameters;
         CostEvaluatorPreferredWaypoint::Parameters preferWaypointsParameters;
-
-        double enqueuedActionsToleranceXY       = 0.10;
-        double enqueuedActionsTolerancePhi      = mrpt::DEG2RAD(5.0);
-        double enqueuedActionsTimeoutMultiplier = 1.3;
 
         /** @} */
 
