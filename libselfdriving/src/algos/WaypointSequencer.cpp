@@ -24,6 +24,17 @@ WaypointSequencer::~WaypointSequencer()
     // stop vehicle, etc.
 }
 
+void WaypointSequencer::Configuration::loadFrom(const mrpt::containers::yaml& c)
+{
+    //
+}
+mrpt::containers::yaml WaypointSequencer::Configuration::saveTo() const
+{
+    auto p = mrpt::containers::yaml::Map();
+
+    return p;
+}
+
 void WaypointSequencer::initialize()
 {
     MRPT_START
