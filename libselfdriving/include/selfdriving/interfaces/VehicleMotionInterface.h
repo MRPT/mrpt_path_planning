@@ -136,7 +136,13 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger,
      * motion_execute() and it is still waiting to be executed, or false
      * otherwise (no action enqeued, or it was already triggered and executed).
      */
-    virtual bool has_enqeued_motion() const { return false; }
+    virtual bool enqeued_motion_pending() const { return false; }
+
+    /** Reimplement to return true if an enqueued motions has been received from
+     * motion_execute() and it has timed out, or false
+     * otherwise (no action enqeued, or it was already triggered correctly).
+     */
+    virtual bool enqeued_motion_timed_out() const { return false; }
 
     /** Stops the vehicle. Different levels of abruptness in the stop can be
      * considered given the emergency condition or not of the command.

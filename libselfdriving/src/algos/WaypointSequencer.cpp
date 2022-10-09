@@ -185,6 +185,7 @@ void WaypointSequencer::cancel()
 
     MRPT_LOG_DEBUG("WaypointSequencer::cancel() called.");
     navigationStatus_ = NavStatus::IDLE;
+    innerState_.active_plan_reset();
 
     if (config_.vehicleMotionInterface)
     {
@@ -680,9 +681,19 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
 
     auto& _ = innerState_;
 
-    // Nothing to do?
+    // No active path planning?
     if (_.activePlanPath.empty()) return;
 
+    // Following error due to enqueued motion time out?
+    if (config_.vehicleMotionInterface->enqeued_motion_timed_out())
+    {
+        // Abort path planning:
+        cancel();
+        MRPT_TODO("Re-plan and/or send error event out?");
+        return;
+    }
+
+    // First edge of a plan?
     if (!_.activePlanEdgeIndex.has_value())
     {
         ASSERT_EQUAL_(
@@ -696,7 +707,7 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
     if (_.activePlanEdgeSentIndex.has_value() &&
         *_.activePlanEdgeSentIndex == *_.activePlanEdgeIndex)
     {
-        if (!config_.vehicleMotionInterface->has_enqeued_motion())
+        if (!config_.vehicleMotionInterface->enqeued_motion_pending())
         {
             // We are ready for the next one:
             _.activePlanEdgeIndex.value()++;
