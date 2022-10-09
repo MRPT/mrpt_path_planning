@@ -117,18 +117,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         /** @name Parameters
          *  @{ */
 
-        /** In meters. Not present: unlimited */
-        std::optional<double> max_distance_to_allow_skip_waypoint;
-
-        /** How many times shall a future waypoint be seen as reachable to skip
-         * to it (Default: 1) */
-        int min_timesteps_confirm_skip_waypoints = 1;
-
-        /** >=0 number of waypoints to forward to the underlying navigation
-         * engine, to ease obstacles avoidance when a waypoint is blocked
-         * (Default=2). */
-        int multitarget_look_ahead = 2;
-
+#if 0
         /** Default value=0, means use the "targetAllowedDistance" passed by the
          * user in the navigation request. */
         double dist_to_target_for_sending_event{0};
@@ -139,10 +128,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         /** (Default value=0.6) When closer than this distance, check if the
          * target is blocked to abort navigation with an error. */
         double dist_check_target_is_blocked{0.6};
-
-        /** (Default=3) How many steps should the condition for
-         * dist_check_target_is_blocked be fulfilled to raise an event */
-        int hysteresis_check_target_is_blocked{3};
+#endif
 
         /** (Default=4.0) Hoy many meters to add at each side
          * (up,down,left,right) of the bbox enclosing the starting and goal pose
