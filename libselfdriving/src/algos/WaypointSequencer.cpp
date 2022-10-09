@@ -26,13 +26,22 @@ WaypointSequencer::~WaypointSequencer()
 
 void WaypointSequencer::Configuration::loadFrom(const mrpt::containers::yaml& c)
 {
-    //
+    MCP_LOAD_REQ(c, planner_bbox_margin);
+    MCP_LOAD_REQ(c, enqueuedActionsToleranceXY);
+    MCP_LOAD_REQ_DEG(c, enqueuedActionsTolerancePhi);
+    MCP_LOAD_REQ(c, enqueuedActionsTimeoutMultiplier);
 }
+
 mrpt::containers::yaml WaypointSequencer::Configuration::saveTo() const
 {
-    auto p = mrpt::containers::yaml::Map();
+    mrpt::containers::yaml c = mrpt::containers::yaml::Map();
 
-    return p;
+    MCP_SAVE(c, planner_bbox_margin);
+    MCP_SAVE(c, enqueuedActionsToleranceXY);
+    MCP_SAVE_DEG(c, enqueuedActionsTolerancePhi);
+    MCP_SAVE(c, enqueuedActionsTimeoutMultiplier);
+
+    return c;
 }
 
 void WaypointSequencer::initialize()

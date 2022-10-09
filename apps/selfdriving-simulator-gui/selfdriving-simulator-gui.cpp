@@ -78,6 +78,11 @@ TCLAP::ValueArg<std::string> arg_cost_local_yaml_file(
     "Input .yaml file with local obstacle points costmap parameters", false, "",
     "points-costmap.yaml", cmd);
 
+TCLAP::ValueArg<std::string> arg_waypoint_seq_yaml_file(
+    "", "waypoint-sequencer-parameters",
+    "Input .yaml file with parameters for WaypointSequencer", false, "",
+    "wp-sequencer.yaml", cmd);
+
 TCLAP::ValueArg<std::string> arg_waypoints_yaml_file(
     "", "waypoints", "Input .yaml file with waypoints", false, "",
     "waypoints.yaml", cmd);
@@ -297,6 +302,12 @@ void prepare_selfdriving(mvsim::World& world)
             selfdriving::CostEvaluatorPreferredWaypoint::Parameters::FromYAML(
                 mrpt::containers::yaml::FromFile(
                     arg_cost_prefer_waypoints_yaml_file.getValue()));
+    }
+
+    if (arg_waypoint_seq_yaml_file.isSet())
+    {
+        sd.navigator.config_.loadFrom(mrpt::containers::yaml::FromFile(
+            arg_waypoint_seq_yaml_file.getValue()));
     }
 
     // all mandaroty fields filled in now:
