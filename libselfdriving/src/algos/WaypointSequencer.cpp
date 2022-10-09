@@ -820,7 +820,15 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
 
             _.activePlanEdgesSentOut.insert(*_.activePlanEdgeIndex);
         }
+
+        // new motion generated and sent out. We are done.
+        return;
     }
+
+    // If we are here, it is because we are in the middle of a navigation,
+    // an edge motion is under execution and we are waiting for its end.
+    // Send out a "dead man's switch" reset signal:
+    config_.vehicleMotionInterface->motion_execute(std::nullopt, std::nullopt);
 }
 
 void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
