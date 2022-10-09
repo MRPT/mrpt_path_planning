@@ -354,6 +354,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
             activePlanEdgeSentIndex.reset();
             activePlanEdgeDoneIndex.reset();
             activePlanEdgesSentOut.clear();
+            activePlanInitOdometry.reset();
         }
 
         /** 0-based index of which edge in activePlanPathEdges[] is currently
@@ -374,6 +375,10 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         std::optional<size_t> activePlanEdgeDoneIndex;
 
         std::set<size_t> activePlanEdgesSentOut;
+
+        /** The robot pose in the *odom* frame when the first motion edge is
+         * executed. */
+        std::optional<mrpt::math::TPose2D> activePlanInitOdometry;
 
         // int  counterCheckTargetIsBlocked_ = 0;
 

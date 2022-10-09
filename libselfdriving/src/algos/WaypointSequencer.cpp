@@ -700,6 +700,20 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
             _.activePlanPath.size(), _.activePlanPathEdges.size() + 1);
 
         _.activePlanEdgeIndex = 0;  // first edge
+
+        // save odometry at the beginning of the first edge:
+        ASSERT_LT_(
+            mrpt::system::timeDifference(
+                lastVehicleOdometry_.timestamp, mrpt::Clock::now()),
+            1.0);
+
+        _.activePlanInitOdometry = lastVehicleOdometry_.odometry;
+
+        MRPT_LOG_INFO_STREAM(
+            "Starting motion plan with:\n"
+            " - odometry    : "
+            << lastVehicleOdometry_.odometry << "\n"
+            << " - localization: " << lastVehicleLocalization_.pose);
     }
 
     // Waiting for the end of this edge motion?
@@ -719,14 +733,16 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
     }
 
     // Time to send out a new edge:
-    if (!_.activePlanEdgeSentIndex.has_value() ||
-        *_.activePlanEdgeSentIndex != *_.activePlanEdgeIndex)
+    if ((!_.activePlanEdgeSentIndex.has_value() ||
+         *_.activePlanEdgeSentIndex != *_.activePlanEdgeIndex) &&
+        _.activePlanPath.size() > *_.activePlanEdgeIndex + 1)
     {
-        const auto& nCurr = _.activePlanPath.at(*_.activePlanEdgeIndex);
-        const auto& nNext = _.activePlanPath.at(*_.activePlanEdgeIndex + 1);
+        const auto& nFirst = _.activePlanPath.at(0);
+        const auto& nCurr  = _.activePlanPath.at(*_.activePlanEdgeIndex);
+        const auto& nNext  = _.activePlanPath.at(*_.activePlanEdgeIndex + 1);
 
         std::optional<MotionPrimitivesTreeSE2::node_t> nAfterNext;
-        if (_.activePlanPath.size() >= *_.activePlanEdgeIndex + 2)
+        if (_.activePlanPath.size() > *_.activePlanEdgeIndex + 2)
             nAfterNext = _.activePlanPath.at(*_.activePlanEdgeIndex + 2);
 
         // Mark the next "motion edge" as "sent":
@@ -763,8 +779,14 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
 
             ASSERT_(generatedMotionCmdAfter);
 
-            const auto relPoseNext      = nNext.pose - nCurr.pose;
-            const auto relPoseAfterNext = nAfterNext->pose - nCurr.pose;
+            const auto relPoseNext = nNext.pose - nCurr.pose;
+            // const auto relPoseAfterNext = nAfterNext->pose - nCurr.pose;
+
+            ASSERT_(_.activePlanInitOdometry.has_value());
+
+            // Convert from the "map" localization frame to "odom" frame:
+            const auto condPose =
+                _.activePlanInitOdometry.value() + (nNext.pose - nFirst.pose);
 
             MRPT_LOG_INFO_STREAM(
                 "Generating compound motion cmd to move from node ID "
@@ -772,12 +794,15 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
                 << nAfterNext->nodeID_
                 << "\n CMD1: " << generatedMotionCmd->asString()
                 << "\n CMD2: " << generatedMotionCmdAfter->asString()
-                << "\n CondPose: " << relPoseNext
-                << "\n TargetRelPose: " << relPoseAfterNext);
+                << "\n relPoseNext: " << relPoseNext  //
+                << "\n CondPose: " << condPose  //
+                << "\n nNext.pose: " << nNext.pose  //
+                << "\n nCurr.pose: " << nCurr.pose  //
+            );
 
             selfdriving::EnqueuedMotionCmd enqMotion;
             enqMotion.nextCmd                = generatedMotionCmdAfter;
-            enqMotion.nextCondition.position = relPoseNext;
+            enqMotion.nextCondition.position = condPose;
 
             enqMotion.nextCondition.tolerance = {
                 config_.enqueuedActionsToleranceXY,
