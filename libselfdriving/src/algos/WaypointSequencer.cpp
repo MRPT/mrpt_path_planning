@@ -765,6 +765,27 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
 
         ASSERT_(generatedMotionCmd);
 
+        // Before changing the dynamic status of the (potentially same one) PTG
+        // for the "next" edge, query the PTG for the extra additional motion
+        // required for the condPose below:
+        std::optional<mrpt::math::TPose2D> poseCondDeltaForTolerance;
+        if (1)
+        {
+            uint32_t stepEnd = 0, stepAfter = 0;
+            bool     ok1 = ptg->getPathStepForDist(
+                edge.ptgPathIndex, edge.ptgDist, stepEnd);
+            bool ok2 = ptg->getPathStepForDist(
+                edge.ptgPathIndex,
+                edge.ptgDist + config_.enqueuedActionsToleranceXY, stepAfter);
+            if (ok1 && ok2)
+            {
+                poseCondDeltaForTolerance =
+                    ptg->getPathPose(edge.ptgPathIndex, stepAfter) -
+                    ptg->getPathPose(edge.ptgPathIndex, stepEnd);
+            }
+        }
+
+        // Next edge motion:
         mrpt::kinematics::CVehicleVelCmd::Ptr generatedMotionCmdAfter;
         if (nAfterNext.has_value())
         {
@@ -785,9 +806,16 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
             ASSERT_(_.activePlanInitOdometry.has_value());
 
             // Convert from the "map" localization frame to "odom" frame:
-            const auto condPose =
+            auto condPose =
                 _.activePlanInitOdometry.value() + (nNext.pose - nFirst.pose);
 
+            // Shift the "condition pose" such that the desired nominal pose is
+            // reached within one box of size toleranceXY:
+            if (poseCondDeltaForTolerance.has_value())
+                condPose = condPose + poseCondDeltaForTolerance.value();
+
+            // Create the motion command and send to the user-provided interface
+            // to the vehicle:
             MRPT_LOG_INFO_STREAM(
                 "Generating compound motion cmd to move from node ID "
                 << nCurr.nodeID_ << " => " << nNext.nodeID_ << " => "
@@ -796,6 +824,10 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
                 << "\n CMD2: " << generatedMotionCmdAfter->asString()
                 << "\n relPoseNext: " << relPoseNext  //
                 << "\n CondPose: " << condPose  //
+                << "\n withTolDelta: "
+                << (poseCondDeltaForTolerance
+                        ? poseCondDeltaForTolerance.value().asString()
+                        : std::string("(none)"))  //
                 << "\n nNext.pose: " << nNext.pose  //
                 << "\n nCurr.pose: " << nCurr.pose  //
             );
