@@ -399,11 +399,14 @@ waypoint_idx_t WaypointSequencer::find_next_waypoint_for_planner()
 {
     auto& _ = innerState_;
 
+    ASSERT_(!_.waypointNavStatus.waypoints.empty());
+    const auto& wps = _.waypointNavStatus.waypoints;
+
     std::optional<waypoint_idx_t> firstWpIdx;
 
-    for (size_t i = 0; i < _.waypointNavStatus.waypoints.size(); i++)
+    for (waypoint_idx_t i = 0; i < wps.size(); i++)
     {
-        const auto& wp = _.waypointNavStatus.waypoints.at(i);
+        const auto& wp = wps.at(i);
         if (wp.reached) continue;
 
         firstWpIdx = i;
@@ -411,6 +414,20 @@ waypoint_idx_t WaypointSequencer::find_next_waypoint_for_planner()
         if (!wp.allowSkip) break;
     }
     ASSERT_(firstWpIdx.has_value());
+
+    // Raise a warning if the wp is the last one and has not a speed of zero,
+    // i.e. the vehicle will keep moving afterwards. It might be desired by the
+    // user, so do not abort/error but at least emit a warning:
+    if (const auto& wp = wps.at(*firstWpIdx);
+        *firstWpIdx + 1 == wps.size() && wp.speedRatio != 0)
+    {
+        MRPT_LOG_WARN_STREAM(
+            "Selecting *last* waypoint #"
+            << (*firstWpIdx + 1)
+            << " which does not have a final speed of zero: the vehicle will "
+               "not stop there. Waypoint: "
+            << wp.getAsText());
+    }
 
     return *firstWpIdx;
 }
