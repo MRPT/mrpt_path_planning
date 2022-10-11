@@ -10,6 +10,7 @@
 #include <selfdriving/algos/TPS_Astar.h>
 #include <selfdriving/algos/TPS_RRTstar.h>
 #include <selfdriving/interfaces/VehicleMotionInterface.h>
+#include <selfdriving/ptgs/HolonomicBlend.h>
 
 MRPT_INITIALIZER(selfdriving_register)
 {
@@ -28,4 +29,7 @@ MRPT_INITIALIZER(selfdriving_register)
 
     // Interfaces:
     registerClass(CLASS_ID(VehicleMotionInterface));
+
+    // PTGs:
+    registerClass(CLASS_ID(ptg::HolonomicBlend));
 }

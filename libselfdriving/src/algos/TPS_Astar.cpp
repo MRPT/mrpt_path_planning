@@ -174,6 +174,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             : nodeGridCoords(in.stateGoal.state.pose());
 
     // goal speed=0
+    MRPT_TODO("Actually check user input on desired speed at goal");
     nodes_with_desired_speed_t nodesWithDesiredSpeed;
     nodesWithDesiredSpeed[goalCellIndices] = 0;
 
