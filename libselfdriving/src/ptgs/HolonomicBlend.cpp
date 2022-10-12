@@ -21,6 +21,8 @@
 #include <mrpt/system/CTimeLogger.h>
 #include <selfdriving/ptgs/HolonomicBlend.h>
 
+// #include <iostream>  // debug!
+
 using namespace mrpt::nav;
 using namespace selfdriving::ptg;
 using namespace mrpt::system;
@@ -189,6 +191,13 @@ double HolonomicBlend::calc_trans_distance_t_below_Tramp(
 void HolonomicBlend::onNewNavDynamicState()
 {
     m_pathStepCountCache.assign(m_alphaValuesCount, -1);  // mark as invalid
+
+    // Are we approaching a target with a slow-down condition?
+    m_expr_target_dir = .0;
+    if (m_nav_dyn_state_target_k != INVALID_PTG_PATH_INDEX)
+        m_expr_target_dir = index2alpha(m_nav_dyn_state_target_k);
+
+    m_expr_target_dist = m_nav_dyn_state.relTarget.norm();
 }
 
 void HolonomicBlend::loadDefaultParams()
@@ -794,6 +803,8 @@ void HolonomicBlend::internal_construct_exprs()
 
     const std::map<std::string, double*> vars = {
         {"dir", &m_expr_dir},
+        {"target_dir", &m_expr_target_dir},
+        {"target_dist", &m_expr_target_dist},
         {"V_MAX", &V_MAX},
         {"W_MAX", &W_MAX},
         {"T_ramp_max", &T_ramp_max},
