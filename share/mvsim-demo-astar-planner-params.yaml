@@ -1,7 +1,7 @@
 %YAML 1.2
 ---
-grid_resolution_xy: 0.15    # [meters]
-grid_resolution_yaw: 5.0   # [deg]
+grid_resolution_xy: 0.20    # [meters]
+grid_resolution_yaw: 10.0   # [deg]
 
 # find_feasible_paths_to_neighbors() params:
 max_ptg_trajectories_to_explore: 15
