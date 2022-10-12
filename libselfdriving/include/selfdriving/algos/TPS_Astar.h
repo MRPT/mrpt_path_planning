@@ -34,9 +34,9 @@ struct TPS_Astar_Parameters
 
     double heuristic_heading_weight = 0.1;  //!< [0,1]
 
-    uint32_t max_ptg_trajectories_to_explore        = 20;
-    double   ptg_norm_distance_sampling_granularity = 0.2;
-    uint32_t max_ptg_speeds_to_explore              = 3;
+    uint32_t                        max_ptg_trajectories_to_explore = 20;
+    std::vector<duration_seconds_t> ptg_sample_timestamps     = {1.0, 3.0, 5.0};
+    uint32_t                        max_ptg_speeds_to_explore = 3;
 
     /** Required to smooth interpolation of rendered paths, evaluation of
      * path cost, etc.

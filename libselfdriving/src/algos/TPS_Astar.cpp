@@ -30,10 +30,13 @@ mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
     MCP_SAVE(c, grid_resolution_xy);
     MCP_SAVE(c, heuristic_heading_weight);
     MCP_SAVE(c, max_ptg_trajectories_to_explore);
-    MCP_SAVE(c, ptg_norm_distance_sampling_granularity);
     MCP_SAVE(c, max_ptg_speeds_to_explore);
     MCP_SAVE_DEG(c, grid_resolution_yaw);
     MCP_SAVE(c, maximumComputationTime);
+
+    c["ptg_sample_timestamps"] = mrpt::containers::yaml::Sequence();
+    for (const auto& v : ptg_sample_timestamps)
+        c["ptg_sample_timestamps"].asSequence().push_back(v);
 
     return c;
 }
@@ -47,8 +50,12 @@ void TPS_Astar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
 
     MCP_LOAD_REQ(c, SE2_metricAngleWeight);
     MCP_LOAD_REQ(c, max_ptg_trajectories_to_explore);
-    MCP_LOAD_REQ(c, ptg_norm_distance_sampling_granularity);
     MCP_LOAD_REQ(c, max_ptg_speeds_to_explore);
+
+    ASSERT_(
+        c.has("ptg_sample_timestamps") &&
+        c["ptg_sample_timestamps"].isSequence());
+    ptg_sample_timestamps = c["ptg_sample_timestamps"].toStdVector<double>();
 
     MCP_LOAD_OPT(c, pathInterpolatedSegments);
     MCP_LOAD_OPT(c, saveDebugVisualizationDecimation);
@@ -533,6 +540,8 @@ TPS_Astar::list_paths_to_neighbors_t
         auto& ptg = trs.ptgs.at(ptgIdx);
         ASSERT_(ptg->isInitialized());
 
+        const duration_seconds_t ptg_dt = ptg->getPathStepDuration();
+
         // Update PTG dynamics:
         normalized_speed_t relTrg_speed = 1.0;
         {
@@ -579,13 +588,16 @@ TPS_Astar::list_paths_to_neighbors_t
         {
             int                   relTrg_k       = 0;
             normalized_distance_t relTrg_d       = 0;
+            ptg_step_t            relTrg_step    = 0;
             const double          queryTolerance = params_.grid_resolution_xy;
             if (ptg->inverseMap_WS2TP(
-                    relGoal.x, relGoal.y, relTrg_k, relTrg_d, queryTolerance))
+                    relGoal.x, relGoal.y, relTrg_k, relTrg_d, queryTolerance) &&
+                ptg->getPathStepForDist(relTrg_k, relTrg_d, relTrg_step))
             {
                 // Add direct path to target:
                 tpsPointsToConsider.emplace_back(
-                    relTrg_k, relTrg_d, relTrg_speed);
+                    relTrg_k, relTrg_step, relTrg_speed);
+
                 // and also, in general, the path:
                 trajIdxsToConsider.insert(relTrg_k);
             }
@@ -610,12 +622,17 @@ TPS_Astar::list_paths_to_neighbors_t
         {
             for (const auto trjIdx : trajIdxsToConsider)
             {
-                for (normalized_distance_t d =
-                         params_.ptg_norm_distance_sampling_granularity;
-                     d < 0.999;
-                     d += params_.ptg_norm_distance_sampling_granularity)
-                {  //
-                    tpsPointsToConsider.emplace_back(trjIdx, d, speed);
+                for (duration_seconds_t t : params_.ptg_sample_timestamps)
+                {
+                    ptg_step_t trjStep = mrpt::round(t / ptg_dt);
+
+                    // saturate if this PTG path ends earlier than the specified
+                    // timestamp:
+                    const auto maxSteps = ptg->getPathStepCount(trjIdx);
+                    ASSERT_(maxSteps >= 1);
+                    mrpt::keep_min(trjStep, maxSteps - 1);
+
+                    tpsPointsToConsider.emplace_back(trjIdx, trjStep, speed);
                 }
             }
         }
@@ -643,16 +660,12 @@ TPS_Astar::list_paths_to_neighbors_t
             }
 
             // Reconstruct the actual global pose:
-            distance_t dist = tpsPt.d * ptg->getRefDistance();
-
-            uint32_t relTrgStep;
-            bool stepOk = ptg->getPathStepForDist(tpsPt.k, dist, relTrgStep);
-            if (!stepOk) continue;
 
             // solution is a no-motion: skip.
-            if (relTrgStep == 0) continue;
+            if (tpsPt.step == 0) continue;
 
-            const auto relReconstrPose = ptg->getPathPose(tpsPt.k, relTrgStep);
+            const auto relTrgDist      = ptg->getPathDist(tpsPt.k, tpsPt.step);
+            const auto relReconstrPose = ptg->getPathPose(tpsPt.k, tpsPt.step);
             const auto absPose         = from.state.pose + relReconstrPose;
 
             // out of lattice limits?
@@ -675,7 +688,7 @@ TPS_Astar::list_paths_to_neighbors_t
 
             tleObs.stop();
 
-            if (tpsPt.d * ptg->getRefDistance() >= freeDistance)
+            if (relTrgDist >= freeDistance)
             {
                 // we would need to move farther away than what is possible
                 // without colliding: discard this trajectory.
@@ -690,13 +703,13 @@ TPS_Astar::list_paths_to_neighbors_t
 
             // Ok, it's a valid new neighbor with this PTG.
             // Is it shorter with this PTG than with others?
-            if (dist < path.ptgDist)
+            if (relTrgDist < path.ptgDist)
             {
-                path.ptgDist            = dist;
+                path.ptgDist            = relTrgDist;
                 path.ptgIndex           = ptgIdx;
                 path.ptgTrajIndex       = tpsPt.k;
                 path.relReconstrPose    = relReconstrPose;
-                path.relTrgStep         = relTrgStep;
+                path.relTrgStep         = tpsPt.step;
                 path.neighborNodeCoords = nc;
                 path.ptgDynState        = ptg->getCurrentNavDynamicState();
             }

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <cstdint>  // uint32_t
 #include <cstdlib>  // size_t
 
 namespace selfdriving
@@ -16,6 +17,9 @@ using distance_t = double;
 
 /** TPS normalized distances in range [0,1] */
 using normalized_distance_t = double;
+
+/** TPS discrete time steps */
+using ptg_step_t = uint32_t;
 
 /** Cost of a given trajectory or trajectory segment */
 using cost_t = double;
