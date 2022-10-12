@@ -588,15 +588,17 @@ TPS_Astar::list_paths_to_neighbors_t
         {
             int                   relTrg_k       = 0;
             normalized_distance_t relTrg_d       = 0;
-            ptg_step_t            relTrg_step    = 0;
             const double          queryTolerance = params_.grid_resolution_xy;
             if (ptg->inverseMap_WS2TP(
-                    relGoal.x, relGoal.y, relTrg_k, relTrg_d, queryTolerance) &&
-                ptg->getPathStepForDist(relTrg_k, relTrg_d, relTrg_step))
+                    relGoal.x, relGoal.y, relTrg_k, relTrg_d, queryTolerance))
             {
-                // Add direct path to target:
-                tpsPointsToConsider.emplace_back(
-                    relTrg_k, relTrg_step, relTrg_speed);
+                ptg_step_t relTrg_step = 0;
+                if (ptg->getPathStepForDist(relTrg_k, relTrg_d, relTrg_step))
+                {
+                    // Add direct path to target:
+                    tpsPointsToConsider.emplace_back(
+                        relTrg_k, relTrg_step, relTrg_speed);
+                }
 
                 // and also, in general, the path:
                 trajIdxsToConsider.insert(relTrg_k);
