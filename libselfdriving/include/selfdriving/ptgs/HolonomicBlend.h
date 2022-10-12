@@ -55,6 +55,8 @@ class HolonomicBlend : public mrpt::nav::CPTG_RobotShape_Circular
     bool PTG_IsIntoDomain(double x, double y) const override;
     void onNewNavDynamicState() override;
 
+    bool supportSpeedAtTarget() const override { return true; }
+
     /** Converts a discretized "alpha" value into a feasible motion command or
      * action. See derived classes for the meaning of these actions */
     mrpt::kinematics::CVehicleVelCmd::Ptr directionToMotionCommand(
@@ -92,7 +94,9 @@ class HolonomicBlend : public mrpt::nav::CPTG_RobotShape_Circular
 
     // Compilation of user-given expressions
     mrpt::expr::CRuntimeCompiledExpression m_expr_v, m_expr_w, m_expr_T_ramp;
-    double m_expr_dir;  // Used as symbol "dir" in m_expr_v and m_expr_w
+    double m_expr_dir = 0;  // Used as symbol "dir" in m_expr_v and m_expr_w
+    double m_expr_target_dir  = 0;  // symbol "target_dir" in expressions
+    double m_expr_target_dist = 0;  // symbol "target_dist" in expressions
 
     /** Evals expr_v */
     double internal_get_v(const double dir) const;
