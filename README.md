@@ -75,3 +75,15 @@ build-Release/bin/selfdriving-simulator-gui \
   --local-costmap-parameters share/costmap-obstacles.yaml \
   -v DEBUG
 ```
+
+```
+build-Release/bin/selfdriving-simulator-gui \
+  --waypoints share/mvsim-demo-waypoints01.yaml \
+  -s share/mvsim-demo.xml \
+  -p share/ptgs_ackermann_vehicle.ini \
+  --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
+  --prefer-waypoints-parameters share/costmap-prefer-waypoints.yaml \
+  --global-costmap-parameters share/costmap-obstacles.yaml \
+  --local-costmap-parameters share/costmap-obstacles.yaml \
+  -v DEBUG
+```
