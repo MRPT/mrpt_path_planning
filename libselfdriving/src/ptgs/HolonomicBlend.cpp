@@ -28,7 +28,8 @@ using namespace selfdriving::ptg;
 using namespace mrpt::system;
 
 IMPLEMENTS_SERIALIZABLE(
-    HolonomicBlend, CParameterizedTrajectoryGenerator, selfdriving::ptg)
+    HolonomicBlend, mrpt::nav::CParameterizedTrajectoryGenerator,
+    selfdriving::ptg)
 
 /*
 Closed-form PTG. Parameters:
@@ -802,6 +803,7 @@ void HolonomicBlend::internal_construct_exprs()
     auto& nds = m_nav_dyn_state;
 
     const std::map<std::string, double*> vars = {
+        {"trimmable_speed", &trimmableSpeed_},  // <== from base class
         {"dir", &m_expr_dir},
         {"target_dir", &m_expr_target_dir},
         {"target_dist", &m_expr_target_dist},

@@ -275,13 +275,19 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             (x_i.vel = relTwist).rotate(srcNode.pose.phi);
 
             MoveEdgeSE2_TPS tentativeEdge;
-            tentativeEdge.parentId       = nodeId;
-            tentativeEdge.ptgDist        = trajDist;
-            tentativeEdge.ptgIndex       = ptgIdx;
-            tentativeEdge.ptgPathIndex   = trajIdx;
-            tentativeEdge.targetRelSpeed = ds.targetRelSpeed;
-            tentativeEdge.stateFrom      = srcNode;
-            tentativeEdge.stateTo        = x_i;
+            tentativeEdge.parentId     = nodeId;
+            tentativeEdge.ptgDist      = trajDist;
+            tentativeEdge.ptgIndex     = ptgIdx;
+            tentativeEdge.ptgPathIndex = trajIdx;
+
+            tentativeEdge.ptgTrimmableSpeed = 1.0;  // edge.ptgTrimmableSpeed;
+            MRPT_TODO("Actually check user input on desired speed at goal");
+            tentativeEdge.ptgFinalGoalRelSpeed = 0;
+            tentativeEdge.ptgFinalRelativeGoal =
+                in.stateGoal.state.pose() - srcNode.pose;
+
+            tentativeEdge.stateFrom = srcNode;
+            tentativeEdge.stateTo   = x_i;
 
             // interpolated path:
             {
@@ -421,13 +427,13 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             const auto& trgNode = tree.nodes().at(nodeId);
 
             MoveEdgeSE2_TPS rewiredEdge;
-            rewiredEdge.parentId       = newNodeId;
-            rewiredEdge.ptgDist        = trajDist;
-            rewiredEdge.ptgIndex       = ptgIdx;
-            rewiredEdge.ptgPathIndex   = trajIdx;
-            rewiredEdge.targetRelSpeed = ds.targetRelSpeed;
-            rewiredEdge.stateFrom      = newNodeState;
-            rewiredEdge.stateTo        = trgNode;
+            rewiredEdge.parentId             = newNodeId;
+            rewiredEdge.ptgDist              = trajDist;
+            rewiredEdge.ptgIndex             = ptgIdx;
+            rewiredEdge.ptgPathIndex         = trajIdx;
+            rewiredEdge.ptgFinalGoalRelSpeed = ds.targetRelSpeed;
+            rewiredEdge.stateFrom            = newNodeState;
+            rewiredEdge.stateTo              = trgNode;
 
             // interpolated path:
             {

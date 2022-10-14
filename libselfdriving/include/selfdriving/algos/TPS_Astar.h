@@ -47,6 +47,7 @@ struct TPS_Astar_Parameters
 
     /** 0:disabled */
     size_t saveDebugVisualizationDecimation = 0;
+    bool   debugVisualizationShowEdgeCosts  = false;
 
     /** Maximum time to spend looking for a solution */
     duration_seconds_t maximumComputationTime =
@@ -291,6 +292,7 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         std::optional<trajectory_index_t>      ptgTrajIndex;
         std::optional<uint32_t>                relTrgStep;  //!< traj step index
         std::optional<ptg_t::TNavDynamicState> ptgDynState;
+        normalized_speed_t                     ptgTrimmableSpeed = 1.0;
         distance_t          ptgDist = std::numeric_limits<distance_t>::max();
         mrpt::math::TPose2D relReconstrPose;
         NodeCoords          neighborNodeCoords;
