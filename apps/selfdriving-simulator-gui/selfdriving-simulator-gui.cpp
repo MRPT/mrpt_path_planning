@@ -18,6 +18,7 @@
 #include <mvsim/Comms/Server.h>
 #include <mvsim/World.h>
 #include <mvsim/WorldElements/OccupancyGridMap.h>
+#include <mvsim/mvsim_version.h>
 #include <selfdriving/algos/CostEvaluator.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/TPS_Astar.h>
@@ -28,6 +29,15 @@
 #include <selfdriving/interfaces/VehicleMotionInterface.h>
 
 #include <thread>
+
+#if MVSIM_MAJOR_VERSION > 0 || MVSIM_MINOR_VERSION > 4 || \
+    MVSIM_PATCH_VERSION >= 2
+#define MVSIM_HAS_POINTCLOUD
+#endif
+
+#ifdef MVSIM_HAS_POINTCLOUD
+#include <mvsim/WorldElements/PointCloud.h>
+#endif
 
 TCLAP::CmdLine cmd(
     "selfdriving-simulator-gui", ' ', "version", false /* no --help */);
@@ -183,6 +193,14 @@ static mrpt::maps::CSimplePointsMap::Ptr world_to_static_obstacle_points(
             grid->getOccGrid().getAsPointCloud(pts);
             obsPts->insertAnotherMap(&pts, mrpt::poses::CPose3D::Identity());
         }
+#ifdef MVSIM_HAS_POINTCLOUD
+        if (auto pc = dynamic_cast<mvsim::PointCloud*>(&we);
+            pc && pc->getPoints())
+        {
+            obsPts->insertAnotherMap(
+                pc->getPoints().get(), mrpt::poses::CPose3D::Identity());
+        }
+#endif
     });
     world.runVisitorOnBlocks([&](mvsim::Block& b) {
         mrpt::maps::CSimplePointsMap pts;
