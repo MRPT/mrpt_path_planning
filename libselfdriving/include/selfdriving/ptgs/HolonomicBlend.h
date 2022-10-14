@@ -16,6 +16,7 @@
 
 #include <mrpt/expr/CRuntimeCompiledExpression.h>
 #include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
+#include <selfdriving/ptgs/SpeedTrimmablePTG.h>
 
 namespace selfdriving::ptg
 {
@@ -26,9 +27,10 @@ namespace selfdriving::ptg
  * - **Compatible robot shape**: Circular robots
  * - **PTG parameters**: Use the app `ptg-configurator`
  *
- * \note This class is an enhanced version of the mrpt::nav::HolonomicBlend
+ * \note This class is an enhanced version of mrpt::nav::HolonomicBlend
  */
-class HolonomicBlend : public mrpt::nav::CPTG_RobotShape_Circular
+class HolonomicBlend : public SpeedTrimmablePTG,
+                       public mrpt::nav::CPTG_RobotShape_Circular
 {
     DEFINE_SERIALIZABLE(HolonomicBlend, selfdriving::ptg)
    public:

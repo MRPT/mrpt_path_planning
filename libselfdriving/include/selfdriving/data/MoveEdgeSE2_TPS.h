@@ -41,7 +41,10 @@ struct MoveEdgeSE2_TPS
      * motion segment (NOT normalized distances) */
     distance_t ptgDist = std::numeric_limits<distance_t>::max();
 
-    normalized_speed_t targetRelSpeed = 1.0;
+    normalized_speed_t ptgTrimmableSpeed = 1.0;
+
+    mrpt::math::TPose2D ptgFinalRelativeGoal;
+    normalized_speed_t  ptgFinalGoalRelSpeed = .0;
 
     duration_seconds_t estimatedExecTime = .0;
 

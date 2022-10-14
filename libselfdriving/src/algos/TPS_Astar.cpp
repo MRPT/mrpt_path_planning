@@ -12,6 +12,7 @@
 #include <selfdriving/algos/transform_pc_square_clipping.h>
 #include <selfdriving/algos/within_bbox.h>
 #include <selfdriving/data/MotionPrimitivesTree.h>
+#include <selfdriving/ptgs/SpeedTrimmablePTG.h>
 
 #include <iostream>
 
@@ -27,6 +28,7 @@ mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
     MCP_SAVE(c, SE2_metricAngleWeight);
     MCP_SAVE(c, pathInterpolatedSegments);
     MCP_SAVE(c, saveDebugVisualizationDecimation);
+    MCP_SAVE(c, debugVisualizationShowEdgeCosts);
     MCP_SAVE(c, grid_resolution_xy);
     MCP_SAVE(c, heuristic_heading_weight);
     MCP_SAVE(c, max_ptg_trajectories_to_explore);
@@ -59,6 +61,7 @@ void TPS_Astar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
 
     MCP_LOAD_OPT(c, pathInterpolatedSegments);
     MCP_LOAD_OPT(c, saveDebugVisualizationDecimation);
+    MCP_LOAD_OPT(c, debugVisualizationShowEdgeCosts);
     MCP_LOAD_OPT(c, heuristic_heading_weight);
 
     MCP_LOAD_OPT(c, maximumComputationTime);
@@ -286,13 +289,18 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // in any case, to evaluate the edge cost.
             MoveEdgeSE2_TPS newEdge;
 
-            newEdge.parentId       = current.id.value();
-            newEdge.ptgDist        = edge.ptgDist;
-            newEdge.ptgIndex       = edge.ptgIndex.value();
-            newEdge.ptgPathIndex   = edge.ptgTrajIndex.value();
-            newEdge.targetRelSpeed = edge.ptgDynState->targetRelSpeed;
-            newEdge.stateFrom      = current.state;
-            newEdge.stateTo        = x_i;
+            newEdge.parentId     = current.id.value();
+            newEdge.ptgDist      = edge.ptgDist;
+            newEdge.ptgIndex     = edge.ptgIndex.value();
+            newEdge.ptgPathIndex = edge.ptgTrajIndex.value();
+
+            newEdge.ptgTrimmableSpeed    = edge.ptgTrimmableSpeed;
+            newEdge.ptgFinalGoalRelSpeed = 0;
+            newEdge.ptgFinalRelativeGoal =
+                in.stateGoal.asSE2KinState().pose - current.state.pose;
+
+            newEdge.stateFrom = current.state;
+            newEdge.stateTo   = x_i;
 
             // interpolated path:
             {
@@ -390,6 +398,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         {
             RenderOptions ro;
             ro.highlight_path_to_node_id = current.id.value();
+            ro.showEdgeCosts = params_.debugVisualizationShowEdgeCosts;
             mrpt::opengl::COpenGLScene scene;
             scene.insert(render_tree(tree, in, ro));
             scene.saveToFile(mrpt::format("debug_astar_%05u.3Dscene", nIter));
@@ -540,6 +549,10 @@ TPS_Astar::list_paths_to_neighbors_t
         auto& ptg = trs.ptgs.at(ptgIdx);
         ASSERT_(ptg->isInitialized());
 
+        // This will be !=null if the PTG supports trimmable speeds:
+        auto ptgTrimmable =
+            std::dynamic_pointer_cast<ptg::SpeedTrimmablePTG>(ptg);
+
         const duration_seconds_t ptg_dt = ptg->getPathStepDuration();
 
         // Update PTG dynamics:
@@ -549,6 +562,7 @@ TPS_Astar::list_paths_to_neighbors_t
             (ds.curVelLocal = from.state.vel).rotate(-from.state.pose.phi);
 
             ds.relTarget = relGoal;
+
             if (const auto it = nodesWithSpeed.find(iGoalCoords);
                 it != nodesWithSpeed.end())
             {
@@ -557,7 +571,8 @@ TPS_Astar::list_paths_to_neighbors_t
             }
             else
             {
-                ds.targetRelSpeed = 1.0;
+                MRPT_TODO("Support case of final goal speed!=0 ?");
+                ds.targetRelSpeed = 0;
             }
 
             relTrg_speed = ds.targetRelSpeed;
@@ -607,6 +622,7 @@ TPS_Astar::list_paths_to_neighbors_t
 
         // Build possible distances for each path:
         std::vector<normalized_speed_t> speedsToConsider;
+        if (ptgTrimmable)
         {
             // N=1 ==>  [1.0]
             // N=2 ==>  [0.5, 1.0]
@@ -618,6 +634,11 @@ TPS_Astar::list_paths_to_neighbors_t
                 1.0 / params_.max_ptg_speeds_to_explore;
             for (normalized_speed_t s = speedStep; s < 1.001; s += speedStep)
                 speedsToConsider.push_back(s);
+        }
+        else
+        {
+            // No speed-trimmable PTG:
+            speedsToConsider.push_back(1.0);
         }
 
         for (const auto speed : speedsToConsider)
@@ -650,22 +671,14 @@ TPS_Astar::list_paths_to_neighbors_t
         {
             totalConsidered++;
 
-            // Update target pose speed in PTG dynamics:
-            if (auto dyn = ptg->getCurrentNavDynamicState();
-                dyn.targetRelSpeed != tpsPt.speed)
-            {
-                dyn.targetRelSpeed = tpsPt.speed;
-
-                mrpt::system::CTimeLoggerEntry tle4(
-                    profiler_(), "find_feasible.ptgUpdateDyn");
-                ptg->updateNavDynamicState(dyn);
-            }
-
-            // Reconstruct the actual global pose:
-
             // solution is a no-motion: skip.
             if (tpsPt.step == 0) continue;
 
+            // Update speed modulation in the PTG:
+            if (ptgTrimmable && tpsPt.speed != ptgTrimmable->trimmableSpeed_)
+                ptgTrimmable->trimmableSpeed_ = tpsPt.speed;
+
+            // Reconstruct the actual global pose:
             const auto relTrgDist      = ptg->getPathDist(tpsPt.k, tpsPt.step);
             const auto relReconstrPose = ptg->getPathPose(tpsPt.k, tpsPt.step);
             const auto absPose         = from.state.pose + relReconstrPose;

@@ -325,14 +325,21 @@ auto selfdriving::render_tree(
                 obj->setLineWidth(ro.width_optimal_edge);
             }
 
-            if (ro.showEdgeWeights)
+            if (ro.showEdgeCosts && obj->getLineWidth() > 0)
             {
-                obj->setName(mrpt::format(
+                auto objLb = mrpt::opengl::CText3D::Create();
+
+                // Place the label by the midpoint of the path:
+                const auto relPose = ip.rbegin()->second;
+
+                objLb->setPose(obj->getPose() + relPose);
+                objLb->setScale(ro.edgeCostLabelSize);
+                objLb->setString(mrpt::format(
                     "cost=%.01f(d=%.01f)", etp->cost,
                     etp->ptgDist != std::numeric_limits<double>::max()
                         ? etp->ptgDist
                         : .0));
-                obj->enableShowName();
+                scene.insert(objLb);
             }
 
             if (obj->getLineWidth() > 0) scene.insert(obj);

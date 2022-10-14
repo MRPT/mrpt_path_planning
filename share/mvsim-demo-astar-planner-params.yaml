@@ -1,12 +1,12 @@
 %YAML 1.2
 ---
-grid_resolution_xy: 0.30    # [meters]
-grid_resolution_yaw: 15.0   # [deg]
+grid_resolution_xy: 0.40    # [meters]
+grid_resolution_yaw: 25.0   # [deg]
 
 # find_feasible_paths_to_neighbors() params:
-max_ptg_trajectories_to_explore: 20
+max_ptg_trajectories_to_explore: 13
 max_ptg_speeds_to_explore: 3
-ptg_sample_timestamps: [2.0, 4.0, 8.0]  # seconds
+ptg_sample_timestamps: [0.5, 1.5, 4.0]  # seconds
 
 heuristic_heading_weight: 0.1
 SE2_metricAngleWeight: 0.1
@@ -15,4 +15,4 @@ pathInterpolatedSegments: 5
 maximumComputationTime: 10.0  # [seconds]
 
 #saveDebugVisualizationDecimation: 1
-
+#debugVisualizationShowEdgeCosts: true

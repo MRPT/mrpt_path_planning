@@ -14,12 +14,12 @@ ptg_t::TNavDynamicState MoveEdgeSE2_TPS::getPTGDynState() const
 {
     mrpt::nav::CParameterizedTrajectoryGenerator::TNavDynamicState newDyn;
 
-    newDyn.relTarget   = stateTo.pose - stateFrom.pose;
     newDyn.curVelLocal = stateFrom.vel;
     // Global to local velocity:
     newDyn.curVelLocal.rotate(-stateFrom.pose.phi);
 
-    newDyn.targetRelSpeed = targetRelSpeed;
+    newDyn.relTarget      = ptgFinalRelativeGoal;
+    newDyn.targetRelSpeed = ptgFinalGoalRelSpeed;
 
     return newDyn;
 }
@@ -45,14 +45,20 @@ std::string MoveEdgeSE2_TPS::asString() const
           "ptgIndex: "
        << static_cast<int>(ptgIndex)
        << ", "
-          "ptgPathIndex: "
+          "path: "
        << ptgPathIndex
        << ", "
           "ptgDist: "
        << ptgDist
        << ", "
-          "targetRelSpeed: "
-       << targetRelSpeed
+          "trimSpeed: "
+       << ptgTrimmableSpeed
+       << ", "
+          "finalRelGoal: "
+       << ptgFinalRelativeGoal
+       << ", "
+          "finalGoalSpeed: "
+       << ptgFinalGoalRelSpeed
        << ", "
           "estimatedExecTime: "
        << estimatedExecTime << "}\n"

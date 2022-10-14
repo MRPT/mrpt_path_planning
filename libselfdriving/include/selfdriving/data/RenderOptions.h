@@ -76,7 +76,8 @@ struct RenderOptions
     double angVelScale       = 0.25;
     double twistArrowsRadius = 0.01;
 
-    bool showEdgeWeights = false;
+    bool   showEdgeCosts     = false;
+    double edgeCostLabelSize = 0.025;
 
     std::string          log_msg;
     mrpt::math::TPoint3D log_msg_position;
