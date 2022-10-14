@@ -50,6 +50,11 @@ struct TPS_point
     ptg_step_t         step;
     normalized_speed_t speed;
 };
+inline bool operator<(const TPS_point& a, const TPS_point& b)
+{
+    return (a.k < b.k) || (a.k == b.k && a.step < b.step) ||
+           (a.k == b.k && a.step == b.step && a.speed < b.speed);
+}
 
 /** A tree with nodes being vehicle poses, and edges potential valid motion
  * primitives between them.

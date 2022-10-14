@@ -556,7 +556,6 @@ TPS_Astar::list_paths_to_neighbors_t
         const duration_seconds_t ptg_dt = ptg->getPathStepDuration();
 
         // Update PTG dynamics:
-        normalized_speed_t relTrg_speed = 1.0;
         {
             ptg_t::TNavDynamicState ds;
             (ds.curVelLocal = from.state.vel).rotate(-from.state.pose.phi);
@@ -575,8 +574,6 @@ TPS_Astar::list_paths_to_neighbors_t
                 ds.targetRelSpeed = 0;
             }
 
-            relTrg_speed = ds.targetRelSpeed;
-
             mrpt::system::CTimeLoggerEntry tle3(
                 profiler_(), "find_feasible.ptgUpdateDyn");
 
@@ -588,6 +585,7 @@ TPS_Astar::list_paths_to_neighbors_t
         // explore a subset of all trajectories only:
         std::set<trajectory_index_t> trajIdxsToConsider;
         std::vector<TPS_point>       tpsPointsToConsider;
+        std::set<size_t> targetTpsPointIndx;  // if reachable with ptg
 
         ASSERT_(params_.max_ptg_trajectories_to_explore >= 2);
         for (size_t i = 0; i < params_.max_ptg_trajectories_to_explore; i++)
@@ -596,28 +594,6 @@ TPS_Astar::list_paths_to_neighbors_t
                 i * (ptg->getPathCount() - 1) /
                 (params_.max_ptg_trajectories_to_explore - 1));
             trajIdxsToConsider.insert(trjIdx);
-        }
-
-        // make sure of including the trajectory towards the target, if we
-        // are close enough, plus its immediate neighboring paths:
-        {
-            int                   relTrg_k       = 0;
-            normalized_distance_t relTrg_d       = 0;
-            const double          queryTolerance = params_.grid_resolution_xy;
-            if (ptg->inverseMap_WS2TP(
-                    relGoal.x, relGoal.y, relTrg_k, relTrg_d, queryTolerance))
-            {
-                ptg_step_t relTrg_step = 0;
-                if (ptg->getPathStepForDist(relTrg_k, relTrg_d, relTrg_step))
-                {
-                    // Add direct path to target:
-                    tpsPointsToConsider.emplace_back(
-                        relTrg_k, relTrg_step, relTrg_speed);
-                }
-
-                // and also, in general, the path:
-                trajIdxsToConsider.insert(relTrg_k);
-            }
         }
 
         // Build possible distances for each path:
@@ -639,6 +615,37 @@ TPS_Astar::list_paths_to_neighbors_t
         {
             // No speed-trimmable PTG:
             speedsToConsider.push_back(1.0);
+        }
+
+        // make sure of including the trajectory towards the target, if we
+        // are close enough, plus its immediate neighboring paths:
+        {
+            int                   relTrg_k       = 0;
+            normalized_distance_t relTrg_d       = 0;
+            const double          queryTolerance = params_.grid_resolution_xy;
+            if (ptg->inverseMap_WS2TP(
+                    relGoal.x, relGoal.y, relTrg_k, relTrg_d, queryTolerance))
+            {
+                ptg_step_t relTrg_step = 0;
+                if (ptg->getPathStepForDist(relTrg_k, relTrg_d, relTrg_step))
+                {
+                    // Add direct path to target, and keep a copy of its value:
+                    for (auto speed : speedsToConsider)
+                    {
+                        const auto trgTps =
+                            TPS_point(relTrg_k, relTrg_step, speed);
+
+                        tpsPointsToConsider.emplace_back(trgTps);
+
+                        // save its index:
+                        targetTpsPointIndx.insert(
+                            tpsPointsToConsider.size() - 1);
+                    }
+                }
+
+                // and also, in general, the path:
+                trajIdxsToConsider.insert(relTrg_k);
+            }
         }
 
         for (const auto speed : speedsToConsider)
@@ -665,10 +672,15 @@ TPS_Astar::list_paths_to_neighbors_t
         mrpt::system::CTimeLoggerEntry tleL2(
             profiler_(), "find_feasible.loop2");
 
+        std::unordered_set<NodeCoords, NodeCoordsHash> goalNodeCoords;
+
         // now, check which ones of those paths are not blocked by
         // obstacles:
-        for (const auto& tpsPt : tpsPointsToConsider)
+        for (size_t tpsPtIdx = 0; tpsPtIdx < tpsPointsToConsider.size();
+             tpsPtIdx++)
         {
+            const auto& tpsPt = tpsPointsToConsider[tpsPtIdx];
+
             totalConsidered++;
 
             // solution is a no-motion: skip.
@@ -709,6 +721,27 @@ TPS_Astar::list_paths_to_neighbors_t
                 // without colliding: discard this trajectory.
                 totalCollided++;
                 continue;
+            }
+
+            // It is a collision-free path.
+
+            // Is this a direct path to goal?
+            // If it is, do not try to consider other paths that end up
+            // in the same lattice cell, even if shorter, since we prefer
+            // to reach the goal pose as exactly as possible:
+            if (targetTpsPointIndx.count(tpsPtIdx) != 0)
+            {  // add it:
+                goalNodeCoords.insert(nc);
+            }
+            else
+            {
+                // are we reaching a goal cell and this is not a
+                // straight-to-goal path?
+                if (goalNodeCoords.count(nc) != 0)
+                {
+                    // skip it
+                    continue;
+                }
             }
 
             // ok, it's a good potential path, add it.
