@@ -393,6 +393,9 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     /** Navigation state variables, protected by navMtx_ */
     CurrentNavInternalState innerState_;
 
+    /** Checks whether the current motion leads us into an obstacle */
+    void check_immediate_collision();
+
     /** Checks whether we need to launch a new RRT* path planner */
     void check_have_to_replan();
 

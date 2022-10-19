@@ -16,6 +16,7 @@
 #include <mvsim/mvsim-msgs/SrvGetPoseAnswer.pb.h>
 #include <mvsim/mvsim-msgs/SrvSetControllerTwist.pb.h>
 #include <mvsim/mvsim-msgs/SrvSetControllerTwistAnswer.pb.h>
+#include <selfdriving/interfaces/LidarSource.h>
 #include <selfdriving/interfaces/VehicleMotionInterface.h>
 
 namespace selfdriving
@@ -30,7 +31,7 @@ namespace selfdriving
  *       of this library on mvsim headers. Only if the user project uses this,
  *       it must then depend on mvsim.
  */
-class MVSIM_VehicleInterface : public VehicleMotionInterface
+class MVSIM_VehicleInterface : public VehicleMotionInterface, public LidarSource
 {
     DEFINE_MRPT_OBJECT(MVSIM_VehicleInterface, selfdriving)
 
@@ -159,7 +160,7 @@ class MVSIM_VehicleInterface : public VehicleMotionInterface
     }
 
     /// Returns a copy of the last lidar observation
-    mrpt::obs::CObservation2DRangeScan::Ptr last_lidar_obs() const
+    mrpt::obs::CObservation2DRangeScan::Ptr last_lidar_obs() const override
     {
         auto lck = mrpt::lockHelper(lastLidarObsMtx_);
         return lastLidarObs_;
