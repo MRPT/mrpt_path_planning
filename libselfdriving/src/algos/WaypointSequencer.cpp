@@ -317,6 +317,18 @@ void WaypointSequencer::update_robot_kinematic_state()
     }
     lastVehiclePosRobotTime_ = robotTime;
 
+    MRPT_LOG_THROTTLE_DEBUG_STREAM(
+        1.0,
+        "updateCurrentPoseAndSpeeds:"
+        "\nLocalization="
+            << lastVehicleLocalization_.pose << "\n Odometry    : "
+            << lastVehicleOdometry_.odometry << "\n Odometry vel Local: "
+            << lastVehicleOdometry_.odometryVelocityLocal.asString()
+            << "\n Odometry vel global: "
+            << lastVehicleOdometry_.odometryVelocityLocal
+                   .rotated(lastVehicleOdometry_.odometry.phi)
+                   .asString());
+
     // TODO: Detect a change if frame_id and clear m_latestPoses,
     // m_latestOdomPoses.
 
