@@ -99,7 +99,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
 
     using base_t          = mrpt::graphs::CDirectedTree<EDGE_TYPE>;
     using edge_t          = EDGE_TYPE;
-    using edge_sequence_t = std::list<const edge_t*>;
+    using edge_sequence_t = std::list<edge_t*>;
 
     /**  Use deque to reduce memory reallocs. */
     struct map_traits_map_as_deque
@@ -110,8 +110,8 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     };
 
     /** Map: TNode_ID => Node info */
-    using node_map_t =
-        typename map_traits_map_as_deque::template map<TNodeID, node_t>;
+    using node_map_t = std::map<TNodeID, node_t>;
+    // typename map_traits_map_as_deque::template map<TNodeID, node_t>;
 
     /** A topological path up-tree.
      *
@@ -274,7 +274,7 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
             else
             {
                 const EDGE_TYPE& edge = edge_to_parent(node->nodeID_);
-                edgeList.push_front(&edge);
+                edgeList.push_front(const_cast<EDGE_TYPE*>(&edge));
 
                 auto it_next = nodes_.find(next_node_id.value());
                 if (it_next == nodes_.end())

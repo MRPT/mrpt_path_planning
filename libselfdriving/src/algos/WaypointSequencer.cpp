@@ -11,6 +11,7 @@
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/WaypointSequencer.h>
+#include <selfdriving/algos/refine_trajectory.h>
 #include <selfdriving/algos/render_tree.h>
 #include <selfdriving/algos/trajectories.h>
 #include <selfdriving/algos/viz.h>
@@ -676,6 +677,10 @@ void WaypointSequencer::check_new_planner_output()
     {
         auto [path, edges] = _.activePlanOutput.po.motionTree.backtrack_path(
             _.activePlanOutput.po.bestNodeId);
+
+        // Correct PTG arguments according to the final actual poses.
+        // Needed to correct for lattice approximations:
+        refine_trajectory(path, edges, config_.ptgs);
 
         // std::list -> std::vector for convenience:
         _.activePlanPath.clear();
