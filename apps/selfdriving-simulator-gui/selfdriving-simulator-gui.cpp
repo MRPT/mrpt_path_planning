@@ -782,8 +782,7 @@ void prepare_selfdriving_window(
     const auto lambdaCollectSensors = [&]() {
         if (!sd.vehicleInterface) return;
 
-        if (!argVehicleInterface.isSet() &&
-            !sd.navigator.config_.localSensedObstacleSource)
+        if (!sd.navigator.config_.localSensedObstacleSource)
             sd.navigator.config_.localSensedObstacleSource =
                 std::make_shared<selfdriving::ObstacleSourceGenericSensor>();
 
@@ -792,16 +791,18 @@ void prepare_selfdriving_window(
                 sd.navigator.config_.localSensedObstacleSource);
         if (!o) return;
 
-        // handle special case:
-        if (auto d =
-                std::dynamic_pointer_cast<selfdriving::MVSIM_VehicleInterface>(
-                    sd.vehicleInterface);
+        // handle sensor sources:
+        if (auto d = std::dynamic_pointer_cast<selfdriving::LidarSource>(
+                sd.vehicleInterface);
             d)
         {
+            MRPT_TODO("Debug locks here!");
+#if 0
             o->set_sensor_observation(
                 d->last_lidar_obs(),
                 mrpt::poses::CPose3D(
                     sd.vehicleInterface->get_localization().pose));
+#endif
         }
     };
 

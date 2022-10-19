@@ -357,11 +357,16 @@ void WaypointSequencer::update_robot_kinematic_state()
 
 void WaypointSequencer::impl_navigation_step()
 {
+    mrpt::system::CTimeLoggerEntry tle(navProfiler_, "impl_navigation_step");
+
     if (lastNavigationState_ != NavStatus::NAVIGATING)
         internal_on_start_new_navigation();
 
     // Get current robot kinematic state:
     update_robot_kinematic_state();
+
+    // Check for immediate collisions:
+    check_immediate_collision();
 
     // Checks whether we need to launch a new A* path planner:
     check_have_to_replan();
@@ -399,6 +404,21 @@ void WaypointSequencer::internal_on_start_new_navigation()
     }
 }
 
+void WaypointSequencer::check_immediate_collision()
+{
+    mrpt::system::CTimeLoggerEntry tle(
+        navProfiler_, "impl_navigation_step.check_immediate_collision");
+
+    auto& _ = innerState_;
+
+    if (!config_.localSensedObstacleSource) return;
+
+    auto obs = config_.localSensedObstacleSource->obstacles();
+    if (!obs || obs->empty()) return;
+
+    MRPT_LOG_WARN_STREAM("PTS: " << obs->size());
+}
+
 void WaypointSequencer::check_have_to_replan()
 {
     auto& _ = innerState_;
@@ -415,6 +435,9 @@ void WaypointSequencer::check_have_to_replan()
 
 waypoint_idx_t WaypointSequencer::find_next_waypoint_for_planner()
 {
+    mrpt::system::CTimeLoggerEntry tle(
+        navProfiler_, "impl_navigation_step.find_next_waypoint_for_planner");
+
     auto& _ = innerState_;
 
     ASSERT_(!_.waypointNavStatus.waypoints.empty());
@@ -717,6 +740,9 @@ void WaypointSequencer::check_new_planner_output()
 
 void WaypointSequencer::send_next_motion_cmd_or_nop()
 {
+    mrpt::system::CTimeLoggerEntry tle(
+        navProfiler_, "impl_navigation_step.send_next_motion_cmd_or_nop");
+
     using namespace mrpt;  // "_deg"
 
     auto& _ = innerState_;
