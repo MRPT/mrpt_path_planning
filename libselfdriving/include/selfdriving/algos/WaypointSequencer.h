@@ -139,6 +139,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         double enqueuedActionsTolerancePhi      = mrpt::DEG2RAD(2.0);
         double enqueuedActionsTimeoutMultiplier = 1.3;
 
+        double minEdgeTimeToRefinePath = 1.0;  // [s]
+
         void                   loadFrom(const mrpt::containers::yaml& c);
         mrpt::containers::yaml saveTo() const;
 
@@ -228,16 +230,6 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
     /** @}*/
 
-#if 0
-    /** Returns `true` if, according to the information gathered at the last
-     * navigation step,
-     * there is a free path to the given point; `false` otherwise: if way is
-     * blocked or there is missing information,
-     * the point is out of range for the existing PTGs, etc. */
-    bool isRelativePointReachable(
-        const mrpt::math::TPoint2D& wp_local_wrt_robot) const;
-#endif
-
     struct PathPlannerOutput
     {
         PathPlannerOutput() = default;
@@ -257,6 +249,9 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         const MotionPrimitivesTreeSE2& tree, const TNodeID finalNode,
         const PlannerInput&                    originalPlanInput,
         const std::vector<CostEvaluator::Ptr>& costEvaluators);
+
+    /** If the GUI is enabled, update current path plan details */
+    void send_current_state_to_viz();
 
    protected:
     /** Current and last internal state of navigator: */
@@ -347,6 +342,9 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         PathPlannerOutput                                   activePlanOutput;
         std::vector<MotionPrimitivesTreeSE2::node_t>        activePlanPath;
         std::vector<const MotionPrimitivesTreeSE2::edge_t*> activePlanPathEdges;
+
+        /** A copy of the active queued condition, for viz purposes only */
+        std::optional<EnqueuedCondition> activeEnqueuedConditionForViz;
 
         void active_plan_reset()
         {

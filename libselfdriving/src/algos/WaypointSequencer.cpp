@@ -7,6 +7,7 @@
 #include <mrpt/core/lock_helper.h>
 #include <mrpt/math/TSegment2D.h>
 #include <mrpt/opengl/COpenGLScene.h>
+#include <mrpt/opengl/stock_objects.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/WaypointSequencer.h>
@@ -30,6 +31,7 @@ void WaypointSequencer::Configuration::loadFrom(const mrpt::containers::yaml& c)
     MCP_LOAD_REQ(c, enqueuedActionsToleranceXY);
     MCP_LOAD_REQ_DEG(c, enqueuedActionsTolerancePhi);
     MCP_LOAD_REQ(c, enqueuedActionsTimeoutMultiplier);
+    MCP_LOAD_REQ(c, minEdgeTimeToRefinePath);
 }
 
 mrpt::containers::yaml WaypointSequencer::Configuration::saveTo() const
@@ -40,6 +42,7 @@ mrpt::containers::yaml WaypointSequencer::Configuration::saveTo() const
     MCP_SAVE(c, enqueuedActionsToleranceXY);
     MCP_SAVE_DEG(c, enqueuedActionsTolerancePhi);
     MCP_SAVE(c, enqueuedActionsTimeoutMultiplier);
+    MCP_SAVE(c, minEdgeTimeToRefinePath);
 
     return c;
 }
@@ -361,6 +364,8 @@ void WaypointSequencer::impl_navigation_step()
 
     // Send actual motion command, if needed, or a NOP if we are safely on track
     send_next_motion_cmd_or_nop();
+
+    send_current_state_to_viz();  // optional debug viz
 }
 
 void WaypointSequencer::internal_on_start_new_navigation()
@@ -632,7 +637,7 @@ void WaypointSequencer::enqueue_path_planner_towards(
     }
 
     // speed at target:
-    // ppi.pi.stateGoal.vel;
+    // ppi.pi.stateGoal.vel
     MRPT_TODO("Handle speed at target waypoint");
 
     // ----------------------------------
@@ -657,8 +662,9 @@ void WaypointSequencer::check_new_planner_output()
 
     if (!result.po.success)
     {
-        MRPT_LOG_WARN("A* failed to plan towards the target!");
-        return;
+        MRPT_LOG_INFO(
+            "A* did not complete a plan towards the target, it only had time "
+            "for a partial solution");
     }
 
     if (config_.vizSceneToModify) send_planner_output_to_viz(result);
@@ -669,7 +675,7 @@ void WaypointSequencer::check_new_planner_output()
 
     {
         auto [path, edges] = _.activePlanOutput.po.motionTree.backtrack_path(
-            _.activePlanOutput.po.goalNodeId);
+            _.activePlanOutput.po.bestNodeId);
 
         // std::list -> std::vector for convenience:
         _.activePlanPath.clear();
@@ -841,6 +847,7 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
                 << "\n CMD2: " << generatedMotionCmdAfter->asString()
                 << "\n relPoseNext: " << relPoseNext  //
                 << "\n CondPose: " << condPose  //
+                << "\n ETA: " << edge.estimatedExecTime  //
                 << "\n withTolDelta: "
                 << (poseCondDeltaForTolerance
                         ? poseCondDeltaForTolerance.value().asString()
@@ -862,6 +869,8 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
                 std::max(1.0, edge.estimatedExecTime) *
                 config_.enqueuedActionsTimeoutMultiplier;
 
+            _.activeEnqueuedConditionForViz = enqMotion.nextCondition;
+
             // if the immediate cmd was already sent out, skip it and just send
             // the enqueued part:
             if (_.activePlanEdgesSentOut.count(*_.activePlanEdgeIndex) == 0)
@@ -880,6 +889,14 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
                     std::nullopt, enqMotion);
 
                 _.activePlanEdgesSentOut.insert(*_.activePlanEdgeIndex + 1);
+            }
+
+            // Do we have time to refine the path planning?
+            if (edge.estimatedExecTime > config_.minEdgeTimeToRefinePath)
+            {
+                // Cancel curring path planner thread:
+
+                // Launch a new planner from the new predicted pose:
             }
         }
         else
@@ -912,7 +929,7 @@ void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
     // Visualize the motion tree:
     // ----------------------------------
     RenderOptions ro;
-    ro.highlight_path_to_node_id = ppo.po.goalNodeId;
+    ro.highlight_path_to_node_id = ppo.po.bestNodeId;
     ro.width_normal_edge         = 0;  // hidden
     ro.draw_obstacles            = false;
     ro.ground_xy_grid_frequency  = 0;  // disabled
@@ -1028,6 +1045,91 @@ void WaypointSequencer::send_path_to_viz(
     else
     {
         config_.vizSceneToModify->insert(planViz);
+    }
+
+    // unlock:
+    if (config_.on_viz_post_modify) config_.on_viz_post_modify();
+}
+
+void WaypointSequencer::send_current_state_to_viz()
+{
+    if (!config_.vizSceneToModify) return;
+
+    auto glStateDetails = mrpt::opengl::CSetOfObjects::Create();
+    glStateDetails->setName("glStateDetails");
+    glStateDetails->setLocation(0, 0, 0.02);  // to easy the vis wrt the ground
+
+    // last poses track:
+    if (const auto& poses = innerState_.latestPoses; !poses.empty())
+    {
+        auto glRobotPath = mrpt::opengl::CSetOfLines::Create();
+        glRobotPath->setColor_u8(0x80, 0x80, 0x80, 0x80);
+        const auto p0 = poses.begin()->second;
+        glRobotPath->appendLine(p0.x, p0.y, 0, p0.x, p0.y, 0);
+        for (const auto& p : poses)
+        {
+            glRobotPath->appendLineStrip(p.second.x, p.second.y, 0);
+
+            auto glCorner =
+                mrpt::opengl::stock_objects::CornerXYSimple(0.1, 1.0);
+            glCorner->setPose(p.second);
+            glStateDetails->insert(glCorner);
+        }
+        glStateDetails->insert(glRobotPath);
+    }
+
+    if (const auto& actCond = innerState_.activeEnqueuedConditionForViz;
+        actCond.has_value())
+    {
+        const auto p   = actCond->position;
+        const auto tol = actCond->tolerance;
+
+        const mrpt::math::TPose2D p0 = {
+            p.x - tol.x, p.y - tol.y, p.phi - tol.phi};
+        const mrpt::math::TPose2D p1 = {
+            p.x + tol.x, p.y + tol.y, p.phi + tol.phi};
+
+        auto glCondPoly = mrpt::opengl::CSetOfLines::Create();
+        glCondPoly->setColor_u8(0x40, 0x40, 0x40, 0xa0);
+
+        glCondPoly->appendLine(p0.x, p0.y, 0, p1.x, p0.y, 0);
+        glCondPoly->appendLineStrip(p1.x, p1.y, 0);
+        glCondPoly->appendLineStrip(p0.x, p1.y, 0);
+        glCondPoly->appendLineStrip(p0.x, p0.y, 0);
+
+        glStateDetails->insert(glCondPoly);
+
+        {
+            auto glCorner =
+                mrpt::opengl::stock_objects::CornerXYSimple(0.15, 1.0);
+            glCorner->setPose(p0);
+            glStateDetails->insert(glCorner);
+        }
+        {
+            auto glCorner =
+                mrpt::opengl::stock_objects::CornerXYSimple(0.15, 1.0);
+            glCorner->setPose(p1);
+            glStateDetails->insert(glCorner);
+        }
+    }
+
+    // Send to the viz "server":
+    // ----------------------------------
+    // lock:
+    if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
+
+    if (auto glObj =
+            config_.vizSceneToModify->getByName(glStateDetails->getName());
+        glObj)
+    {
+        auto glContainer =
+            std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
+        ASSERT_(glContainer);
+        *glContainer = *glStateDetails;
+    }
+    else
+    {
+        config_.vizSceneToModify->insert(glStateDetails);
     }
 
     // unlock:
