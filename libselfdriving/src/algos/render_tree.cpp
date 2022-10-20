@@ -14,6 +14,7 @@
 #include <mrpt/opengl/CText3D.h>
 #include <mrpt/opengl/stock_objects.h>
 #include <selfdriving/algos/render_tree.h>
+#include <selfdriving/algos/render_vehicle.h>
 
 using namespace selfdriving;
 
@@ -55,49 +56,8 @@ auto selfdriving::render_tree(
     {
         gl_veh_shape->setLineWidth(ro.vehicle_line_width);
         gl_veh_shape->setColor_u8(ro.color_vehicle);
-
-        double max_veh_radius = 0.;
-        if (auto pPoly =
-                std::get_if<mrpt::math::TPolygon2D>(&pi.ptgs.robotShape);
-            pPoly)
-        {
-            const auto& poly = *pPoly;
-            gl_veh_shape->appendLine(
-                poly[0].x, poly[0].y, 0, poly[1].x, poly[1].y, 0);
-            for (size_t i = 2; i <= poly.size(); i++)
-            {
-                const size_t idx = i % poly.size();
-                mrpt::keep_max(max_veh_radius, poly[idx].norm());
-                gl_veh_shape->appendLineStrip(poly[idx].x, poly[idx].y, 0);
-            }
-        }
-        else if (auto pRadius = std::get_if<double>(&pi.ptgs.robotShape);
-                 pRadius)
-        {
-            const double R            = *pRadius;
-            const int    NUM_VERTICES = 14;
-            for (int i = 0; i <= NUM_VERTICES; i++)
-            {
-                const size_t idx  = i % NUM_VERTICES;
-                const size_t idxn = (i + 1) % NUM_VERTICES;
-                const double ang  = idx * 2 * M_PI / (NUM_VERTICES - 1);
-                const double angn = idxn * 2 * M_PI / (NUM_VERTICES - 1);
-                gl_veh_shape->appendLine(
-                    R * cos(ang), R * sin(ang), 0, R * cos(angn), R * sin(angn),
-                    0);
-            }
-            gl_veh_shape->appendLine(0, R, 0, 0, -R, 0);
-            gl_veh_shape->appendLine(0, R, 0, R, 0, 0);
-            gl_veh_shape->appendLine(0, -R, 0, R, 0, 0);
-
-            mrpt::keep_max(max_veh_radius, R);
-        }
-        else
-        {
-            THROW_EXCEPTION("Invalid vehicle shape variant<> type.");
-        }
-
-        xyzcorners_scale = max_veh_radius * 0.20;
+        auto res         = render_vehicle(pi.ptgs.robotShape, *gl_veh_shape);
+        xyzcorners_scale = res.maxVehicleShapeRadius * 0.20;
     }
 
     // Override with user scale?

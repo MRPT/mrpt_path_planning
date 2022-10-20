@@ -13,6 +13,7 @@
 #include <selfdriving/algos/WaypointSequencer.h>
 #include <selfdriving/algos/refine_trajectory.h>
 #include <selfdriving/algos/render_tree.h>
+#include <selfdriving/algos/render_vehicle.h>
 #include <selfdriving/algos/trajectories.h>
 #include <selfdriving/algos/viz.h>
 
@@ -33,6 +34,7 @@ void WaypointSequencer::Configuration::loadFrom(const mrpt::containers::yaml& c)
     MCP_LOAD_REQ_DEG(c, enqueuedActionsTolerancePhi);
     MCP_LOAD_REQ(c, enqueuedActionsTimeoutMultiplier);
     MCP_LOAD_REQ(c, minEdgeTimeToRefinePath);
+    MCP_LOAD_REQ(c, lookAheadImmediateCollisionChecking);
 }
 
 mrpt::containers::yaml WaypointSequencer::Configuration::saveTo() const
@@ -44,6 +46,7 @@ mrpt::containers::yaml WaypointSequencer::Configuration::saveTo() const
     MCP_SAVE_DEG(c, enqueuedActionsTolerancePhi);
     MCP_SAVE(c, enqueuedActionsTimeoutMultiplier);
     MCP_SAVE(c, minEdgeTimeToRefinePath);
+    MCP_SAVE(c, lookAheadImmediateCollisionChecking);
 
     return c;
 }
@@ -409,6 +412,9 @@ void WaypointSequencer::check_immediate_collision()
     mrpt::system::CTimeLoggerEntry tle(
         navProfiler_, "impl_navigation_step.check_immediate_collision");
 
+    const unsigned int NUM_STEPS             = 3;
+    const unsigned int NUM_CLOSEST_OBSTACLES = 40;
+
     auto& _ = innerState_;
 
     if (!config_.localSensedObstacleSource) return;
@@ -416,7 +422,57 @@ void WaypointSequencer::check_immediate_collision()
     auto obs = config_.localSensedObstacleSource->obstacles();
     if (!obs || obs->empty()) return;
 
-    MRPT_LOG_WARN_STREAM("PTS: " << obs->size());
+    // Extrapolate the current motion into the future:
+    const auto globalPos = lastVehicleLocalization_.pose;
+    const auto globalVel = lastVehicleOdometry_.odometryVelocityLocal.rotated(
+        lastVehicleLocalization_.pose.phi);
+
+    const auto& xs = obs->getPointsBufferRef_x();
+    const auto& ys = obs->getPointsBufferRef_y();
+
+    _.collisionCheckingPosePrediction =
+        globalPos + globalVel * config_.lookAheadImmediateCollisionChecking;
+
+    MRPT_LOG_INFO_STREAM(
+        "globalPos: " << globalPos << " globalVel:" << globalVel.asString()
+                      << " pred: "
+                      << _.collisionCheckingPosePrediction.value());
+
+    bool collision = false;
+
+    for (unsigned int i = 0; i < NUM_STEPS && !collision; i++)
+    {
+        const double dt = (static_cast<double>(i) / (NUM_STEPS - 1)) *
+                          config_.lookAheadImmediateCollisionChecking;
+
+        const auto predictedPose = globalPos + globalVel * dt;
+
+        for (const auto& ptg : config_.ptgs.ptgs)
+        {
+            std::vector<size_t> idxs;
+            std::vector<float>  distSq;
+            obs->kdTreeNClosestPoint2DIdx(
+                predictedPose.x, predictedPose.y, NUM_CLOSEST_OBSTACLES, idxs,
+                distSq);
+
+            for (size_t ptIdx : idxs)
+            {
+                const auto localPt =
+                    predictedPose.inverseComposePoint({xs[ptIdx], ys[ptIdx]});
+                const bool collide =
+                    ptg->isPointInsideRobotShape(localPt.x, localPt.y);
+
+                if (collide) collision = true;
+            }
+            if (collision) break;
+        }
+    }
+
+    if (collision)
+    {
+        //
+        MRPT_LOG_WARN_STREAM("Collision predicted ahead!");
+    }
 }
 
 void WaypointSequencer::check_have_to_replan()
@@ -1098,12 +1154,14 @@ void WaypointSequencer::send_current_state_to_viz()
 {
     if (!config_.vizSceneToModify) return;
 
+    const auto& _ = innerState_;
+
     auto glStateDetails = mrpt::opengl::CSetOfObjects::Create();
     glStateDetails->setName("glStateDetails");
     glStateDetails->setLocation(0, 0, 0.02);  // to easy the vis wrt the ground
 
     // last poses track:
-    if (const auto& poses = innerState_.latestPoses; !poses.empty())
+    if (const auto& poses = _.latestPoses; !poses.empty())
     {
         auto glRobotPath = mrpt::opengl::CSetOfLines::Create();
         glRobotPath->setColor_u8(0x80, 0x80, 0x80, 0x80);
@@ -1121,7 +1179,7 @@ void WaypointSequencer::send_current_state_to_viz()
         glStateDetails->insert(glRobotPath);
     }
 
-    if (const auto& actCond = innerState_.activeEnqueuedConditionForViz;
+    if (const auto& actCond = _.activeEnqueuedConditionForViz;
         actCond.has_value())
     {
         const auto p   = actCond->position;
@@ -1154,6 +1212,21 @@ void WaypointSequencer::send_current_state_to_viz()
             glCorner->setPose(p1);
             glStateDetails->insert(glCorner);
         }
+    }
+
+    if (const auto& predPose = _.collisionCheckingPosePrediction;
+        predPose.has_value())
+    {
+        auto glVehShape = mrpt::opengl::CSetOfLines::Create();
+
+        glVehShape->setLineWidth(1);
+        glVehShape->setColor_u8(0x40, 0x40, 0x40, 0x80);
+
+        render_vehicle(config_.ptgs.robotShape, *glVehShape);
+
+        glVehShape->setPose(predPose.value());
+
+        glStateDetails->insert(glVehShape);
     }
 
     // Send to the viz "server":

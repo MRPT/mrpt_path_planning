@@ -55,7 +55,9 @@ class ObstacleSourceStaticPointcloud : public ObstacleSource
 };
 
 /** Obstacles from a generic MRPT observation (2D lidar, 3D camera, velodyne,
- * etc.)
+ * etc.).
+ * This creates a pointcloud with obstacles in the global nav frame, from the
+ * raw observation data and a robot pose from an external localization system.
  */
 class ObstacleSourceGenericSensor : public ObstacleSource
 {
