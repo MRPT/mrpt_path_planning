@@ -141,6 +141,8 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
         double minEdgeTimeToRefinePath = 1.0;  // [s]
 
+        double lookAheadImmediateCollisionChecking = 1.0;  // [s]
+
         void                   loadFrom(const mrpt::containers::yaml& c);
         mrpt::containers::yaml saveTo() const;
 
@@ -333,6 +335,9 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
         std::future<PathPlannerOutput> pathPlannerFuture;
         std::optional<waypoint_idx_t>  pathPlannerTarget;
+
+        /// From check_immediate_collision(). For Debug visualization.
+        std::optional<mrpt::math::TPose2D> collisionCheckingPosePrediction;
 
         /** The final waypoint of the currently under-execution path tracking.
          */

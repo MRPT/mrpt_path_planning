@@ -796,13 +796,10 @@ void prepare_selfdriving_window(
                 sd.vehicleInterface);
             d)
         {
-            MRPT_TODO("Debug locks here!");
-#if 0
             o->set_sensor_observation(
                 d->last_lidar_obs(),
                 mrpt::poses::CPose3D(
                     sd.vehicleInterface->get_localization().pose));
-#endif
         }
     };
 
