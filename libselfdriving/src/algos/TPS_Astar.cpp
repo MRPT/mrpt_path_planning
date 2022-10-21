@@ -15,6 +15,7 @@
 #include <selfdriving/ptgs/SpeedTrimmablePTG.h>
 
 #include <iostream>
+#include <unordered_set>
 
 IMPLEMENTS_MRPT_OBJECT(TPS_Astar, Planner, selfdriving)
 
