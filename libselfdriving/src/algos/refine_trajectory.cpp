@@ -5,10 +5,17 @@
  * ------------------------------------------------------------------------- */
 
 #include <selfdriving/algos/refine_trajectory.h>
+#include <selfdriving/ptgs/SpeedTrimmablePTG.h>
 
 #include <iostream>
 
 using namespace selfdriving;
+
+void edge_interpolated_path(
+    MoveEdgeSE2_TPS& edge, const TrajectoriesAndRobotShape& trs,
+    const std::optional<mrpt::math::TPose2D>& reconstrRelPoseOpt = std::nullopt,
+    const std::optional<size_t>&              ptg_stepOpt        = std::nullopt,
+    const std::optional<size_t>&              numSegments = std::nullopt);
 
 void selfdriving::refine_trajectory(
     MotionPrimitivesTreeSE2::path_t&          inPath,
@@ -30,6 +37,9 @@ void selfdriving::refine_trajectory(
 
         auto& ptg = ptgInfo.ptgs.at(edge.ptgIndex);
         ptg->updateNavDynamicState(edge.getPTGDynState());
+        if (auto* ptgTrim = dynamic_cast<ptg::SpeedTrimmablePTG*>(ptg.get());
+            ptgTrim)
+            ptgTrim->trimmableSpeed_ = edge.ptgTrimmableSpeed;
 
         // get current and next nodes:
         auto itNextPath = itPath;
@@ -54,6 +64,9 @@ void selfdriving::refine_trajectory(
 
         distance_t newDist = newNormDist * ptg->getRefDistance();
 
+        uint32_t newPtgStep = 0;
+        ptg->getPathStepForDist(newK, newDist, newPtgStep);
+
 #if 0
         std::cout << "    Corrections: pathIndex " << edge.ptgPathIndex
                   << " => " << newK << " ptgDist:" << edge.ptgDist << " => "
@@ -62,5 +75,8 @@ void selfdriving::refine_trajectory(
 
         edge.ptgPathIndex = newK;
         edge.ptgDist      = newDist;
+
+        // Update interpolated path:
+        edge_interpolated_path(edge, ptgInfo, deltaNodes, newPtgStep);
     }
 }

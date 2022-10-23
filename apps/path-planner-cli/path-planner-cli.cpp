@@ -19,6 +19,7 @@
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/TPS_Astar.h>
+#include <selfdriving/algos/refine_trajectory.h>
 #include <selfdriving/algos/trajectories.h>
 #include <selfdriving/algos/viz.h>
 
@@ -103,6 +104,9 @@ TCLAP::ValueArg<std::string> arg_costMap(
 TCLAP::SwitchArg arg_showTree(
     "", "show-tree",
     "Shows the whole search tree instead of just the best path", cmd);
+
+TCLAP::SwitchArg arg_noRefine(
+    "", "no-refine", "Skips the post-plan refine stage", cmd);
 
 TCLAP::SwitchArg arg_showEdgeWeights(
     "", "show-edge-weights", "Shows the weight of path edges", cmd);
@@ -296,6 +300,16 @@ static void do_plan_path()
               << " overall edges, " << plan.motionTree.nodes().size()
               << " nodes\n";
 
+    // backtrack:
+    auto [plannedPath, pathEdges] =
+        plan.motionTree.backtrack_path(plan.goalNodeId);
+
+    if (!arg_noRefine.isSet())
+    {
+        // refine:
+        selfdriving::refine_trajectory(plannedPath, pathEdges, pi.ptgs);
+    }
+
     // Visualize:
     selfdriving::VisualizationOptions vizOpts;
 
@@ -310,10 +324,6 @@ static void do_plan_path()
     // generate path sequence:
     if (plan.success)
     {
-        // backtrack:
-        const auto [plannedPath, pathEdges] =
-            plan.motionTree.backtrack_path(plan.goalNodeId);
-
         if (arg_printPathEdges.isSet())
         {
             std::cout << "Planned path edges:\n";

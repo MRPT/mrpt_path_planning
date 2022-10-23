@@ -81,6 +81,72 @@ TPS_Astar::TPS_Astar() : mrpt::system::COutputLogger("TPS_Astar")
     profiler_().setName("TPS_Astar");
 }
 
+void edge_interpolated_path(
+    MoveEdgeSE2_TPS& edge, const TrajectoriesAndRobotShape& trs,
+    const std::optional<mrpt::math::TPose2D>& reconstrRelPoseOpt = std::nullopt,
+    const std::optional<size_t>&              ptg_stepOpt        = std::nullopt,
+    const std::optional<size_t>&              numSegments        = std::nullopt)
+{
+    size_t nSeg = 0;
+
+    if (numSegments.has_value()) { nSeg = *numSegments; }
+    else
+    {
+        // Use same number than existing edge interpolated path:
+        ASSERT_(edge.interpolatedPath.size() > 1);
+        nSeg = edge.interpolatedPath.size();
+    }
+
+    auto& ptg = trs.ptgs.at(edge.ptgIndex);
+
+    const duration_seconds_t dt = ptg->getPathStepDuration();
+
+    mrpt::math::TPose2D reconstrRelPose;
+    if (reconstrRelPoseOpt.has_value())
+        reconstrRelPose = reconstrRelPoseOpt.value();
+    else
+    {
+        MRPT_TODO("continue...");
+        THROW_EXCEPTION("To do");
+
+        // ptg->inverseMap_WS2TP(edgePoseIncr.x, edgePoseIncr.y)
+    }
+
+    size_t ptg_step = 0;
+    if (ptg_stepOpt)
+    {  //
+        ptg_step = *ptg_stepOpt;
+    }
+    else
+    {
+        MRPT_TODO("continue...");
+        THROW_EXCEPTION("To do");
+    }
+
+    auto& ip = edge.interpolatedPath;
+    ip.clear();
+
+    // t=0: fixed start relative pose
+    // ---------------------------------
+    ip[0 * dt] = {0, 0, 0};
+
+    // interpolated path in between start and goal
+    // ----------------------------------------------
+    for (size_t i = 0; i < nSeg; i++)
+    {
+        const auto               iStep = ((i + 1) * ptg_step) / (nSeg + 2);
+        const duration_seconds_t t     = iStep * dt;
+        ip[t] = ptg->getPathPose(edge.ptgPathIndex, iStep);
+    }
+
+    // Final, known pose and time
+    // ----------------------------------------------
+    ip[ptg_step * dt] = reconstrRelPose;
+
+    // Motion execution time:
+    edge.estimatedExecTime = ptg_step * dt;
+}
+
 PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 {
     MRPT_START
@@ -217,9 +283,29 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // want the actual, exact final cell index:
             if (in.stateGoal.state.isPoint())
             {
+                // Correct current node location due to grid discretization,
+                // a latter refine_trajectory() stage will correct PTG path
+                // params if needed:
+                const auto& goalPt   = in.stateGoal.state.point();
+                current.state.pose.x = goalPt.x;
+                current.state.pose.y = goalPt.y;
+
+                MRPT_LOG_DEBUG_STREAM(
+                    "Path found to R(2) goal point: redefining goal from "
+                    << in.stateGoal.state.asString() << " ==> "
+                    << current.state.asString());
+
                 nodeGoal      = current;
                 po.goalNodeId = nodeGoal.id.value();
                 po.bestNodeId = po.goalNodeId;
+            }
+            else
+            {
+                // Correct current node location due to grid discretization,
+                // a latter refine_trajectory() stage will correct PTG path
+                // params if needed:
+                const auto& goalPose = in.stateGoal.state.pose();
+                current.state.pose   = goalPose;
             }
 
             break;
@@ -253,7 +339,11 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // tentative_gScore := gScore[current] + d(current, neighbor)
 
             auto& ptg = *in.ptgs.ptgs.at(edge.ptgIndex.value());
+
             ptg.updateNavDynamicState(edge.ptgDynState.value());
+            if (auto* ptgTrim = dynamic_cast<ptg::SpeedTrimmablePTG*>(&ptg);
+                ptgTrim)
+                ptgTrim->trimmableSpeed_ = edge.ptgTrimmableSpeed;
 
             const uint32_t ptg_step        = edge.relTrgStep.value();
             const auto&    reconstrRelPose = edge.relReconstrPose;
@@ -304,32 +394,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             newEdge.stateTo   = x_i;
 
             // interpolated path:
-            {
-                const auto nSeg             = params_.pathInterpolatedSegments;
-                const duration_seconds_t dt = ptg.getPathStepDuration();
-
-                auto& ip = newEdge.interpolatedPath;
-
-                // t=0: fixed start relative pose
-                // ---------------------------------
-                ip[0 * dt] = {0, 0, 0};
-
-                // interpolated path in between start and goal
-                // ----------------------------------------------
-                for (size_t i = 0; i < nSeg; i++)
-                {
-                    const auto iStep = ((i + 1) * ptg_step) / (nSeg + 2);
-                    const duration_seconds_t t = iStep * dt;
-                    ip[t] = ptg.getPathPose(newEdge.ptgPathIndex, iStep);
-                }
-
-                // Final, known pose and time
-                // ----------------------------------------------
-                ip[ptg_step * dt] = reconstrRelPose;
-
-                // Motion execution time:
-                newEdge.estimatedExecTime = ptg_step * dt;
-            }
+            edge_interpolated_path(
+                newEdge, in.ptgs, reconstrRelPose, ptg_step,
+                params_.pathInterpolatedSegments);
 
             // Let's compute its cost:
             newEdge.cost = cost_path_segment(newEdge);

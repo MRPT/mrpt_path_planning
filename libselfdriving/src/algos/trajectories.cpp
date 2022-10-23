@@ -5,6 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <selfdriving/algos/trajectories.h>
+#include <selfdriving/ptgs/SpeedTrimmablePTG.h>
 
 #include <fstream>
 #include <iostream>
@@ -31,6 +32,9 @@ trajectory_t selfdriving::plan_to_trajectory(
         ASSERT_GT_(ptg_dt, 0.);
 
         ptg->updateNavDynamicState(edge->getPTGDynState());
+        if (auto* ptgTrim = dynamic_cast<ptg::SpeedTrimmablePTG*>(ptg.get());
+            ptgTrim)
+            ptgTrim->trimmableSpeed_ = edge->ptgTrimmableSpeed;
 
         uint32_t ptgFinalStep = 0;
         bool     ok           = ptg->getPathStepForDist(

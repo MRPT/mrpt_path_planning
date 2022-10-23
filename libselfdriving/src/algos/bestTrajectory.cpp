@@ -6,6 +6,7 @@
 
 #include <mrpt/core/get_env.h>
 #include <selfdriving/algos/bestTrajectory.h>
+#include <selfdriving/ptgs/SpeedTrimmablePTG.h>
 
 using namespace selfdriving;
 
