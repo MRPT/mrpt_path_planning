@@ -166,13 +166,11 @@ struct SelfDrivingStatus
     selfdriving::WaypointSequence       waypts;
     selfdriving::WaypointStatusSequence wayptsStatus;
 
-    selfdriving::VehicleMotionInterface::Ptr vehicleInterface;
-
     SelfDrivingThreadParams sdThreadParams;
     std::thread             selfDrivingThread;
 };
 
-SelfDrivingStatus sd;
+std::shared_ptr<SelfDrivingStatus> sd;
 
 static void selfdriving_run_thread(SelfDrivingThreadParams& params);
 static void on_do_single_path_planning(
@@ -232,25 +230,25 @@ void prepare_selfdriving(mvsim::World& world)
 {
     // initialize the WaypointSequencer
     // --------------------------------------------------------
-    // sd.navigator.config_.multitarget_look_ahead = 2;
+    // sd->navigator.config_.multitarget_look_ahead = 2;
 
-    sd.navigator.setMinLoggingLevel(
+    sd->navigator.setMinLoggingLevel(
         mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
             argVerbosity.getValue()));
 
     // Load PTGs:
     {
         mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
-        sd.navigator.config_.ptgs.initFromConfigFile(
+        sd->navigator.config_.ptgs.initFromConfigFile(
             cfg, arg_config_file_section.getValue());
     }
 
     // Obstacle source:
     auto obsPts = world_to_static_obstacle_points(world);
-    sd.navigator.config_.globalMapObstacleSource =
+    sd->navigator.config_.globalMapObstacleSource =
         selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
 
-    sd.navigator.logFmt(
+    sd->navigator.logFmt(
         mrpt::system::LVL_DEBUG,
         "[prepare_selfdriving] Initializing globalMapObstacleSource with "
         "%u points",
@@ -265,34 +263,34 @@ void prepare_selfdriving(mvsim::World& world)
                      "Unregistered class name '%s'",
                      argVehicleInterface.getValue().c_str()));
 
-        sd.vehicleInterface =
+        sd->navigator.config_.vehicleMotionInterface =
             std::dynamic_pointer_cast<selfdriving::VehicleMotionInterface>(obj);
         ASSERTMSG_(
-            sd.vehicleInterface,
+            sd->navigator.config_.vehicleMotionInterface,
             mrpt::format(
                 "Class '%s' seems not to implement the expected interface "
                 "'selfdriving::VehicleMotionInterface'",
                 argVehicleInterface.getValue().c_str()));
 
-        sd.vehicleInterface->setMinLoggingLevel(world.getMinLoggingLevel());
+        sd->navigator.config_.vehicleMotionInterface->setMinLoggingLevel(
+            world.getMinLoggingLevel());
     }
     else
     {
         // Default:
         auto sim = std::make_shared<selfdriving::MVSIM_VehicleInterface>();
-        sd.vehicleInterface = sim;
+        sd->navigator.config_.vehicleMotionInterface = sim;
 
-        sd.vehicleInterface->setMinLoggingLevel(world.getMinLoggingLevel());
+        sd->navigator.config_.vehicleMotionInterface->setMinLoggingLevel(
+            world.getMinLoggingLevel());
 
         // connect now:
         sim->connect();
     }
 
-    sd.navigator.config_.vehicleMotionInterface = sd.vehicleInterface;
-
     if (arg_planner_yaml_file.isSet())
     {
-        sd.navigator.config_.plannerParams =
+        sd->navigator.config_.plannerParams =
             selfdriving::TPS_Astar_Parameters::FromYAML(
                 mrpt::containers::yaml::FromFile(
                     arg_planner_yaml_file.getValue()));
@@ -300,7 +298,7 @@ void prepare_selfdriving(mvsim::World& world)
 
     if (arg_cost_global_yaml_file.isSet())
     {
-        sd.navigator.config_.globalCostParameters =
+        sd->navigator.config_.globalCostParameters =
             selfdriving::CostEvaluatorCostMap::Parameters::FromYAML(
                 mrpt::containers::yaml::FromFile(
                     arg_cost_global_yaml_file.getValue()));
@@ -308,7 +306,7 @@ void prepare_selfdriving(mvsim::World& world)
 
     if (arg_cost_local_yaml_file.isSet())
     {
-        sd.navigator.config_.localCostParameters =
+        sd->navigator.config_.localCostParameters =
             selfdriving::CostEvaluatorCostMap::Parameters::FromYAML(
                 mrpt::containers::yaml::FromFile(
                     arg_cost_local_yaml_file.getValue()));
@@ -316,7 +314,7 @@ void prepare_selfdriving(mvsim::World& world)
 
     if (arg_cost_prefer_waypoints_yaml_file.isSet())
     {
-        sd.navigator.config_.preferWaypointsParameters =
+        sd->navigator.config_.preferWaypointsParameters =
             selfdriving::CostEvaluatorPreferredWaypoint::Parameters::FromYAML(
                 mrpt::containers::yaml::FromFile(
                     arg_cost_prefer_waypoints_yaml_file.getValue()));
@@ -324,21 +322,21 @@ void prepare_selfdriving(mvsim::World& world)
 
     if (arg_waypoint_seq_yaml_file.isSet())
     {
-        sd.navigator.config_.loadFrom(mrpt::containers::yaml::FromFile(
+        sd->navigator.config_.loadFrom(mrpt::containers::yaml::FromFile(
             arg_waypoint_seq_yaml_file.getValue()));
     }
 
     // all mandaroty fields filled in now:
-    sd.navigator.initialize();
+    sd->navigator.initialize();
 
-    sd.selfDrivingThread =
-        std::thread(&selfdriving_run_thread, std::ref(sd.sdThreadParams));
+    sd->selfDrivingThread =
+        std::thread(&selfdriving_run_thread, std::ref(sd->sdThreadParams));
 
     // Load example/test waypoints?
     // --------------------------------------------------------
     if (arg_waypoints_yaml_file.isSet())
     {
-        sd.waypts = selfdriving::WaypointSequence::FromYAML(
+        sd->waypts = selfdriving::WaypointSequence::FromYAML(
             mrpt::containers::yaml::FromFile(
                 arg_waypoints_yaml_file.getValue()));
     }
@@ -347,6 +345,8 @@ void prepare_selfdriving(mvsim::World& world)
 int launchSimulation()
 {
     using namespace mvsim;
+
+    sd = std::make_shared<SelfDrivingStatus>();
 
     const auto sXMLfilename = argMvsimFile.getValue();
 
@@ -382,7 +382,7 @@ int launchSimulation()
     bool                  do_exit         = false;
     size_t                teleop_idx_veh = 0;  // Index of the vehicle to teleop
 
-    while (!do_exit && !mrpt::system::os::kbhit())
+    while (!do_exit)
     {
         // Simulation
         // ============================================================
@@ -486,8 +486,10 @@ int launchSimulation()
     if (thGUI.joinable()) thGUI.join();
 
     // Close selfdriving thread:
-    sd.sdThreadParams.closing(true);
-    if (sd.selfDrivingThread.joinable()) sd.selfDrivingThread.join();
+    sd->sdThreadParams.closing(true);
+    if (sd->selfDrivingThread.joinable()) sd->selfDrivingThread.join();
+
+    sd.reset();
 
     return 0;
 }
@@ -519,11 +521,11 @@ void prepare_selfdriving_window(
     auto lck = mrpt::lockHelper(gui->background_scene_mtx);
 
     // navigator 3D visualization interface:
-    sd.navigator.config_.on_viz_pre_modify = [world, &gui]() {
+    sd->navigator.config_.on_viz_pre_modify = [world, &gui]() {
         world->m_gui_user_objects_mtx.lock();
         gui->background_scene_mtx.lock();
     };
-    sd.navigator.config_.on_viz_post_modify = [world, &gui]() {
+    sd->navigator.config_.on_viz_post_modify = [world, &gui]() {
         world->m_gui_user_objects_mtx.unlock();
         gui->background_scene_mtx.unlock();
     };
@@ -534,7 +536,7 @@ void prepare_selfdriving_window(
         world->m_gui_user_objects_viz = mrpt::opengl::CSetOfObjects::Create();
         world->m_gui_user_objects_viz->setName("gui_user_objects_viz");
 
-        sd.navigator.config_.vizSceneToModify = world->m_gui_user_objects_viz;
+        sd->navigator.config_.vizSceneToModify = world->m_gui_user_objects_viz;
     }
 
 #if MRPT_VERSION >= 0x211
@@ -593,7 +595,7 @@ void prepare_selfdriving_window(
 
         lbWaypsCount->setCaption(mrpt::format(
             "Number of wps: %u",
-            static_cast<unsigned int>(sd.waypts.waypoints.size())));
+            static_cast<unsigned int>(sd->waypts.waypoints.size())));
 
         // custom 3D objects
         auto glWaypoints = mrpt::opengl::CSetOfObjects::Create();
@@ -602,8 +604,8 @@ void prepare_selfdriving_window(
         selfdriving::WaypointsRenderingParams rp;
         // rp.xx = x;
 
-        sd.waypts.getAsOpenglVisualization(*glWaypoints, rp);
-        std::cout << "Waypoints:\n" << sd.waypts.getAsText() << std::endl;
+        sd->waypts.getAsOpenglVisualization(*glWaypoints, rp);
+        std::cout << "Waypoints:\n" << sd->waypts.getAsText() << std::endl;
 
         {
             auto lckgui = mrpt::lockHelper(world->m_gui_user_objects_mtx);
@@ -617,24 +619,24 @@ void prepare_selfdriving_window(
         btnReq->setCallback([world]() {
             // Update global obstacles, in case the MVSIM world has changed:
             auto obsPts = world_to_static_obstacle_points(*world);
-            sd.navigator.config_.globalMapObstacleSource =
+            sd->navigator.config_.globalMapObstacleSource =
                 selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
 
-            sd.navigator.request_navigation(sd.waypts);
+            sd->navigator.request_navigation(sd->waypts);
         });
 
         pnNav->add<nanogui::Button>("suspend()")->setCallback([]() {
-            sd.navigator.suspend();
+            sd->navigator.suspend();
         });
         pnNav->add<nanogui::Button>("resume()")->setCallback([]() {
-            sd.navigator.resume();
+            sd->navigator.resume();
         });
         pnNav->add<nanogui::Button>("cancel()")->setCallback([]() {
-            sd.navigator.cancel();
+            sd->navigator.cancel();
         });
     }
     const auto lambdaUpdateNavStatus = [lbNavStatus]() {
-        const auto state = sd.navigator.current_status();
+        const auto state = sd->navigator.current_status();
         lbNavStatus->setCaption(mrpt::format(
             "Nav status: %s",
             mrpt::typemeta::TEnumType<selfdriving::NavStatus>::value2name(state)
@@ -780,26 +782,29 @@ void prepare_selfdriving_window(
     };
 
     const auto lambdaCollectSensors = [&]() {
-        if (!sd.vehicleInterface) return;
+        if (!sd->navigator.config_.vehicleMotionInterface) return;
+        if (sd->sdThreadParams.isClosing()) return;
 
-        if (!sd.navigator.config_.localSensedObstacleSource)
-            sd.navigator.config_.localSensedObstacleSource =
+        if (!sd->navigator.config_.localSensedObstacleSource)
+            sd->navigator.config_.localSensedObstacleSource =
                 std::make_shared<selfdriving::ObstacleSourceGenericSensor>();
 
         auto o =
             std::dynamic_pointer_cast<selfdriving::ObstacleSourceGenericSensor>(
-                sd.navigator.config_.localSensedObstacleSource);
+                sd->navigator.config_.localSensedObstacleSource);
         if (!o) return;
 
         // handle sensor sources:
         if (auto d = std::dynamic_pointer_cast<selfdriving::LidarSource>(
-                sd.vehicleInterface);
+                sd->navigator.config_.vehicleMotionInterface);
             d)
         {
             o->set_sensor_observation(
                 d->last_lidar_obs(),
                 mrpt::poses::CPose3D(
-                    sd.vehicleInterface->get_localization().pose));
+                    sd->navigator.config_.vehicleMotionInterface
+                        ->get_localization()
+                        .pose));
         }
     };
 
@@ -854,7 +859,7 @@ void selfdriving_run_thread(SelfDrivingThreadParams& params)
     {
         try
         {
-            sd.navigator.navigation_step();
+            sd->navigator.navigation_step();
             rate.sleep();
         }
         catch (const std::exception& e)
@@ -931,10 +936,10 @@ void on_do_single_path_planning(
     }
 
     // cost map for observed dynamic obstacles (lidar sensor):
-    if (sd.navigator.config_.localSensedObstacleSource)
+    if (sd->navigator.config_.localSensedObstacleSource)
     {
         const auto obs =
-            sd.navigator.config_.localSensedObstacleSource->obstacles();
+            sd->navigator.config_.localSensedObstacleSource->obstacles();
         if (!obs->empty())
         {
             auto lidarCostmap =
@@ -969,7 +974,7 @@ void on_do_single_path_planning(
     ppo.po             = plan;
     ppo.costEvaluators = planner.costEvaluators_;
 
-    sd.navigator.send_planner_output_to_viz(ppo);
+    sd->navigator.send_planner_output_to_viz(ppo);
 
     // ############################
     // END: Run path planning
