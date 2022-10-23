@@ -7,6 +7,7 @@
 #pragma once
 
 #include <mrpt/core/WorkerThreadsPool.h>
+#include <mrpt/io/CFileGZOutputStream.h>
 #include <mrpt/poses/CPose2DInterpolator.h>
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
@@ -142,6 +143,12 @@ class WaypointSequencer : public mrpt::system::COutputLogger
         double minEdgeTimeToRefinePath = 1.0;  // [s]
 
         double lookAheadImmediateCollisionChecking = 1.0;  // [s]
+
+        bool generateNavLogFiles = false;
+
+        /** Actual files will be
+         * `${navLogFilesPrefix}_${UNIQUE_ID}.reactivenavlog` */
+        std::string navLogFilesPrefix = "./selfdriving";
 
         void                   loadFrom(const mrpt::containers::yaml& c);
         mrpt::containers::yaml saveTo() const;
@@ -303,6 +310,11 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     //        const mrpt::math::TPoint2D& wp_local_wrt_robot) const = 0;
 
     void internal_on_start_new_navigation();
+    void internal_start_navlog_file();
+    void internal_write_to_navlog_file();
+
+    /// Created in internal_start_navlog_file()
+    std::optional<mrpt::io::CFileGZOutputStream> navlog_output_file_;
 
     // Path planning in a parallel thread:
     mrpt::WorkerThreadsPool pathPlannerPool_{
