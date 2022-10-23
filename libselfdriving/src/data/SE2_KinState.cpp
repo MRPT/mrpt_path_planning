@@ -78,3 +78,13 @@ PoseOrPoint PoseOrPoint::FromString(const std::string& s)
         return {mrpt::math::TPose2D(m(0, 0), m(0, 1), mrpt::DEG2RAD(m(0, 2)))};
     }
 }
+
+std::string PoseOrPoint::asString() const
+{
+    if (isPoint())
+        return point().asString();
+    else if (isPose())
+        return pose().asString();
+    else
+        return {"(Undefined!)"};
+}

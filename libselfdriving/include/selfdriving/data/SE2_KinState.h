@@ -14,8 +14,8 @@
 
 namespace selfdriving
 {
-/** A variant wrapper holding either a SE(2) pose, a 2D point, or none (default)
- *  It is used to provide a goal or waypoint state, when the heading is not
+/** Variant wrapper holding a SE(2) pose, a R(2) (2D) point, or none (default).
+ * It is used to provide a goal or waypoint state, when the heading is not
  * important and the user only wants to specify the (x,y) coordinates of the 2D
  * point.
  */
@@ -44,6 +44,8 @@ struct PoseOrPoint
     {
         return std::get<mrpt::math::TPoint2D>(data_);
     }
+
+    std::string asString() const;
 
    private:
     std::variant<std::monostate, mrpt::math::TPose2D, mrpt::math::TPoint2D>

@@ -19,6 +19,7 @@
 #include <selfdriving/algos/render_vehicle.h>
 #include <selfdriving/algos/trajectories.h>
 #include <selfdriving/algos/viz.h>
+#include <selfdriving/ptgs/SpeedTrimmablePTG.h>
 
 using namespace selfdriving;
 
@@ -896,6 +897,9 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
 
         auto& ptg = config_.ptgs.ptgs.at(edge.ptgIndex);
         ptg->updateNavDynamicState(edge.getPTGDynState());
+        if (auto* ptgTrim = dynamic_cast<ptg::SpeedTrimmablePTG*>(ptg.get());
+            ptgTrim)
+            ptgTrim->trimmableSpeed_ = edge.ptgTrimmableSpeed;
 
         const mrpt::kinematics::CVehicleVelCmd::Ptr generatedMotionCmd =
             ptg->directionToMotionCommand(edge.ptgPathIndex);
@@ -931,6 +935,10 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
 
             auto& nextPtg = config_.ptgs.ptgs.at(nextEdge.ptgIndex);
             nextPtg->updateNavDynamicState(nextEdge.getPTGDynState());
+            if (auto* ptgTrim =
+                    dynamic_cast<ptg::SpeedTrimmablePTG*>(nextPtg.get());
+                ptgTrim)
+                ptgTrim->trimmableSpeed_ = nextEdge.ptgTrimmableSpeed;
 
             generatedMotionCmdAfter =
                 nextPtg->directionToMotionCommand(nextEdge.ptgPathIndex);
