@@ -420,23 +420,20 @@ void WaypointSequencer::check_immediate_collision()
     if (!config_.localSensedObstacleSource) return;
 
     auto obs = config_.localSensedObstacleSource->obstacles();
+
+    MRPT_LOG_WARN_STREAM("OBS: " << obs->size());
+
     if (!obs || obs->empty()) return;
 
     // Extrapolate the current motion into the future:
     const auto globalPos = lastVehicleLocalization_.pose;
-    const auto globalVel = lastVehicleOdometry_.odometryVelocityLocal.rotated(
-        lastVehicleLocalization_.pose.phi);
+    const auto localVel  = lastVehicleOdometry_.odometryVelocityLocal;
 
     const auto& xs = obs->getPointsBufferRef_x();
     const auto& ys = obs->getPointsBufferRef_y();
 
     _.collisionCheckingPosePrediction =
-        globalPos + globalVel * config_.lookAheadImmediateCollisionChecking;
-
-    MRPT_LOG_INFO_STREAM(
-        "globalPos: " << globalPos << " globalVel:" << globalVel.asString()
-                      << " pred: "
-                      << _.collisionCheckingPosePrediction.value());
+        globalPos + localVel * config_.lookAheadImmediateCollisionChecking;
 
     bool collision = false;
 
@@ -445,7 +442,7 @@ void WaypointSequencer::check_immediate_collision()
         const double dt = (static_cast<double>(i) / (NUM_STEPS - 1)) *
                           config_.lookAheadImmediateCollisionChecking;
 
-        const auto predictedPose = globalPos + globalVel * dt;
+        const auto predictedPose = globalPos + localVel * dt;
 
         for (const auto& ptg : config_.ptgs.ptgs)
         {
