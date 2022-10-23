@@ -6,8 +6,10 @@
 
 #include <mrpt/core/lock_helper.h>
 #include <mrpt/math/TSegment2D.h>
+#include <mrpt/nav/reactive/CLogFileRecord.h>
 #include <mrpt/opengl/COpenGLScene.h>
 #include <mrpt/opengl/stock_objects.h>
+#include <mrpt/serialization/CArchive.h>
 #include <mrpt/system/filesystem.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
@@ -368,6 +370,8 @@ void WaypointSequencer::impl_navigation_step()
 {
     mrpt::system::CTimeLoggerEntry tle(navProfiler_, "impl_navigation_step");
 
+    timStartThisNavStep_ = mrpt::Clock::nowDouble();
+
     if (lastNavigationState_ != NavStatus::NAVIGATING)
         internal_on_start_new_navigation();
 
@@ -431,8 +435,6 @@ void WaypointSequencer::check_immediate_collision()
 
     auto obs = config_.localSensedObstacleSource->obstacles();
 
-    MRPT_LOG_WARN_STREAM("OBS: " << obs->size());
-
     if (!obs || obs->empty()) return;
 
     // Extrapolate the current motion into the future:
@@ -477,8 +479,14 @@ void WaypointSequencer::check_immediate_collision()
 
     if (collision)
     {
-        //
-        MRPT_LOG_WARN_STREAM("Collision predicted ahead!");
+        MRPT_LOG_WARN_STREAM("Collision predicted ahead! Stopping.");
+
+        config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
+
+        // Re-plan from scratch:
+        _.activeFinalTarget.reset();
+        _.pathPlannerTarget.reset();
+        _.active_plan_reset();
     }
 }
 
@@ -1264,6 +1272,7 @@ void WaypointSequencer::internal_start_navlog_file()
     if (!config_.generateNavLogFiles) return;
 
     navlog_output_file_.reset();  // close any previous file
+    navlogOutputFirstEntry_ = true;
 
     // Select output file name:
     std::string outFileName;
@@ -1290,7 +1299,111 @@ void WaypointSequencer::internal_start_navlog_file()
 
 void WaypointSequencer::internal_write_to_navlog_file()
 {
-    if (!navlog_output_file_ || !navlog_output_file_->is_open()) return;
+    try
+    {
+        if (!navlog_output_file_ || !navlog_output_file_->is_open()) return;
 
-    // save:
+        // save:
+        mrpt::nav::CLogFileRecord r;
+
+        if (config_.globalMapObstacleSource)
+        {
+            if (const auto pts = config_.globalMapObstacleSource->obstacles();
+                pts)
+                r.WS_Obstacles.insertAnotherMap(
+                    pts.get(),
+                    -mrpt::poses::CPose3D(lastVehicleLocalization_.pose));
+        }
+
+        if (config_.localSensedObstacleSource)
+        {
+            if (const auto pts = config_.localSensedObstacleSource->obstacles();
+                pts)
+                r.WS_Obstacles_original.insertAnotherMap(
+                    pts.get(),
+                    -mrpt::poses::CPose3D(lastVehicleLocalization_.pose));
+        }
+
+        const auto& rs = config_.ptgs.robotShape;
+
+        if (auto pPoly = std::get_if<mrpt::math::TPolygon2D>(&rs); pPoly)
+        {
+            const auto&  poly   = *pPoly;
+            const size_t nVerts = poly.size();
+            r.robotShape_x.resize(nVerts);
+            r.robotShape_y.resize(nVerts);
+            for (size_t i = 0; i < nVerts; i++)
+            {
+                r.robotShape_x[i] = poly.at(i).x;
+                r.robotShape_y[i] = poly.at(i).y;
+            }
+        }
+        else if (auto pRadius = std::get_if<double>(&rs); pRadius)
+        {
+            const double R      = *pRadius;
+            r.robotShape_radius = R;
+        }
+
+        r.robotPoseLocalization = lastVehicleLocalization_.pose;
+        r.robotPoseOdometry     = lastVehicleOdometry_.odometry;
+
+        // r.WS_targets_relative                = relTargets;
+
+        r.nSelectedPTG = -1;  // None
+
+        r.cur_vel = lastVehicleOdometry_.odometryVelocityLocal.rotated(
+            lastVehicleOdometry_.odometry.phi);
+        r.cur_vel_local = lastVehicleOdometry_.odometryVelocityLocal;
+
+        // r.cmd_vel = new_vel_cmd; // TODO!
+
+        // r.values["executionTime"]            = executionTimeValue;
+
+        // save collision-predicted pose into the "vel cmd" future field:
+        if (innerState_.collisionCheckingPosePrediction)
+            r.relPoseVelCmd = *innerState_.collisionCheckingPosePrediction -
+                              lastVehicleLocalization_.pose;
+
+        r.timestamps["tim_start_iteration"] =
+            mrpt::Clock::fromDouble(timStartThisNavStep_.value());
+        r.timestamps["curPoseAndVel"] = lastVehicleLocalization_.timestamp;
+
+        r.nPTGs = config_.ptgs.ptgs.size();
+
+        r.infoPerPTG.resize(r.nPTGs + 1);  // convention: NumPTGs + NOP choice
+
+        // At the beginning of each log file, add an introductory block
+        // explaining which PTGs are we using:
+        if (navlogOutputFirstEntry_)
+        {
+            navlogOutputFirstEntry_ = false;
+            for (size_t i = 0; i < r.nPTGs; i++)
+            {
+                // If we make a direct copy (=) we will store the entire,
+                // heavy, collision grid. Let's just store the parameters of
+                // each PTG by serializing it, so paths can be reconstructed
+                // by invoking initialize()
+                mrpt::io::CMemoryStream buf;
+                auto arch = mrpt::serialization::archiveFrom(buf);
+                arch << config_.ptgs.ptgs.at(i);
+                buf.Seek(0);
+                r.infoPerPTG[i].ptg = std::dynamic_pointer_cast<
+                    mrpt::nav::CParameterizedTrajectoryGenerator>(
+                    arch.ReadObject());
+            }
+        }
+#if 0
+    // NOP mode  stuff:
+    r.rel_cur_pose_wrt_last_vel_cmd_NOP = rel_cur_pose_wrt_last_vel_cmd_NOP;
+    r.rel_pose_PTG_origin_wrt_sense_NOP = rel_pose_PTG_origin_wrt_sense_NOP;
+    r.ptg_index_NOP  = best_is_NOP_cmdvel ? m_lastSentVelCmd.ptg_index : -1;
+    r.ptg_last_k_NOP = m_lastSentVelCmd.ptg_alpha_index;
+    r.ptg_last_navDynState = m_lastSentVelCmd.ptg_dynState;
+#endif
+
+        mrpt::serialization::archiveFrom(*navlog_output_file_) << r;
+    }
+    catch (const std::exception& e)
+    {
+    }
 }

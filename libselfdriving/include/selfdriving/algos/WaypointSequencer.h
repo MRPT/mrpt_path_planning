@@ -269,6 +269,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     NavErrorReason navErrorReason_;
 
     std::optional<double> lastNavigationStepEndTime_;
+    std::optional<double> timStartThisNavStep_;
 
     bool initialized_ = false;
 
@@ -315,6 +316,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
     /// Created in internal_start_navlog_file()
     std::optional<mrpt::io::CFileGZOutputStream> navlog_output_file_;
+    bool                                         navlogOutputFirstEntry_ = true;
 
     // Path planning in a parallel thread:
     mrpt::WorkerThreadsPool pathPlannerPool_{
