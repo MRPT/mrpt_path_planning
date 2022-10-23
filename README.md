@@ -69,6 +69,7 @@ build-Release/bin/selfdriving-simulator-gui \
   --waypoints share/mvsim-demo-waypoints01.yaml \
   -s share/mvsim-demo.xml \
   -p share/ptgs_holonomic_robot.ini \
+  --waypoint-sequencer-parameters share/wp-params.yaml \
   --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
   --prefer-waypoints-parameters share/costmap-prefer-waypoints.yaml \
   --global-costmap-parameters share/costmap-obstacles.yaml \

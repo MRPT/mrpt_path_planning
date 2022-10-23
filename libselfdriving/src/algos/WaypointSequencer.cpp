@@ -8,6 +8,7 @@
 #include <mrpt/math/TSegment2D.h>
 #include <mrpt/opengl/COpenGLScene.h>
 #include <mrpt/opengl/stock_objects.h>
+#include <mrpt/system/filesystem.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/WaypointSequencer.h>
@@ -35,6 +36,9 @@ void WaypointSequencer::Configuration::loadFrom(const mrpt::containers::yaml& c)
     MCP_LOAD_REQ(c, enqueuedActionsTimeoutMultiplier);
     MCP_LOAD_REQ(c, minEdgeTimeToRefinePath);
     MCP_LOAD_REQ(c, lookAheadImmediateCollisionChecking);
+
+    MCP_LOAD_OPT(c, generateNavLogFiles);
+    MCP_LOAD_OPT(c, navLogFilesPrefix);
 }
 
 mrpt::containers::yaml WaypointSequencer::Configuration::saveTo() const
@@ -47,6 +51,8 @@ mrpt::containers::yaml WaypointSequencer::Configuration::saveTo() const
     MCP_SAVE(c, enqueuedActionsTimeoutMultiplier);
     MCP_SAVE(c, minEdgeTimeToRefinePath);
     MCP_SAVE(c, lookAheadImmediateCollisionChecking);
+    MCP_SAVE(c, generateNavLogFiles);
+    MCP_SAVE(c, navLogFilesPrefix);
 
     return c;
 }
@@ -387,6 +393,7 @@ void WaypointSequencer::impl_navigation_step()
     send_next_motion_cmd_or_nop();
 
     send_current_state_to_viz();  // optional debug viz
+    internal_write_to_navlog_file();  // optional debug output file
 }
 
 void WaypointSequencer::internal_on_start_new_navigation()
@@ -404,6 +411,9 @@ void WaypointSequencer::internal_on_start_new_navigation()
             ASSERT_(config_.vehicleMotionInterface);
             config_.vehicleMotionInterface->on_nav_start();
         });
+
+        // Start a new navlog file?
+        internal_start_navlog_file();
     }
 }
 
@@ -1247,4 +1257,40 @@ void WaypointSequencer::send_current_state_to_viz()
 
     // unlock:
     if (config_.on_viz_post_modify) config_.on_viz_post_modify();
+}
+
+void WaypointSequencer::internal_start_navlog_file()
+{
+    if (!config_.generateNavLogFiles) return;
+
+    navlog_output_file_.reset();  // close any previous file
+
+    // Select output file name:
+    std::string outFileName;
+    int         fileCnt = 0;
+    for (;;)
+    {
+        outFileName = config_.navLogFilesPrefix +
+                      mrpt::format("_%03i.reactivenavlog", fileCnt++);
+        if (mrpt::system::fileExists(outFileName))
+            continue;
+        else
+            break;
+    }
+
+    MRPT_LOG_INFO_STREAM("Initiating navlog file: " << outFileName);
+
+    navlog_output_file_.emplace(outFileName);
+
+    if (!navlog_output_file_->is_open())
+    {  // report error:
+        MRPT_LOG_ERROR_STREAM("Error creating file: " << outFileName);
+    }
+}
+
+void WaypointSequencer::internal_write_to_navlog_file()
+{
+    if (!navlog_output_file_ || !navlog_output_file_->is_open()) return;
+
+    // save:
 }
