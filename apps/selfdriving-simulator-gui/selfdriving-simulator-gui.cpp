@@ -799,12 +799,21 @@ void prepare_selfdriving_window(
                 sd->navigator.config_.vehicleMotionInterface);
             d)
         {
-            o->set_sensor_observation(
-                d->last_lidar_obs(),
-                mrpt::poses::CPose3D(
-                    sd->navigator.config_.vehicleMotionInterface
-                        ->get_localization()
-                        .pose));
+            const auto lastLidarFromVeh = d->last_lidar_obs();
+            const auto lastLidarInObsSource =
+                o->get_stored_sensor_observation();
+
+            if (lastLidarFromVeh &&
+                (!lastLidarInObsSource || lastLidarFromVeh->timestamp !=
+                                              lastLidarInObsSource->timestamp))
+            {
+                o->set_sensor_observation(
+                    lastLidarFromVeh,
+                    mrpt::poses::CPose3D(
+                        sd->navigator.config_.vehicleMotionInterface
+                            ->get_localization()
+                            .pose));
+            }
         }
     };
 

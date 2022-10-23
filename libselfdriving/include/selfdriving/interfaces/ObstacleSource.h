@@ -73,6 +73,12 @@ class ObstacleSourceGenericSensor : public ObstacleSource
         robotPoseForObs_ = robotPose;
     }
 
+    mrpt::obs::CObservation::Ptr get_stored_sensor_observation() const
+    {
+        auto lck = mrpt::lockHelper(obsMtx_);
+        return obs_;
+    }
+
     mrpt::maps::CPointsMap::Ptr obstacles(
         [[maybe_unused]] mrpt::system::TTimeStamp t =
             mrpt::system::TTimeStamp()) override
