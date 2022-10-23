@@ -69,17 +69,17 @@ struct NavErrorReason
  * run the navigation. This method will internally call the callbacks to gather
  * sensor data and robot positioning data.
  *
- * This class implements the following state machine (see \c current_state()):
+ * This class implements the following state machine (see \c current_status()):
  * \dot
- *  digraph CAbstractNavigator_States {
+ *  digraph NavStatus {
  *      IDLE; NAVIGATING; SUSPENDED; NAV_ERROR;
- *      IDLE -> NAVIGATING [ label="requestNavigation()" ];
+ *      IDLE -> NAVIGATING [ label="request_navigation()" ];
  *      NAVIGATING -> IDLE [ label="Final target reached" ];
  *      NAVIGATING -> IDLE [ label="cancel()" ];
  *      NAVIGATING -> NAV_ERROR [ label="Upon sensor errors, timeout,..." ];
  *      NAVIGATING -> SUSPENDED [ label="suspend()" ];
  *      SUSPENDED -> NAVIGATING [ label="resume()" ];
- *      NAV_ERROR -> IDLE [ label="resetNavError()" ];
+ *      NAV_ERROR -> IDLE [ label="reset_nav_error()" ];
  *  }
  *  \enddot
  *
@@ -209,7 +209,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
 
     /** In case of status=NAV_ERROR, this returns the reason for the error.
      * Error status is reseted every time a new navigation starts with
-     * a call to navigate(), or when resetNavError() is called.
+     * a call to navigate(), or when reset_nav_error() is called.
      */
     inline const NavErrorReason& error_reason() const
     {
