@@ -51,12 +51,13 @@ auto selfdriving::render_tree(
     };
 
     // Build a model of the vehicle shape:
-    auto   gl_veh_shape = mrpt::opengl::CSetOfLines::Create();
+    mrpt::opengl::CSetOfLines gl_veh_shape;
+
     double xyzcorners_scale;
     {
-        gl_veh_shape->setLineWidth(ro.vehicle_line_width);
-        gl_veh_shape->setColor_u8(ro.color_vehicle);
-        auto res         = render_vehicle(pi.ptgs.robotShape, *gl_veh_shape);
+        gl_veh_shape.setLineWidth(ro.vehicle_line_width);
+        gl_veh_shape.setColor_u8(ro.color_vehicle);
+        auto res         = render_vehicle(pi.ptgs.robotShape, gl_veh_shape);
         xyzcorners_scale = res.maxVehicleShapeRadius * 0.20;
     }
 
@@ -156,7 +157,7 @@ auto selfdriving::render_tree(
     // The starting pose vehicle shape must be inserted independently, because
     // the rest are edges and we draw the END pose of each edge:
     {
-        auto vehShape  = mrpt::opengl::CSetOfLines::Create(*gl_veh_shape);
+        auto vehShape  = mrpt::opengl::CSetOfLines::Create(gl_veh_shape);
         auto shapePose = mrpt::math::TPose3D(pi.stateStart.pose);
         shapePose.z += ro.vehicle_shape_z;
         vehShape->setPose(poseHeightT(shapePose));
@@ -207,8 +208,7 @@ auto selfdriving::render_tree(
             // Insert vehicle shapes along optimal path:
             if (isBestPathAndDrawShape)
             {
-                auto vehShape =
-                    mrpt::opengl::CSetOfLines::Create(*gl_veh_shape);
+                auto vehShape = mrpt::opengl::CSetOfLines::Create(gl_veh_shape);
                 auto shapePose = mrpt::math::TPose3D(poseNode);
                 shapePose.z += ro.vehicle_shape_z;
                 vehShape->setPose(poseHeightT(shapePose));
