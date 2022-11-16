@@ -376,31 +376,29 @@ int launchSimulation()
         std::thread(&mvsim_server_thread_update_GUI, std::ref(thread_params));
 
     // Run simulation:
-    mrpt::system::CTicTac tictac;
-    double                t_old           = tictac.Tac();
-    double                REALTIME_FACTOR = 1.0;
-    bool                  do_exit         = false;
-    size_t                teleop_idx_veh = 0;  // Index of the vehicle to teleop
+    const double tAbsInit       = mrpt::Clock::nowDouble();
+    bool         do_exit        = false;
+    size_t       teleop_idx_veh = 0;  // Index of the vehicle to teleop
 
     while (!do_exit)
     {
+        // was the quit button hit in the GUI?
+        if (world->gui_thread_must_close()) break;
+
         // Simulation
         // ============================================================
         // Compute how much time has passed to simulate in real-time:
-        double t_new     = tictac.Tac();
-        double incr_time = REALTIME_FACTOR * (t_new - t_old);
+        double tNew          = mrpt::Clock::nowDouble();
+        double incrTime      = (tNew - tAbsInit) - world->get_simul_time();
+        int    incrTimeSteps = static_cast<int>(
+            std::floor(incrTime / world->get_simul_timestep()));
 
-        // Just in case the computer is *really fast*...
-        if (incr_time >= world->get_simul_timestep())
-        {
-            // Simulate:
-            world->run_simulation(incr_time);
-
-            // t_old_simul = world->get_simul_time();
-            t_old = t_new;
+        // Simulate:
+        if (incrTimeSteps > 0)
+        {  // simulate world:
+            world->run_simulation(incrTimeSteps * world->get_simul_timestep());
         }
 
-        // I could use 10ms here but chono literals are since gcc 4.9.3
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
 
         // GUI msgs, teleop, etc.
