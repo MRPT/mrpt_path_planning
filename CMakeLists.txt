@@ -46,7 +46,11 @@ find_package(mrpt-nav REQUIRED)
 
 # Targets:
 add_subdirectory(libselfdriving)
-add_subdirectory(apps)
+
+option(SELFDRIVING_BUILD_APPS ON "Build selfdriving cli/gui tools")
+if (SELFDRIVING_BUILD_APPS)
+	add_subdirectory(apps)
+endif()
 
 # Summary:
 message(STATUS "")
