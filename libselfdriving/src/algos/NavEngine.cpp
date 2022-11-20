@@ -37,7 +37,6 @@ void NavEngine::Configuration::loadFrom(const mrpt::containers::yaml& c)
     MCP_LOAD_REQ(c, enqueuedActionsToleranceXY);
     MCP_LOAD_REQ_DEG(c, enqueuedActionsTolerancePhi);
     MCP_LOAD_REQ(c, enqueuedActionsTimeoutMultiplier);
-    MCP_LOAD_REQ(c, minEdgeTimeToRefinePath);
     MCP_LOAD_REQ(c, lookAheadImmediateCollisionChecking);
 
     MCP_LOAD_OPT(c, generateNavLogFiles);
@@ -52,7 +51,6 @@ mrpt::containers::yaml NavEngine::Configuration::saveTo() const
     MCP_SAVE(c, enqueuedActionsToleranceXY);
     MCP_SAVE_DEG(c, enqueuedActionsTolerancePhi);
     MCP_SAVE(c, enqueuedActionsTimeoutMultiplier);
-    MCP_SAVE(c, minEdgeTimeToRefinePath);
     MCP_SAVE(c, lookAheadImmediateCollisionChecking);
     MCP_SAVE(c, generateNavLogFiles);
     MCP_SAVE(c, navLogFilesPrefix);
@@ -485,7 +483,7 @@ void NavEngine::check_immediate_collision()
         config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
 
         // Re-plan from scratch:
-        _.pathPlannerTarget.reset();
+        _.pathPlannerTargetWpIdx.reset();
         _.active_plan_reset();
     }
 }
@@ -495,12 +493,59 @@ void NavEngine::check_have_to_replan()
     auto& _ = innerState_;
 
     // We don't have yet neither a running or under-planning path:
-    if (!_.pathPlannerTarget)
+    if (!_.pathPlannerTargetWpIdx)
     {
         // find next target wp:
         auto nextWp = find_next_waypoint_for_planner();
 
-        enqueue_path_planner_towards(nextWp);
+        // Start from the current pose, plus the motion delta if we are already
+        // moving (ideally we should be still while planning...):
+        selfdriving::SE2_KinState startingFrom;
+
+        const double deltaTime =
+            std::min(1.0, config_.plannerParams.maximumComputationTime);
+
+        startingFrom.pose =
+            lastVehicleLocalization_.pose +
+            lastVehicleOdometry_.odometryVelocityLocal * deltaTime;
+        startingFrom.vel = lastVehicleOdometry_.odometryVelocityLocal.rotated(
+            startingFrom.pose.phi);
+
+        // (this will fill in pathPlannerTargetWpIdx):
+        enqueue_path_planner_towards(nextWp, startingFrom);
+        return;
+    }
+
+    // Are we in the middle of a path tracking but the current motion under
+    // execution is not yet the one taking us to the final waypoint?
+    // Then, keep refining the path planning, launching new path planning tasks
+    // starting from the next predicted motion command node:
+    if (_.activePlanEdgeSentIndex.has_value() &&
+        !_.pathPlannerFuture.valid() &&  // not already running!
+        (!_.activePlanOutput.po.success ||
+         (_.activePlanOutput.po.success &&  // the plan reached the final wp
+          *_.activePlanEdgeSentIndex < _.activePlanPathEdges.size())))
+    {
+        MRPT_LOG_INFO_STREAM(
+            "Launching a path continuation planning from edge #"
+            << *_.activePlanEdgeSentIndex);
+
+        // find next target wp:
+        auto nextWp = find_next_waypoint_for_planner();
+
+        // Start from the current pose, plus the motion delta if we are already
+        // moving (ideally we should be still while planning...):
+        selfdriving::SE2_KinState startingFrom;
+
+        // Take the next node after the current under-execution motion edge:
+        const auto& nextNode =
+            _.activePlanPath.at(*_.activePlanEdgeSentIndex + 1);
+
+        startingFrom.pose = nextNode.pose;
+        startingFrom.vel  = nextNode.vel;
+
+        // (this will fill in pathPlannerTargetWpIdx):
+        enqueue_path_planner_towards(nextWp, startingFrom, nextNode.nodeID_);
     }
 }
 
@@ -704,16 +749,21 @@ NavEngine::PathPlannerOutput NavEngine::path_planner_function(
     // visualization,...
     ret.costEvaluators = planner.costEvaluators_;
 
+    ret.startingFromCurrentPlanNode = ppi.startingFromCurrentPlanNode;
+
     return ret;
 }
 
-void NavEngine::enqueue_path_planner_towards(const waypoint_idx_t targetWpIdx)
+void NavEngine::enqueue_path_planner_towards(
+    const waypoint_idx_t             targetWpIdx,
+    const selfdriving::SE2_KinState& startingFrom,
+    const std::optional<TNodeID>&    startingFromNodeID)
 {
     auto& _ = innerState_;
 
     MRPT_LOG_DEBUG_STREAM(
         "enqueue_path_planner_towards() called with targetWpIdx="
-        << targetWpIdx);
+        << targetWpIdx << " startingFrom: " << startingFrom.asString());
 
     // ----------------------------------
     // prepare planner request:
@@ -721,12 +771,8 @@ void NavEngine::enqueue_path_planner_towards(const waypoint_idx_t targetWpIdx)
     PathPlannerInput ppi;
 
     // Starting pose and velocity:
-    // The current one plus a bit ahead in the future?
     // ---------------------------------------------------
-    MRPT_TODO("Add some pose delta to account for the computation time?");
-    ppi.pi.stateStart.pose = lastVehicleLocalization_.pose;
-    ppi.pi.stateStart.vel  = lastVehicleOdometry_.odometryVelocityLocal.rotated(
-        ppi.pi.stateStart.pose.phi);
+    ppi.pi.stateStart = startingFrom;
 
     ASSERT_LT_(targetWpIdx, _.waypointNavStatus.waypoints.size());
     const auto& wp = _.waypointNavStatus.waypoints.at(targetWpIdx);
@@ -742,6 +788,9 @@ void NavEngine::enqueue_path_planner_towards(const waypoint_idx_t targetWpIdx)
         ppi.pi.stateGoal.state = mrpt::math::TPoint2D(wp.target.x, wp.target.y);
     }
 
+    // save optional start node ID:
+    ppi.startingFromCurrentPlanNode = startingFromNodeID;
+
     // speed at target:
     // ppi.pi.stateGoal.vel
     MRPT_TODO("Handle speed at target waypoint");
@@ -751,7 +800,7 @@ void NavEngine::enqueue_path_planner_towards(const waypoint_idx_t targetWpIdx)
     // ----------------------------------
     _.pathPlannerFuture =
         pathPlannerPool_.enqueue(&NavEngine::path_planner_function, this, ppi);
-    _.pathPlannerTarget = targetWpIdx;
+    _.pathPlannerTargetWpIdx = targetWpIdx;
 }
 
 void NavEngine::check_new_planner_output()
@@ -764,7 +813,37 @@ void NavEngine::check_new_planner_output()
         _.pathPlannerFuture.wait_for(std::chrono::milliseconds(0)))
         return;
 
-    const auto result = _.pathPlannerFuture.get();
+    const auto result   = _.pathPlannerFuture.get();
+    _.pathPlannerFuture = std::future<PathPlannerOutput>();  // Reset
+
+    // Is the result obsolete because we have already moved on to a new motion
+    // edge while planning this refining planning?
+    if (result.startingFromCurrentPlanNode.has_value())
+    {
+        bool isObsolete = false;
+
+        if (!_.activePlanEdgeSentIndex.has_value() ||
+            *_.activePlanEdgeSentIndex + 1 > _.activePlanPath.size() - 1)
+        {  //
+            isObsolete = true;
+        }
+        else
+        {
+            const auto newNextNodeId =
+                _.activePlanPath.at(*_.activePlanEdgeSentIndex + 1).nodeID_;
+            const auto initialNextNode = *result.startingFromCurrentPlanNode;
+
+            isObsolete = newNextNodeId != initialNextNode;
+        }
+
+        if (isObsolete)
+        {
+            MRPT_LOG_INFO(
+                "[check_new_planner_output] Discarding refining path plan "
+                "since it is now obsolete.");
+            return;
+        }
+    }
 
     if (!result.po.success)
     {
@@ -775,11 +854,82 @@ void NavEngine::check_new_planner_output()
 
     if (config_.vizSceneToModify) send_planner_output_to_viz(result);
 
-    // TODO: anything to do with current activePath before overwritting it?
-    _.activePlanOutput = std::move(result);
-    _.active_plan_reset();
-
+    // Merge or overwrite current plan:
+    if (result.startingFromCurrentPlanNode.has_value())
     {
+        MRPT_LOG_INFO_STREAM("Merging new path planning result...");
+
+        // merge current under-execution path planning and the new
+        // for-the-future segment that was just received:
+
+        auto [newPath, newEdges] =
+            result.po.motionTree.backtrack_path(result.po.bestNodeId);
+
+        // Correct PTG arguments according to the final actual poses.
+        // Needed to correct for lattice approximations:
+        refine_trajectory(newPath, newEdges, config_.ptgs);
+
+        _.activePlanOutput = std::move(result);
+
+        // Overwrite the plan, starting from the next node on:
+        const auto formerEdgeIndex = *_.activePlanEdgeSentIndex;
+
+        const auto formerEdgeInitOdometry =
+            *_.activePlanInitOdometry +
+            (_.activePlanPath.at(formerEdgeIndex).pose -
+             _.activePlanPath.at(0).pose);
+
+        _.active_plan_reset();
+
+        /* Remap:
+         *
+         * Old edges:
+         *  - [0,...,formerActiveEdgeIndex-1] => dissapear
+         *  - [formerActiveEdgeIndex]         => new edge #0
+         *  - [formerActiveEdgeIndex+1,...]   => dissapear
+
+         * Old nodes:
+         *  - [0,...,formerActiveEdgeIndex-1] => dissapear
+         *  - formerActiveEdgeIndex           => new node #0
+         *  - formerActiveEdgeIndex+1         => new node #1
+         *  - [formerActiveEdgeIndex+2,...]   => dissapear
+         *
+         */
+        std::vector<MotionPrimitivesTreeSE2::node_t> newPlanPath;
+        std::vector<MotionPrimitivesTreeSE2::edge_t> newPathEdges;
+
+        for (size_t i = 0; i <= formerEdgeIndex; i++)
+            newPathEdges.push_back(_.activePlanPathEdges.at(i));
+
+        // No need to add the last one, so it's "<" instead of "<=", since
+        // that node is also duplicated as the new node list at position #0:
+        for (size_t i = 0; i < formerEdgeIndex + 1; i++)
+            newPlanPath.push_back(_.activePlanPath.at(formerEdgeIndex));
+
+        _.activePlanPath      = std::move(newPlanPath);
+        _.activePlanPathEdges = std::move(newPathEdges);
+
+        for (const auto& node : newPath) _.activePlanPath.push_back(node);
+
+        for (const auto& edge : newEdges)
+            _.activePlanPathEdges.push_back(*edge);
+
+        // Reconstruct current state:
+        // We are waiting for the execution of the old "formerEdgeIndex", new
+        // #0, edge motion:
+        _.activePlanEdgeIndex     = 0;
+        _.activePlanEdgeSentIndex = 0;
+        _.activePlanEdgesSentOut.insert(0);
+        _.activePlanInitOdometry = formerEdgeInitOdometry;
+    }
+    else
+    {
+        MRPT_LOG_INFO_STREAM("Taking new path planning result.");
+
+        // first path planning, just copy it:
+        _.activePlanOutput = std::move(result);
+        _.active_plan_reset();
+
         auto [path, edges] = _.activePlanOutput.po.motionTree.backtrack_path(
             _.activePlanOutput.po.bestNodeId);
 
@@ -793,7 +943,7 @@ void NavEngine::check_new_planner_output()
 
         // std::list -> std::vector for convenience:
         _.activePlanPathEdges.clear();
-        for (const auto& edge : edges) _.activePlanPathEdges.push_back(edge);
+        for (const auto& edge : edges) _.activePlanPathEdges.push_back(*edge);
 
 #if 0
         const auto traj = selfdriving::plan_to_trajectory(
@@ -802,10 +952,22 @@ void NavEngine::check_new_planner_output()
 #endif
     }
 
-    for (const auto& step : _.activePlanPath)
-    {  //
-        std::cout << step.asString() << std::endl;
+    if (this->getMinLoggingLevel() == mrpt::system::LVL_DEBUG)
+    {
+        MRPT_LOG_DEBUG_STREAM("[check_new_planner_output] New path nodes:");
+        for (const auto& step : _.activePlanPath)
+            MRPT_LOG_DEBUG_STREAM(
+                "[check_new_planner_output] " << step.asString());
+
+        MRPT_LOG_DEBUG_STREAM("[check_new_planner_output] New path edges:");
+        for (const auto& edge : _.activePlanPathEdges)
+            MRPT_LOG_DEBUG_STREAM(
+                "[check_new_planner_output]\n"
+                << edge.asString());
     }
+
+    // sanity check
+    ASSERT_EQUAL_(_.activePlanPath.size(), _.activePlanPathEdges.size() + 1);
 }
 
 void NavEngine::send_next_motion_cmd_or_nop()
@@ -891,7 +1053,7 @@ void NavEngine::send_next_motion_cmd_or_nop()
             config_.vehicleMotionInterface->supports_enqeued_motions();
         ASSERT_(supportsEnqueued);  // TODO: Implement adaptor layer
 
-        const auto edge = *_.activePlanPathEdges.at(*_.activePlanEdgeIndex);
+        const auto& edge = _.activePlanPathEdges.at(*_.activePlanEdgeIndex);
 
         auto& ptg = config_.ptgs.ptgs.at(edge.ptgIndex);
         ptg->updateNavDynamicState(edge.getPTGDynState());
@@ -908,7 +1070,6 @@ void NavEngine::send_next_motion_cmd_or_nop()
         // for the "next" edge, query the PTG for the extra additional motion
         // required for the condPose below:
         std::optional<mrpt::math::TPose2D> poseCondDeltaForTolerance;
-        if (1)
         {
             uint32_t stepEnd = 0, stepAfter = 0;
             bool     ok1 = ptg->getPathStepForDist(
@@ -928,8 +1089,8 @@ void NavEngine::send_next_motion_cmd_or_nop()
         mrpt::kinematics::CVehicleVelCmd::Ptr generatedMotionCmdAfter;
         if (nAfterNext.has_value())
         {
-            const auto nextEdge =
-                *_.activePlanPathEdges.at(*_.activePlanEdgeIndex + 1);
+            const auto& nextEdge =
+                _.activePlanPathEdges.at(*_.activePlanEdgeIndex + 1);
 
             auto& nextPtg = config_.ptgs.ptgs.at(nextEdge.ptgIndex);
             nextPtg->updateNavDynamicState(nextEdge.getPTGDynState());
@@ -1011,13 +1172,9 @@ void NavEngine::send_next_motion_cmd_or_nop()
                 _.activePlanEdgesSentOut.insert(*_.activePlanEdgeIndex + 1);
             }
 
-            // Do we have time to refine the path planning?
-            if (edge.estimatedExecTime > config_.minEdgeTimeToRefinePath)
-            {
-                // Cancel curring path planner thread:
-
-                // Launch a new planner from the new predicted pose:
-            }
+            // Cancel current path planner thread?
+            // Launch a new planner from the new predicted pose?
+            // It's already handled by check_have_to_replan()
         }
         else
         {
