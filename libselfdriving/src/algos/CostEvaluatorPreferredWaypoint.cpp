@@ -95,7 +95,12 @@ double CostEvaluatorPreferredWaypoint::operator()(
 double CostEvaluatorPreferredWaypoint::eval_single_pose(
     const mrpt::math::TPose2D& p) const
 {
-    std::vector<std::pair<size_t, float>> nearWps;  // indices-squaredDistances
+// indices-squaredDistances list:
+#if NANOFLANN_VERSION >= 0x150
+    std::vector<nanoflann::ResultItem<size_t, float>> nearWps;
+#else
+    std::vector<std::pair<size_t, float>> nearWps;
+#endif
 
     const auto inflRadius = params_.waypointInfluenceRadius;
 
