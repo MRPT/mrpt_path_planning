@@ -347,14 +347,14 @@ class NavEngine : public mrpt::system::COutputLogger
         mrpt::poses::CPose2DInterpolator latestPoses, latestOdomPoses;
 
         std::future<PathPlannerOutput> pathPlannerFuture;
-        std::optional<waypoint_idx_t>  pathPlannerTarget;
+
+        /** The final waypoint of the currently under-optimization/already
+         * finished path planning.
+         */
+        std::optional<waypoint_idx_t> pathPlannerTarget;
 
         /// From check_immediate_collision(). For Debug visualization.
         std::optional<mrpt::math::TPose2D> collisionCheckingPosePrediction;
-
-        /** The final waypoint of the currently under-execution path tracking.
-         */
-        std::optional<waypoint_idx_t> activeFinalTarget;
 
         /** Set by check_new_planner_output() */
         PathPlannerOutput                                   activePlanOutput;

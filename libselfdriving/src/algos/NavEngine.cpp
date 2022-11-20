@@ -146,13 +146,10 @@ void NavEngine::navigation_step()
             if (lastNavigationState_ == NavStatus::NAVIGATING &&
                 navigationStatus_ == NavStatus::NAV_ERROR)
             {
-                pendingEvents_.emplace_back(
-                    [this]()
-                    {
-                        ASSERT_(config_.vehicleMotionInterface);
-                        config_.vehicleMotionInterface
-                            ->on_nav_end_due_to_error();
-                    });
+                pendingEvents_.emplace_back([this]() {
+                    ASSERT_(config_.vehicleMotionInterface);
+                    config_.vehicleMotionInterface->on_nav_end_due_to_error();
+                });
             }
 
             // If we just arrived at this state, stop the robot:
@@ -318,7 +315,7 @@ void NavEngine::update_robot_kinematic_state()
             navErrorReason_.error_code = NavError::EMERGENCY_STOP;
             navErrorReason_.error_msg  = std::string(
                 "ERROR: get_localization() failed, stopping robot "
-                 "and finishing navigation");
+                "and finishing navigation");
             try
             {
                 config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
@@ -359,9 +356,7 @@ void NavEngine::update_robot_kinematic_state()
                innerState_.latestPoses.begin()->first,
                innerState_.latestPoses.rbegin()->first) >
                PREVIOUS_POSES_MAX_AGE)
-    {
-        innerState_.latestPoses.erase(innerState_.latestPoses.begin());
-    }
+    { innerState_.latestPoses.erase(innerState_.latestPoses.begin()); }
     while (innerState_.latestOdomPoses.size() > 1 &&
            mrpt::system::timeDifference(
                innerState_.latestOdomPoses.begin()->first,
@@ -417,12 +412,10 @@ void NavEngine::internal_on_start_new_navigation()
     // Have we just started the navigation?
     if (lastNavigationState_ == NavStatus::IDLE)
     {
-        pendingEvents_.emplace_back(
-            [this]()
-            {
-                ASSERT_(config_.vehicleMotionInterface);
-                config_.vehicleMotionInterface->on_nav_start();
-            });
+        pendingEvents_.emplace_back([this]() {
+            ASSERT_(config_.vehicleMotionInterface);
+            config_.vehicleMotionInterface->on_nav_start();
+        });
 
         // Start a new navlog file?
         internal_start_navlog_file();
@@ -492,7 +485,6 @@ void NavEngine::check_immediate_collision()
         config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
 
         // Re-plan from scratch:
-        _.activeFinalTarget.reset();
         _.pathPlannerTarget.reset();
         _.active_plan_reset();
     }
@@ -502,8 +494,8 @@ void NavEngine::check_have_to_replan()
 {
     auto& _ = innerState_;
 
-    // We don't have yet neither a running path following, nor a path planner:
-    if (!_.activeFinalTarget && !_.pathPlannerTarget)
+    // We don't have yet neither a running or under-planning path:
+    if (!_.pathPlannerTarget)
     {
         // find next target wp:
         auto nextWp = find_next_waypoint_for_planner();
@@ -681,8 +673,7 @@ NavEngine::PathPlannerOutput NavEngine::path_planner_function(
     // Insert custom progress callback for the GUI, if enabled:
     if (config_.vizSceneToModify)
     {
-        planner.progressCallback_ = [this](const ProgressCallbackData& pcd)
-        {
+        planner.progressCallback_ = [this](const ProgressCallbackData& pcd) {
             MRPT_LOG_INFO_STREAM(
                 "[progressCallback] bestCostFromStart: "
                 << pcd.bestCostFromStart
@@ -1105,7 +1096,10 @@ void NavEngine::send_planner_output_to_viz(const PathPlannerOutput& ppo)
         ASSERT_(glContainer);
         *glContainer = *planViz;
     }
-    else { config_.vizSceneToModify->insert(planViz); }
+    else
+    {
+        config_.vizSceneToModify->insert(planViz);
+    }
 
     // unlock:
     if (config_.on_viz_post_modify) config_.on_viz_post_modify();
@@ -1168,7 +1162,10 @@ void NavEngine::send_path_to_viz(
         ASSERT_(glContainer);
         *glContainer = *planViz;
     }
-    else { config_.vizSceneToModify->insert(planViz); }
+    else
+    {
+        config_.vizSceneToModify->insert(planViz);
+    }
 
     // unlock:
     if (config_.on_viz_post_modify) config_.on_viz_post_modify();
@@ -1267,7 +1264,10 @@ void NavEngine::send_current_state_to_viz()
         ASSERT_(glContainer);
         *glContainer = *glStateDetails;
     }
-    else { config_.vizSceneToModify->insert(glStateDetails); }
+    else
+    {
+        config_.vizSceneToModify->insert(glStateDetails);
+    }
 
     // unlock:
     if (config_.on_viz_post_modify) config_.on_viz_post_modify();
