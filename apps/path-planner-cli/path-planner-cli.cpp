@@ -22,6 +22,7 @@
 #include <selfdriving/algos/refine_trajectory.h>
 #include <selfdriving/algos/trajectories.h>
 #include <selfdriving/algos/viz.h>
+#include <selfdriving/data/Waypoints.h>
 
 #include <fstream>
 #include <iostream>
@@ -100,6 +101,18 @@ TCLAP::ValueArg<std::string> arg_costMap(
     "Creates a costmap from obstacle point clouds with the given parameters "
     "from a YAML file.",
     false, "costmap.yaml", "costmap.yaml", cmd);
+
+TCLAP::ValueArg<std::string> arg_waypoints(
+    "", "waypoints",
+    "This creates a preferred-waypoints costlayer, from the waypoint list in a "
+    "given YAML file.",
+    false, "waypoints.yaml", "waypoints.yaml", cmd);
+
+TCLAP::ValueArg<std::string> arg_waypointsParams(
+    "", "waypoints-parameters",
+    "If --waypoints is also set, this loads the preferred waypoints costlayer "
+    "parameters from a YAML file.",
+    false, "waypoints-parameters.yaml", "waypoints-parameters.yaml", cmd);
 
 TCLAP::SwitchArg arg_showTree(
     "", "show-tree",
@@ -246,18 +259,29 @@ static void do_plan_path()
         planner->costEvaluators_.push_back(costmap);
     }
 
-    MRPT_TODO("WIP: add new cli flag!");
-#if 0
+    // Preferred waypoints:
+    auto wpParams = selfdriving::CostEvaluatorPreferredWaypoint::Parameters();
+    if (arg_waypointsParams.isSet())
     {
-        const auto p =
-            selfdriving::CostEvaluatorPreferredWaypoint::Parameters();
+        wpParams =
+            selfdriving::CostEvaluatorPreferredWaypoint::Parameters::FromYAML(
+                mrpt::containers::yaml::FromFile(
+                    arg_waypointsParams.getValue()));
+    }
+
+    if (arg_waypoints.isSet())
+    {
+        const auto wps = selfdriving::WaypointSequence::FromYAML(
+            mrpt::containers::yaml::FromFile(arg_waypoints.getValue()));
+
+        std::vector<mrpt::math::TPoint2D> lstPts;
+        for (const auto& wp : wps.waypoints) lstPts.emplace_back(wp.target);
 
         auto costEval = selfdriving::CostEvaluatorPreferredWaypoint::Create();
-        costEval->setPreferredWaypoints({{-1., 8.0}});
-
+        costEval->params_ = wpParams;
+        costEval->setPreferredWaypoints(lstPts);
         planner->costEvaluators_.push_back(costEval);
     }
-#endif
 
     // verbosity level:
     planner->setMinLoggingLevel(
