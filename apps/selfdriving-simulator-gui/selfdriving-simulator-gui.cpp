@@ -21,8 +21,8 @@
 #include <mvsim/mvsim_version.h>
 #include <selfdriving/algos/CostEvaluator.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
+#include <selfdriving/algos/NavEngine.h>
 #include <selfdriving/algos/TPS_Astar.h>
-#include <selfdriving/algos/WaypointSequencer.h>
 #include <selfdriving/algos/viz.h>
 #include <selfdriving/data/Waypoints.h>
 #include <selfdriving/interfaces/MVSIM_VehicleInterface.h>
@@ -90,7 +90,7 @@ TCLAP::ValueArg<std::string> arg_cost_local_yaml_file(
 
 TCLAP::ValueArg<std::string> arg_waypoint_seq_yaml_file(
     "", "waypoint-sequencer-parameters",
-    "Input .yaml file with parameters for WaypointSequencer", false, "",
+    "Input .yaml file with parameters for NavEngine", false, "",
     "wp-sequencer.yaml", cmd);
 
 TCLAP::ValueArg<std::string> arg_waypoints_yaml_file(
@@ -159,7 +159,7 @@ struct SelfDrivingStatus
 {
     SelfDrivingStatus() = default;
 
-    selfdriving::WaypointSequencer navigator;
+    selfdriving::NavEngine navigator;
 
     selfdriving::VisualizationOptions vizOpts;
 
@@ -184,51 +184,56 @@ static mrpt::maps::CSimplePointsMap::Ptr world_to_static_obstacle_points(
 {
     auto obsPts = mrpt::maps::CSimplePointsMap::Create();
 
-    world.runVisitorOnWorldElements([&](mvsim::WorldElementBase& we) {
-        if (auto grid = dynamic_cast<mvsim::OccupancyGridMap*>(&we); grid)
-        {  // get grid occupied cells:
-            mrpt::maps::CSimplePointsMap pts;
-            grid->getOccGrid().getAsPointCloud(pts);
-            obsPts->insertAnotherMap(&pts, mrpt::poses::CPose3D::Identity());
-        }
-#ifdef MVSIM_HAS_POINTCLOUD
-        if (auto pc = dynamic_cast<mvsim::PointCloud*>(&we);
-            pc && pc->getPoints())
+    world.runVisitorOnWorldElements(
+        [&](mvsim::WorldElementBase& we)
         {
-            obsPts->insertAnotherMap(
-                pc->getPoints().get(), mrpt::poses::CPose3D::Identity());
-        }
-#endif
-    });
-    world.runVisitorOnBlocks([&](mvsim::Block& b) {
-        mrpt::maps::CSimplePointsMap pts;
-        const auto                   shape             = b.blockShape();
-        const double                 minDistBetweenPts = 0.1;
-        ASSERT_(!shape.empty());
-        for (size_t i = 0; i < shape.size(); i++)
-        {
-            const size_t ip1 = (i + 1) % shape.size();
-            const auto   pt0 = shape.at(i);
-            const auto   pt1 = shape.at(ip1);
-            // sample:
-            const double dist      = (pt1 - pt0).norm();
-            const size_t nSamples  = std::ceil(dist / minDistBetweenPts);
-            const auto   dirVector = (pt1 - pt0).unitarize();
-            for (size_t k = 0; k < nSamples; k++)
-            {
-                const auto pt = pt0 + dirVector * k * dist / (nSamples + 1);
-                pts.insertPointFast(pt.x, pt.y, 0);
+            if (auto grid = dynamic_cast<mvsim::OccupancyGridMap*>(&we); grid)
+            {  // get grid occupied cells:
+                mrpt::maps::CSimplePointsMap pts;
+                grid->getOccGrid().getAsPointCloud(pts);
+                obsPts->insertAnotherMap(
+                    &pts, mrpt::poses::CPose3D::Identity());
             }
-        }
-        obsPts->insertAnotherMap(&pts, mrpt::poses::CPose3D(b.getPose()));
-    });
+#ifdef MVSIM_HAS_POINTCLOUD
+            if (auto pc = dynamic_cast<mvsim::PointCloud*>(&we);
+                pc && pc->getPoints())
+            {
+                obsPts->insertAnotherMap(
+                    pc->getPoints().get(), mrpt::poses::CPose3D::Identity());
+            }
+#endif
+        });
+    world.runVisitorOnBlocks(
+        [&](mvsim::Block& b)
+        {
+            mrpt::maps::CSimplePointsMap pts;
+            const auto                   shape             = b.blockShape();
+            const double                 minDistBetweenPts = 0.1;
+            ASSERT_(!shape.empty());
+            for (size_t i = 0; i < shape.size(); i++)
+            {
+                const size_t ip1 = (i + 1) % shape.size();
+                const auto   pt0 = shape.at(i);
+                const auto   pt1 = shape.at(ip1);
+                // sample:
+                const double dist      = (pt1 - pt0).norm();
+                const size_t nSamples  = std::ceil(dist / minDistBetweenPts);
+                const auto   dirVector = (pt1 - pt0).unitarize();
+                for (size_t k = 0; k < nSamples; k++)
+                {
+                    const auto pt = pt0 + dirVector * k * dist / (nSamples + 1);
+                    pts.insertPointFast(pt.x, pt.y, 0);
+                }
+            }
+            obsPts->insertAnotherMap(&pts, mrpt::poses::CPose3D(b.getPose()));
+        });
 
     return obsPts;
 }
 
 void prepare_selfdriving(mvsim::World& world)
 {
-    // initialize the WaypointSequencer
+    // initialize the NavEngine
     // --------------------------------------------------------
     // sd->navigator.config_.multitarget_look_ahead = 2;
 
@@ -519,11 +524,13 @@ void prepare_selfdriving_window(
     auto lck = mrpt::lockHelper(gui->background_scene_mtx);
 
     // navigator 3D visualization interface:
-    sd->navigator.config_.on_viz_pre_modify = [world, &gui]() {
+    sd->navigator.config_.on_viz_pre_modify = [world, &gui]()
+    {
         world->m_gui_user_objects_mtx.lock();
         gui->background_scene_mtx.lock();
     };
-    sd->navigator.config_.on_viz_post_modify = [world, &gui]() {
+    sd->navigator.config_.on_viz_post_modify = [world, &gui]()
+    {
         world->m_gui_user_objects_mtx.unlock();
         gui->background_scene_mtx.unlock();
     };
@@ -614,26 +621,26 @@ void prepare_selfdriving_window(
             pnNav->add<nanogui::Label>("Nav Status:                    ");
 
         auto btnReq = pnNav->add<nanogui::Button>("requestNavigation()");
-        btnReq->setCallback([world]() {
-            // Update global obstacles, in case the MVSIM world has changed:
-            auto obsPts = world_to_static_obstacle_points(*world);
-            sd->navigator.config_.globalMapObstacleSource =
-                selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
+        btnReq->setCallback(
+            [world]()
+            {
+                // Update global obstacles, in case the MVSIM world has changed:
+                auto obsPts = world_to_static_obstacle_points(*world);
+                sd->navigator.config_.globalMapObstacleSource =
+                    selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
 
-            sd->navigator.request_navigation(sd->waypts);
-        });
+                sd->navigator.request_navigation(sd->waypts);
+            });
 
-        pnNav->add<nanogui::Button>("suspend()")->setCallback([]() {
-            sd->navigator.suspend();
-        });
-        pnNav->add<nanogui::Button>("resume()")->setCallback([]() {
-            sd->navigator.resume();
-        });
-        pnNav->add<nanogui::Button>("cancel()")->setCallback([]() {
-            sd->navigator.cancel();
-        });
+        pnNav->add<nanogui::Button>("suspend()")
+            ->setCallback([]() { sd->navigator.suspend(); });
+        pnNav->add<nanogui::Button>("resume()")
+            ->setCallback([]() { sd->navigator.resume(); });
+        pnNav->add<nanogui::Button>("cancel()")
+            ->setCallback([]() { sd->navigator.cancel(); });
     }
-    const auto lambdaUpdateNavStatus = [lbNavStatus]() {
+    const auto lambdaUpdateNavStatus = [lbNavStatus]()
+    {
         const auto state = sd->navigator.current_status();
         lbNavStatus->setCaption(mrpt::format(
             "Nav status: %s",
@@ -684,22 +691,25 @@ void prepare_selfdriving_window(
             pnPlanner->add<nanogui::TextBox>(dummyState.pose.asString());
         edStateGoalPose->setEditable(true);
 
-        pickBtn->setCallback([glTargetSign, edStateGoalPose]() {
-            activeActionMouseHandler = [glTargetSign,
-                                        edStateGoalPose](MouseEvent e) {
-                edStateGoalPose->setValue(e.pt.asString());
-                glTargetSign->setLocation(
-                    e.pt + mrpt::math::TVector3D(0, 0, 0.05));
-                glTargetSign->setVisibility(true);
-
-                // Click -> end mode:
-                if (e.leftBtnDown)
+        pickBtn->setCallback(
+            [glTargetSign, edStateGoalPose]()
+            {
+                activeActionMouseHandler =
+                    [glTargetSign, edStateGoalPose](MouseEvent e)
                 {
-                    activeActionMouseHandler = {};
-                    glTargetSign->setVisibility(false);
-                }
-            };
-        });
+                    edStateGoalPose->setValue(e.pt.asString());
+                    glTargetSign->setLocation(
+                        e.pt + mrpt::math::TVector3D(0, 0, 0.05));
+                    glTargetSign->setVisibility(true);
+
+                    // Click -> end mode:
+                    if (e.leftBtnDown)
+                    {
+                        activeActionMouseHandler = {};
+                        glTargetSign->setVisibility(false);
+                    }
+                };
+            });
 
         pnPlanner->add<nanogui::Label>("Goal global vel:");
         auto edStateGoalVel =
@@ -707,25 +717,27 @@ void prepare_selfdriving_window(
         edStateGoalVel->setEditable(true);
 
         auto btnDoPlan = pnPlanner->add<nanogui::Button>("Do path planning...");
-        btnDoPlan->setCallback([=]() {
-            try
+        btnDoPlan->setCallback(
+            [=]()
             {
-                selfdriving::SE2_KinState stateStart;
-                stateStart.pose.fromString(edStateStartPose->value());
-                stateStart.vel.fromString(edStateStartVel->value());
+                try
+                {
+                    selfdriving::SE2_KinState stateStart;
+                    stateStart.pose.fromString(edStateStartPose->value());
+                    stateStart.vel.fromString(edStateStartVel->value());
 
-                selfdriving::SE2orR2_KinState stateGoal;
-                stateGoal.state = selfdriving::PoseOrPoint::FromString(
-                    edStateGoalPose->value());
-                stateGoal.vel.fromString(edStateGoalVel->value());
+                    selfdriving::SE2orR2_KinState stateGoal;
+                    stateGoal.state = selfdriving::PoseOrPoint::FromString(
+                        edStateGoalPose->value());
+                    stateGoal.vel.fromString(edStateGoalVel->value());
 
-                on_do_single_path_planning(*world, stateStart, stateGoal);
-            }
-            catch (const std::exception& e)
-            {
-                std::cerr << e.what() << std::endl;
-            }
-        });
+                    on_do_single_path_planning(*world, stateStart, stateGoal);
+                }
+                catch (const std::exception& e)
+                {
+                    std::cerr << e.what() << std::endl;
+                }
+            });
     }
 
     // -------------------------------
@@ -736,15 +748,18 @@ void prepare_selfdriving_window(
         const auto cbViewCostmaps =
             pnViz->add<nanogui::CheckBox>("View costmap");
         cbViewCostmaps->setChecked(true);
-        cbViewCostmaps->setCallback([](bool /*checked*/) {
-            //
-        });
+        cbViewCostmaps->setCallback(
+            [](bool /*checked*/)
+            {
+                //
+            });
     }
 
     // ----------------------------------
     // Custom event handlers
     // ----------------------------------
-    const auto lambdaHandleMouseOperations = [gui, world]() {
+    const auto lambdaHandleMouseOperations = [gui, world]()
+    {
         MRPT_START
 
         static mrpt::math::TPoint3D lastMousePt;
@@ -779,7 +794,8 @@ void prepare_selfdriving_window(
         MRPT_END
     };
 
-    const auto lambdaCollectSensors = [&]() {
+    const auto lambdaCollectSensors = [&]()
+    {
         if (!sd->navigator.config_.vehicleMotionInterface) return;
         if (sd->sdThreadParams.isClosing()) return;
 
@@ -836,9 +852,11 @@ void mvsim_server_thread_update_GUI(GUI_ThreadParams& tp)
         static bool firstTime = true;
         if (firstTime)
         {
-            tp.world->enqueue_task_to_run_in_gui_thread([&]() {
-                prepare_selfdriving_window(tp.world->gui_window(), tp.world);
-            });
+            tp.world->enqueue_task_to_run_in_gui_thread(
+                [&]() {
+                    prepare_selfdriving_window(
+                        tp.world->gui_window(), tp.world);
+                });
             firstTime = false;
         }
 
@@ -977,7 +995,7 @@ void on_do_single_path_planning(
     const selfdriving::PlannerOutput plan = planner.plan(pi);
 
     // Visualize:
-    selfdriving::WaypointSequencer::PathPlannerOutput ppo;
+    selfdriving::NavEngine::PathPlannerOutput ppo;
     ppo.po             = plan;
     ppo.costEvaluators = planner.costEvaluators_;
 
