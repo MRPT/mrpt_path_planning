@@ -13,7 +13,7 @@
 #include <mrpt/system/filesystem.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
-#include <selfdriving/algos/WaypointSequencer.h>
+#include <selfdriving/algos/NavEngine.h>
 #include <selfdriving/algos/refine_trajectory.h>
 #include <selfdriving/algos/render_tree.h>
 #include <selfdriving/algos/render_vehicle.h>
@@ -26,12 +26,12 @@ using namespace selfdriving;
 constexpr double MIN_TIME_BETWEEN_POSE_UPDATES = 20e-3;  // [s]
 constexpr double PREVIOUS_POSES_MAX_AGE        = 20;  // [s]
 
-WaypointSequencer::~WaypointSequencer()
+NavEngine::~NavEngine()
 {
     // stop vehicle, etc.
 }
 
-void WaypointSequencer::Configuration::loadFrom(const mrpt::containers::yaml& c)
+void NavEngine::Configuration::loadFrom(const mrpt::containers::yaml& c)
 {
     MCP_LOAD_REQ(c, planner_bbox_margin);
     MCP_LOAD_REQ(c, enqueuedActionsToleranceXY);
@@ -44,7 +44,7 @@ void WaypointSequencer::Configuration::loadFrom(const mrpt::containers::yaml& c)
     MCP_LOAD_OPT(c, navLogFilesPrefix);
 }
 
-mrpt::containers::yaml WaypointSequencer::Configuration::saveTo() const
+mrpt::containers::yaml NavEngine::Configuration::saveTo() const
 {
     mrpt::containers::yaml c = mrpt::containers::yaml::Map();
 
@@ -60,7 +60,7 @@ mrpt::containers::yaml WaypointSequencer::Configuration::saveTo() const
     return c;
 }
 
-void WaypointSequencer::initialize()
+void NavEngine::initialize()
 {
     MRPT_START
     auto lck = mrpt::lockHelper(navMtx_);
@@ -76,7 +76,7 @@ void WaypointSequencer::initialize()
     MRPT_END
 }
 
-void WaypointSequencer::request_navigation(const WaypointSequence& navRequest)
+void NavEngine::request_navigation(const WaypointSequence& navRequest)
 {
     MRPT_START
     auto lck = mrpt::lockHelper(navMtx_);
@@ -110,7 +110,7 @@ void WaypointSequencer::request_navigation(const WaypointSequence& navRequest)
     MRPT_END
 }
 
-void WaypointSequencer::navigation_step()
+void NavEngine::navigation_step()
 {
     auto lck = mrpt::lockHelper(navMtx_);
 
@@ -136,7 +136,7 @@ void WaypointSequencer::navigation_step()
             if (lastNavigationState_ == NavStatus::NAVIGATING)
             {
                 MRPT_LOG_INFO(
-                    "WaypointSequencer::navigation_step(): Navigation "
+                    "NavEngine::navigation_step(): Navigation "
                     "stopped.");
             }
             break;
@@ -146,17 +146,20 @@ void WaypointSequencer::navigation_step()
             if (lastNavigationState_ == NavStatus::NAVIGATING &&
                 navigationStatus_ == NavStatus::NAV_ERROR)
             {
-                pendingEvents_.emplace_back([this]() {
-                    ASSERT_(config_.vehicleMotionInterface);
-                    config_.vehicleMotionInterface->on_nav_end_due_to_error();
-                });
+                pendingEvents_.emplace_back(
+                    [this]()
+                    {
+                        ASSERT_(config_.vehicleMotionInterface);
+                        config_.vehicleMotionInterface
+                            ->on_nav_end_due_to_error();
+                    });
             }
 
             // If we just arrived at this state, stop the robot:
             if (lastNavigationState_ == NavStatus::NAVIGATING)
             {
                 MRPT_LOG_ERROR(
-                    "[WaypointSequencer::navigation_step()] Stopping "
+                    "[NavEngine::navigation_step()] Stopping "
                     "navigation "
                     "due to a NavStatus::NAV_ERROR state!");
 
@@ -194,12 +197,12 @@ void WaypointSequencer::navigation_step()
     dispatch_pending_nav_events();
 }
 
-void WaypointSequencer::cancel()
+void NavEngine::cancel()
 {
     auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "cancel() called before initialize()");
 
-    MRPT_LOG_DEBUG("WaypointSequencer::cancel() called.");
+    MRPT_LOG_DEBUG("NavEngine::cancel() called.");
     navigationStatus_ = NavStatus::IDLE;
     innerState_.active_plan_reset();
 
@@ -209,22 +212,22 @@ void WaypointSequencer::cancel()
         config_.vehicleMotionInterface->stop_watchdog();
     }
 }
-void WaypointSequencer::resume()
+void NavEngine::resume()
 {
     auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "resume() called before initialize()");
 
-    MRPT_LOG_DEBUG("WaypointSequencer::resume() called.");
+    MRPT_LOG_DEBUG("NavEngine::resume() called.");
 
     if (navigationStatus_ == NavStatus::SUSPENDED)
         navigationStatus_ = NavStatus::NAVIGATING;
 }
-void WaypointSequencer::suspend()
+void NavEngine::suspend()
 {
     auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "suspend() called before initialize()");
 
-    MRPT_LOG_DEBUG("WaypointSequencer::suspend() called.");
+    MRPT_LOG_DEBUG("NavEngine::suspend() called.");
 
     if (navigationStatus_ == NavStatus::NAVIGATING)
     {
@@ -238,7 +241,7 @@ void WaypointSequencer::suspend()
     }
 }
 
-void WaypointSequencer::reset_nav_error()
+void NavEngine::reset_nav_error()
 {
     auto lck = mrpt::lockHelper(navMtx_);
     ASSERTMSG_(initialized_, "resetNavError() called before initialize()");
@@ -250,7 +253,7 @@ void WaypointSequencer::reset_nav_error()
     }
 }
 
-WaypointStatusSequence WaypointSequencer::waypoint_nav_status() const
+WaypointStatusSequence NavEngine::waypoint_nav_status() const
 {
     // Make sure the data structure is not under modification:
     auto lck = mrpt::lockHelper(navMtx_);
@@ -259,7 +262,7 @@ WaypointStatusSequence WaypointSequencer::waypoint_nav_status() const
     return ret;
 }
 
-void WaypointSequencer::dispatch_pending_nav_events()
+void NavEngine::dispatch_pending_nav_events()
 {
     // Invoke pending events:
     for (auto& ev : pendingEvents_)
@@ -276,7 +279,7 @@ void WaypointSequencer::dispatch_pending_nav_events()
     pendingEvents_.clear();
 }
 
-void WaypointSequencer::update_robot_kinematic_state()
+void NavEngine::update_robot_kinematic_state()
 {
     // Ignore calls too-close in time, e.g. from the navigation_step()
     // methods of AbstractNavigator and a derived, overriding class.
@@ -315,7 +318,7 @@ void WaypointSequencer::update_robot_kinematic_state()
             navErrorReason_.error_code = NavError::EMERGENCY_STOP;
             navErrorReason_.error_msg  = std::string(
                 "ERROR: get_localization() failed, stopping robot "
-                "and finishing navigation");
+                 "and finishing navigation");
             try
             {
                 config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
@@ -356,7 +359,9 @@ void WaypointSequencer::update_robot_kinematic_state()
                innerState_.latestPoses.begin()->first,
                innerState_.latestPoses.rbegin()->first) >
                PREVIOUS_POSES_MAX_AGE)
-    { innerState_.latestPoses.erase(innerState_.latestPoses.begin()); }
+    {
+        innerState_.latestPoses.erase(innerState_.latestPoses.begin());
+    }
     while (innerState_.latestOdomPoses.size() > 1 &&
            mrpt::system::timeDifference(
                innerState_.latestOdomPoses.begin()->first,
@@ -367,7 +372,7 @@ void WaypointSequencer::update_robot_kinematic_state()
     }
 }
 
-void WaypointSequencer::impl_navigation_step()
+void NavEngine::impl_navigation_step()
 {
     mrpt::system::CTimeLoggerEntry tle(navProfiler_, "impl_navigation_step");
 
@@ -401,7 +406,7 @@ void WaypointSequencer::impl_navigation_step()
     internal_write_to_navlog_file();  // optional debug output file
 }
 
-void WaypointSequencer::internal_on_start_new_navigation()
+void NavEngine::internal_on_start_new_navigation()
 {
     ASSERT_(config_.vehicleMotionInterface);
 
@@ -412,17 +417,19 @@ void WaypointSequencer::internal_on_start_new_navigation()
     // Have we just started the navigation?
     if (lastNavigationState_ == NavStatus::IDLE)
     {
-        pendingEvents_.emplace_back([this]() {
-            ASSERT_(config_.vehicleMotionInterface);
-            config_.vehicleMotionInterface->on_nav_start();
-        });
+        pendingEvents_.emplace_back(
+            [this]()
+            {
+                ASSERT_(config_.vehicleMotionInterface);
+                config_.vehicleMotionInterface->on_nav_start();
+            });
 
         // Start a new navlog file?
         internal_start_navlog_file();
     }
 }
 
-void WaypointSequencer::check_immediate_collision()
+void NavEngine::check_immediate_collision()
 {
     mrpt::system::CTimeLoggerEntry tle(
         navProfiler_, "impl_navigation_step.check_immediate_collision");
@@ -491,7 +498,7 @@ void WaypointSequencer::check_immediate_collision()
     }
 }
 
-void WaypointSequencer::check_have_to_replan()
+void NavEngine::check_have_to_replan()
 {
     auto& _ = innerState_;
 
@@ -505,7 +512,7 @@ void WaypointSequencer::check_have_to_replan()
     }
 }
 
-waypoint_idx_t WaypointSequencer::find_next_waypoint_for_planner()
+waypoint_idx_t NavEngine::find_next_waypoint_for_planner()
 {
     mrpt::system::CTimeLoggerEntry tle(
         navProfiler_, "impl_navigation_step.find_next_waypoint_for_planner");
@@ -545,8 +552,8 @@ waypoint_idx_t WaypointSequencer::find_next_waypoint_for_planner()
     return *firstWpIdx;
 }
 
-WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
-    WaypointSequencer::PathPlannerInput ppi)
+NavEngine::PathPlannerOutput NavEngine::path_planner_function(
+    NavEngine::PathPlannerInput ppi)
 {
     mrpt::system::CTimeLoggerEntry tle(navProfiler_, "path_planner_function");
 
@@ -674,7 +681,8 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     // Insert custom progress callback for the GUI, if enabled:
     if (config_.vizSceneToModify)
     {
-        planner.progressCallback_ = [this](const ProgressCallbackData& pcd) {
+        planner.progressCallback_ = [this](const ProgressCallbackData& pcd)
+        {
             MRPT_LOG_INFO_STREAM(
                 "[progressCallback] bestCostFromStart: "
                 << pcd.bestCostFromStart
@@ -708,8 +716,7 @@ WaypointSequencer::PathPlannerOutput WaypointSequencer::path_planner_function(
     return ret;
 }
 
-void WaypointSequencer::enqueue_path_planner_towards(
-    const waypoint_idx_t targetWpIdx)
+void NavEngine::enqueue_path_planner_towards(const waypoint_idx_t targetWpIdx)
 {
     auto& _ = innerState_;
 
@@ -751,12 +758,12 @@ void WaypointSequencer::enqueue_path_planner_towards(
     // ----------------------------------
     // send it for running of the worker thread:
     // ----------------------------------
-    _.pathPlannerFuture = pathPlannerPool_.enqueue(
-        &WaypointSequencer::path_planner_function, this, ppi);
+    _.pathPlannerFuture =
+        pathPlannerPool_.enqueue(&NavEngine::path_planner_function, this, ppi);
     _.pathPlannerTarget = targetWpIdx;
 }
 
-void WaypointSequencer::check_new_planner_output()
+void NavEngine::check_new_planner_output()
 {
     auto& _ = innerState_;
 
@@ -810,7 +817,7 @@ void WaypointSequencer::check_new_planner_output()
     }
 }
 
-void WaypointSequencer::send_next_motion_cmd_or_nop()
+void NavEngine::send_next_motion_cmd_or_nop()
 {
     mrpt::system::CTimeLoggerEntry tle(
         navProfiler_, "impl_navigation_step.send_next_motion_cmd_or_nop");
@@ -1044,7 +1051,7 @@ void WaypointSequencer::send_next_motion_cmd_or_nop()
     config_.vehicleMotionInterface->motion_execute(std::nullopt, std::nullopt);
 }
 
-void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
+void NavEngine::send_planner_output_to_viz(const PathPlannerOutput& ppo)
 {
     ASSERT_(config_.vizSceneToModify);
 
@@ -1098,16 +1105,13 @@ void WaypointSequencer::send_planner_output_to_viz(const PathPlannerOutput& ppo)
         ASSERT_(glContainer);
         *glContainer = *planViz;
     }
-    else
-    {
-        config_.vizSceneToModify->insert(planViz);
-    }
+    else { config_.vizSceneToModify->insert(planViz); }
 
     // unlock:
     if (config_.on_viz_post_modify) config_.on_viz_post_modify();
 }
 
-void WaypointSequencer::send_path_to_viz(
+void NavEngine::send_path_to_viz(
     const MotionPrimitivesTreeSE2& tree, const TNodeID finalNode,
     const PlannerInput&                    originalPlanInput,
     const std::vector<CostEvaluator::Ptr>& costEvaluators)
@@ -1164,16 +1168,13 @@ void WaypointSequencer::send_path_to_viz(
         ASSERT_(glContainer);
         *glContainer = *planViz;
     }
-    else
-    {
-        config_.vizSceneToModify->insert(planViz);
-    }
+    else { config_.vizSceneToModify->insert(planViz); }
 
     // unlock:
     if (config_.on_viz_post_modify) config_.on_viz_post_modify();
 }
 
-void WaypointSequencer::send_current_state_to_viz()
+void NavEngine::send_current_state_to_viz()
 {
     if (!config_.vizSceneToModify) return;
 
@@ -1266,16 +1267,13 @@ void WaypointSequencer::send_current_state_to_viz()
         ASSERT_(glContainer);
         *glContainer = *glStateDetails;
     }
-    else
-    {
-        config_.vizSceneToModify->insert(glStateDetails);
-    }
+    else { config_.vizSceneToModify->insert(glStateDetails); }
 
     // unlock:
     if (config_.on_viz_post_modify) config_.on_viz_post_modify();
 }
 
-void WaypointSequencer::internal_start_navlog_file()
+void NavEngine::internal_start_navlog_file()
 {
     if (!config_.generateNavLogFiles) return;
 
@@ -1305,7 +1303,7 @@ void WaypointSequencer::internal_start_navlog_file()
     }
 }
 
-void WaypointSequencer::internal_write_to_navlog_file()
+void NavEngine::internal_write_to_navlog_file()
 {
     try
     {

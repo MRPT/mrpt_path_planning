@@ -88,14 +88,14 @@ struct NavErrorReason
  * this class from more than one thread.
  *
  */
-class WaypointSequencer : public mrpt::system::COutputLogger
+class NavEngine : public mrpt::system::COutputLogger
 {
    public:
     /** ctor */
-    WaypointSequencer() : mrpt::system::COutputLogger("WaypointSequencer") {}
+    NavEngine() : mrpt::system::COutputLogger("NavEngine") {}
 
     /** dtor */
-    virtual ~WaypointSequencer();
+    virtual ~NavEngine();
 
     /** \name Initialization and parameters
      * @{ */
@@ -234,8 +234,7 @@ class WaypointSequencer : public mrpt::system::COutputLogger
     void end_waypoints_access() { navMtx_.unlock(); }
 
     /** Publicly available time profiling object. Default: disabled */
-    mrpt::system::CTimeLogger navProfiler_{
-        true /*enabled*/, "WaypointSequencer"};
+    mrpt::system::CTimeLogger navProfiler_{true /*enabled*/, "NavEngine"};
 
     /** @}*/
 
