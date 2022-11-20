@@ -8,7 +8,6 @@
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/TPS_Astar.h>
-#include <selfdriving/algos/TPS_RRTstar.h>
 #include <selfdriving/interfaces/VehicleMotionInterface.h>
 #include <selfdriving/ptgs/HolonomicBlend.h>
 
@@ -25,7 +24,6 @@ MRPT_INITIALIZER(selfdriving_register)
     // Planners:
     registerClass(CLASS_ID(Planner));
     registerClass(CLASS_ID(TPS_Astar));
-    registerClass(CLASS_ID(TPS_RRTstar));
 
     // Interfaces:
     registerClass(CLASS_ID(VehicleMotionInterface));
