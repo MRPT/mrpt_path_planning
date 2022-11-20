@@ -140,8 +140,6 @@ class NavEngine : public mrpt::system::COutputLogger
         double enqueuedActionsTolerancePhi      = mrpt::DEG2RAD(2.0);
         double enqueuedActionsTimeoutMultiplier = 1.3;
 
-        double minEdgeTimeToRefinePath = 1.0;  // [s]
-
         double lookAheadImmediateCollisionChecking = 1.0;  // [s]
 
         bool generateNavLogFiles = false;
@@ -246,6 +244,9 @@ class NavEngine : public mrpt::system::COutputLogger
 
         /// A copy of the employed costs.
         std::vector<CostEvaluator::Ptr> costEvaluators;
+
+        /// (See same name field in PathPlannerInput)
+        std::optional<TNodeID> startingFromCurrentPlanNode;
     };
 
     /** Use the callbacks above and render_tree() to update a visualization
@@ -327,6 +328,11 @@ class NavEngine : public mrpt::system::COutputLogger
         PathPlannerInput() = default;
 
         selfdriving::PlannerInput pi;
+
+        /** If this is path refining plan request, this is the ID of the node
+         * that acts as starting state, with the ID in the current activePlan.
+         */
+        std::optional<TNodeID> startingFromCurrentPlanNode;
     };
 
     // Argument is a copy instead of a const-ref intentionally.
@@ -351,15 +357,15 @@ class NavEngine : public mrpt::system::COutputLogger
         /** The final waypoint of the currently under-optimization/already
          * finished path planning.
          */
-        std::optional<waypoint_idx_t> pathPlannerTarget;
+        std::optional<waypoint_idx_t> pathPlannerTargetWpIdx;
 
         /// From check_immediate_collision(). For Debug visualization.
         std::optional<mrpt::math::TPose2D> collisionCheckingPosePrediction;
 
         /** Set by check_new_planner_output() */
-        PathPlannerOutput                                   activePlanOutput;
-        std::vector<MotionPrimitivesTreeSE2::node_t>        activePlanPath;
-        std::vector<const MotionPrimitivesTreeSE2::edge_t*> activePlanPathEdges;
+        PathPlannerOutput                            activePlanOutput;
+        std::vector<MotionPrimitivesTreeSE2::node_t> activePlanPath;
+        std::vector<MotionPrimitivesTreeSE2::edge_t> activePlanPathEdges;
 
         /** A copy of the active queued condition, for viz purposes only */
         std::optional<EnqueuedCondition> activeEnqueuedConditionForViz;
@@ -368,7 +374,6 @@ class NavEngine : public mrpt::system::COutputLogger
         {
             activePlanEdgeIndex.reset();
             activePlanEdgeSentIndex.reset();
-            activePlanEdgeDoneIndex.reset();
             activePlanEdgesSentOut.clear();
             activePlanInitOdometry.reset();
         }
@@ -385,15 +390,10 @@ class NavEngine : public mrpt::system::COutputLogger
          * out to the robot */
         std::optional<size_t> activePlanEdgeSentIndex;
 
-        /** This will be set by the watcher when a current motion edge has been
-         * completed and it is time to move on to the next one.
-         */
-        std::optional<size_t> activePlanEdgeDoneIndex;
-
         std::set<size_t> activePlanEdgesSentOut;
 
         /** The robot pose in the *odom* frame when the first motion edge is
-         * executed. */
+         * executed from send_next_motion_cmd_or_nop() */
         std::optional<mrpt::math::TPose2D> activePlanInitOdometry;
 
         // int  counterCheckTargetIsBlocked_ = 0;
@@ -429,9 +429,16 @@ class NavEngine : public mrpt::system::COutputLogger
     waypoint_idx_t find_next_waypoint_for_planner();
 
     /** Enqueues a task in pathPlannerPool_ running path_planner_function() and
-     * saving future results into pathPlannerFuture
+     * saving future results into pathPlannerFuture.
+     *
+     * If this is a path refining, startingFrom and startingFromNodeID must be
+     * supplied, with the latter being the nodeId of the the plan starting state
+     * in activePlanOutput, activePlanPath, activePlanPathEdges.
      */
-    void enqueue_path_planner_towards(const waypoint_idx_t target);
+    void enqueue_path_planner_towards(
+        const waypoint_idx_t             target,
+        const selfdriving::SE2_KinState& startingFrom,
+        const std::optional<TNodeID>&    startingFromNodeID = std::nullopt);
 
 #if 0
     bool checkHasReachedTarget(const double targetDist) const override;
