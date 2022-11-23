@@ -421,7 +421,7 @@ void NavEngine::impl_navigation_step()
     // Send actual motion command, if needed, or a NOP if we are safely on track
     send_next_motion_cmd_or_nop();
 
-    send_current_state_to_viz();  // optional debug viz
+    send_current_state_to_viz_and_navlog();  // optional debug viz
     internal_write_to_navlog_file();  // optional debug output file
 }
 
@@ -944,9 +944,10 @@ void NavEngine::check_new_planner_output()
         // Reconstruct current state:
         // We are waiting for the execution of the old "formerEdgeIndex", new
         // #0, edge motion:
-        _.activePlanEdgeIndex     = 0;
-        _.activePlanEdgeSentIndex = 0;
-        _.activePlanEdgesSentOut.insert(0);
+        _.activePlanEdgeIndex     = formerEdgeIndex;
+        _.activePlanEdgeSentIndex = formerEdgeIndex;
+        for (size_t i = 0; i <= formerEdgeIndex; i++)
+            _.activePlanEdgesSentOut.insert(i);
         _.activePlanInitOdometry = formerEdgeInitOdometry;
     }
     else
@@ -1027,7 +1028,9 @@ void NavEngine::send_next_motion_cmd_or_nop()
                                   : "(none)")
         << " activePlanEdgeSentIndex="
         << (_.activePlanEdgeSentIndex
-                ? std::to_string(*_.activePlanEdgeSentIndex)
+                ? (std::to_string(*_.activePlanEdgeSentIndex) +
+                   _.activePlanPathEdges.at(*_.activePlanEdgeSentIndex)
+                       .asString())
                 : "(none)"));
 
     // First edge of a plan?
@@ -1396,7 +1399,7 @@ void NavEngine::send_path_to_viz_and_navlog(
     }
 }
 
-void NavEngine::send_current_state_to_viz()
+void NavEngine::send_current_state_to_viz_and_navlog()
 {
     if (!config_.vizSceneToModify && !navlog_output_file_) return;
 
@@ -1667,8 +1670,9 @@ void NavEngine::internal_write_to_navlog_file()
                     splitLines.push_back(*rit);
             }
 
-            for (size_t i = 0; i < splitLines.size(); i++)
-                r.additional_debug_msgs[std::to_string(i)] = splitLines[i];
+            for (unsigned int i = 0; i < splitLines.size(); i++)
+                r.additional_debug_msgs[mrpt::format("%03u", i)] =
+                    splitLines[i];
         }
 
         mrpt::serialization::archiveFrom(*navlog_output_file_) << r;
