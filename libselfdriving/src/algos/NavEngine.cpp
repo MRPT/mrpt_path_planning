@@ -11,6 +11,7 @@
 #include <mrpt/opengl/stock_objects.h>
 #include <mrpt/serialization/CArchive.h>
 #include <mrpt/system/filesystem.h>
+#include <mrpt/version.h>
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/NavEngine.h>
@@ -69,6 +70,24 @@ void NavEngine::initialize()
     ASSERT_(config_.ptgs.initialized());
     ASSERT_(!config_.ptgs.ptgs.empty());
 
+    // logging msgs (run only once even if initialize() is called several times)
+    if (!loggerToNavlog_)
+    {
+        loggerToNavlog_ =
+            [this](
+                std::string_view                                    msg,
+                [[maybe_unused]] const mrpt::system::VerbosityLevel level,
+                [[maybe_unused]] std::string_view                   loggerName,
+                [[maybe_unused]] const mrpt::Clock::time_point      timestamp) {
+                using namespace std::string_literals;
+
+                innerState_.navlogDebugMessages.push_back(
+                    "["s + mrpt::typemeta::enum2str(level) + "] "s +
+                    std::string(msg));
+            };
+        mrpt::system::COutputLogger::logRegisterCallback(loggerToNavlog_);
+    }
+
     initialized_ = true;
 
     MRPT_END
@@ -117,14 +136,23 @@ void NavEngine::navigation_step()
     mrpt::system::CTimeLoggerEntry tle(navProfiler_, "navigation_step()");
 
     // Record execution period:
+    auto& _ = innerState_;
+    _.clearPerIterationData();
     {
         const double tNow = mrpt::Clock::nowDouble();
-        if (lastNavigationStepEndTime_)
+        if (_.lastNavigationStepEndTime)
             navProfiler_.registerUserMeasure(
-                "navigationStep_period", tNow - *lastNavigationStepEndTime_,
+                "navigationStep_period", tNow - *_.lastNavigationStepEndTime,
                 true /*has time units*/);
-        lastNavigationStepEndTime_ = tNow;
+        _.lastNavigationStepEndTime = tNow;
     }
+    _.timStartThisNavStep = mrpt::Clock::nowDouble();
+#if MRPT_VERSION >= 0x257
+    // Save all debug msgs in navlog files, even if the user changed
+    // the verbosity level for the regular terminal output:
+    mrpt::system::COutputLogger::setVerbosityLevelForCallbacks(
+        mrpt::system::LVL_DEBUG);
+#endif
 
     const NavStatus prevState = navigationStatus_;
     switch (navigationStatus_)
@@ -368,8 +396,6 @@ void NavEngine::update_robot_kinematic_state()
 void NavEngine::impl_navigation_step()
 {
     mrpt::system::CTimeLoggerEntry tle(navProfiler_, "impl_navigation_step");
-
-    timStartThisNavStep_ = mrpt::Clock::nowDouble();
 
     if (lastNavigationState_ != NavStatus::NAVIGATING)
         internal_on_start_new_navigation();
@@ -716,24 +742,24 @@ NavEngine::PathPlannerOutput NavEngine::path_planner_function(
     ppi.pi.ptgs = config_.ptgs;
 
     // Insert custom progress callback for the GUI, if enabled:
-    if (config_.vizSceneToModify)
-    {
-        planner.progressCallback_ = [this](const ProgressCallbackData& pcd) {
-            MRPT_LOG_INFO_STREAM(
-                "[progressCallback] bestCostFromStart: "
-                << pcd.bestCostFromStart
-                << " bestCostToGoal: " << pcd.bestCostToGoal
-                << " bestPathLength: " << pcd.bestPath.size());
+    planner.progressCallback_ = [this](const ProgressCallbackData& pcd) {
+        MRPT_LOG_DEBUG_STREAM(
+            "[progressCallback] bestCostFromStart: "
+            << pcd.bestCostFromStart
+            << " bestCostToGoal: " << pcd.bestCostToGoal
+            << " bestPathLength: " << pcd.bestPath.size());
 
+        if (config_.vizSceneToModify || navlog_output_file_.has_value())
+        {
             ASSERT_(pcd.tree);
             ASSERT_(pcd.originalPlanInput);
             ASSERT_(pcd.costEvaluators);
 
-            send_path_to_viz(
+            send_path_to_viz_and_navlog(
                 *pcd.tree, pcd.bestFinalNode, *pcd.originalPlanInput,
                 *pcd.costEvaluators);
-        };
-    }
+        }
+    };
 
     mrpt::system::CTimeLoggerEntry tle2(
         navProfiler_, "path_planner_function.a_star");
@@ -852,7 +878,8 @@ void NavEngine::check_new_planner_output()
             "for a partial solution");
     }
 
-    if (config_.vizSceneToModify) send_planner_output_to_viz(result);
+    if (config_.vizSceneToModify || navlog_output_file_)
+        send_planner_output_to_viz(result);
 
     // Merge or overwrite current plan:
     if (result.startingFromCurrentPlanNode.has_value())
@@ -991,6 +1018,18 @@ void NavEngine::send_next_motion_cmd_or_nop()
         return;
     }
 
+    MRPT_LOG_DEBUG_STREAM(
+        "[send_next] activePlanPath: " << _.activePlanPathEdges.size()
+                                       << " edges");
+    MRPT_LOG_DEBUG_STREAM(
+        "[send_next] activePlanEdgeIndex="
+        << (_.activePlanEdgeIndex ? std::to_string(*_.activePlanEdgeIndex)
+                                  : "(none)")
+        << " activePlanEdgeSentIndex="
+        << (_.activePlanEdgeSentIndex
+                ? std::to_string(*_.activePlanEdgeSentIndex)
+                : "(none)"));
+
     // First edge of a plan?
     if (!_.activePlanEdgeIndex.has_value())
     {
@@ -1063,6 +1102,8 @@ void NavEngine::send_next_motion_cmd_or_nop()
 
         const mrpt::kinematics::CVehicleVelCmd::Ptr generatedMotionCmd =
             ptg->directionToMotionCommand(edge.ptgPathIndex);
+
+        _.sentOutCmdInThisIteration = generatedMotionCmd;  // log record copy
 
         ASSERT_(generatedMotionCmd);
 
@@ -1197,12 +1238,11 @@ void NavEngine::send_next_motion_cmd_or_nop()
     // an edge motion is under execution and we are waiting for its end.
     // Send out a "dead man's switch" reset signal:
     config_.vehicleMotionInterface->motion_execute(std::nullopt, std::nullopt);
+    MRPT_LOG_DEBUG("[send_next] NOP.");
 }
 
 void NavEngine::send_planner_output_to_viz(const PathPlannerOutput& ppo)
 {
-    ASSERT_(config_.vizSceneToModify);
-
     // Visualize the motion tree:
     // ----------------------------------
     RenderOptions ro;
@@ -1242,33 +1282,46 @@ void NavEngine::send_planner_output_to_viz(const PathPlannerOutput& ppo)
 
     // Send to the viz "server":
     // ----------------------------------
-    // lock:
-    if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
-
-    if (auto glObj = config_.vizSceneToModify->getByName(planViz->getName());
-        glObj)
+    if (config_.vizSceneToModify)
     {
-        auto glContainer =
-            std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
-        ASSERT_(glContainer);
-        *glContainer = *planViz;
-    }
-    else
-    {
-        config_.vizSceneToModify->insert(planViz);
+        // lock:
+        if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
+
+        if (auto glObj =
+                config_.vizSceneToModify->getByName(planViz->getName());
+            glObj)
+        {
+            auto glContainer =
+                std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
+            ASSERT_(glContainer);
+            *glContainer = *planViz;
+        }
+        else
+        {
+            config_.vizSceneToModify->insert(planViz);
+        }
+
+        // unlock:
+        if (config_.on_viz_post_modify) config_.on_viz_post_modify();
     }
 
-    // unlock:
-    if (config_.on_viz_post_modify) config_.on_viz_post_modify();
+    // Send to the buffer to be saved to the nav log file:
+    // ------------------------------------------------------
+    {
+        // Create object wrapper to fix coordinate origin, since the navlog
+        // custom visuals are relative to the robot position, not global:
+        auto glGlobalWrtRobot = mrpt::opengl::CSetOfObjects::Create();
+        glGlobalWrtRobot->insert(planViz);
+        glGlobalWrtRobot->setPose(-lastVehicleLocalization_.pose);
+        innerState_.planVizForNavLog = glGlobalWrtRobot;
+    }
 }
 
-void NavEngine::send_path_to_viz(
+void NavEngine::send_path_to_viz_and_navlog(
     const MotionPrimitivesTreeSE2& tree, const TNodeID finalNode,
     const PlannerInput&                    originalPlanInput,
     const std::vector<CostEvaluator::Ptr>& costEvaluators)
 {
-    ASSERT_(config_.vizSceneToModify);
-
     // Visualize the motion tree:
     // ----------------------------------
     RenderOptions ro;
@@ -1308,29 +1361,44 @@ void NavEngine::send_path_to_viz(
 
     // Send to the viz "server":
     // ----------------------------------
-    // lock:
-    if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
-
-    if (auto glObj = config_.vizSceneToModify->getByName(planViz->getName());
-        glObj)
+    if (config_.vizSceneToModify)
     {
-        auto glContainer =
-            std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
-        ASSERT_(glContainer);
-        *glContainer = *planViz;
-    }
-    else
-    {
-        config_.vizSceneToModify->insert(planViz);
+        // lock:
+        if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
+
+        if (auto glObj =
+                config_.vizSceneToModify->getByName(planViz->getName());
+            glObj)
+        {
+            auto glContainer =
+                std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
+            ASSERT_(glContainer);
+            *glContainer = *planViz;
+        }
+        else
+        {
+            config_.vizSceneToModify->insert(planViz);
+        }
+
+        // unlock:
+        if (config_.on_viz_post_modify) config_.on_viz_post_modify();
     }
 
-    // unlock:
-    if (config_.on_viz_post_modify) config_.on_viz_post_modify();
+    // Send to the buffer to be saved to the nav log file:
+    // ------------------------------------------------------
+    {
+        // Create object wrapper to fix coordinate origin, since the navlog
+        // custom visuals are relative to the robot position, not global:
+        auto glGlobalWrtRobot = mrpt::opengl::CSetOfObjects::Create();
+        glGlobalWrtRobot->insert(planViz);
+        glGlobalWrtRobot->setPose(-lastVehicleLocalization_.pose);
+        innerState_.planVizForNavLog = glGlobalWrtRobot;
+    }
 }
 
 void NavEngine::send_current_state_to_viz()
 {
-    if (!config_.vizSceneToModify) return;
+    if (!config_.vizSceneToModify && !navlog_output_file_) return;
 
     const auto& _ = innerState_;
 
@@ -1358,9 +1426,11 @@ void NavEngine::send_current_state_to_viz()
     }
 
     if (const auto& actCond = _.activeEnqueuedConditionForViz;
-        actCond.has_value())
+        actCond.has_value() && _.activePlanInitOdometry.has_value() &&
+        !_.activePlanPath.empty())
     {
-        const auto p   = actCond->position;
+        const auto p = _.activePlanPath.at(0).pose +
+                       (actCond->position - _.activePlanInitOdometry.value());
         const auto tol = actCond->tolerance;
 
         const mrpt::math::TPose2D p0 = {
@@ -1369,7 +1439,7 @@ void NavEngine::send_current_state_to_viz()
             p.x + tol.x, p.y + tol.y, p.phi + tol.phi};
 
         auto glCondPoly = mrpt::opengl::CSetOfLines::Create();
-        glCondPoly->setColor_u8(0x40, 0x40, 0x40, 0xa0);
+        glCondPoly->setColor_u8(0xf0, 0xf0, 0xf0, 0xa0);
 
         glCondPoly->appendLine(p0.x, p0.y, 0, p1.x, p0.y, 0);
         glCondPoly->appendLineStrip(p1.x, p1.y, 0);
@@ -1409,25 +1479,39 @@ void NavEngine::send_current_state_to_viz()
 
     // Send to the viz "server":
     // ----------------------------------
-    // lock:
-    if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
-
-    if (auto glObj =
-            config_.vizSceneToModify->getByName(glStateDetails->getName());
-        glObj)
+    if (config_.vizSceneToModify)
     {
-        auto glContainer =
-            std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
-        ASSERT_(glContainer);
-        *glContainer = *glStateDetails;
-    }
-    else
-    {
-        config_.vizSceneToModify->insert(glStateDetails);
+        // lock:
+        if (config_.on_viz_pre_modify) config_.on_viz_pre_modify();
+
+        if (auto glObj =
+                config_.vizSceneToModify->getByName(glStateDetails->getName());
+            glObj)
+        {
+            auto glContainer =
+                std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
+            ASSERT_(glContainer);
+            *glContainer = *glStateDetails;
+        }
+        else
+        {
+            config_.vizSceneToModify->insert(glStateDetails);
+        }
+
+        // unlock:
+        if (config_.on_viz_post_modify) config_.on_viz_post_modify();
     }
 
-    // unlock:
-    if (config_.on_viz_post_modify) config_.on_viz_post_modify();
+    // Send to the buffer to be saved to the nav log file:
+    // ------------------------------------------------------
+    {
+        // Create object wrapper to fix coordinate origin, since the navlog
+        // custom visuals are relative to the robot position, not global:
+        auto glGlobalWrtRobot = mrpt::opengl::CSetOfObjects::Create();
+        glGlobalWrtRobot->insert(glStateDetails);
+        glGlobalWrtRobot->setPose(-lastVehicleLocalization_.pose);
+        innerState_.stateVizForNavLog = glGlobalWrtRobot;
+    }
 }
 
 void NavEngine::internal_start_navlog_file()
@@ -1464,6 +1548,8 @@ void NavEngine::internal_write_to_navlog_file()
 {
     try
     {
+        auto& _ = innerState_;
+
         if (!navlog_output_file_ || !navlog_output_file_->is_open()) return;
 
         // save:
@@ -1522,13 +1608,8 @@ void NavEngine::internal_write_to_navlog_file()
 
         // r.values["executionTime"]            = executionTimeValue;
 
-        // save collision-predicted pose into the "vel cmd" future field:
-        if (innerState_.collisionCheckingPosePrediction)
-            r.relPoseVelCmd = *innerState_.collisionCheckingPosePrediction -
-                              lastVehicleLocalization_.pose;
-
         r.timestamps["tim_start_iteration"] =
-            mrpt::Clock::fromDouble(timStartThisNavStep_.value());
+            mrpt::Clock::fromDouble(_.timStartThisNavStep.value());
         r.timestamps["curPoseAndVel"] = lastVehicleLocalization_.timestamp;
 
         r.nPTGs = config_.ptgs.ptgs.size();
@@ -1536,7 +1617,7 @@ void NavEngine::internal_write_to_navlog_file()
         r.infoPerPTG.resize(r.nPTGs + 1);  // convention: NumPTGs + NOP choice
 
         // At the beginning of each log file, add an introductory block
-        // explaining which PTGs are we using:
+        // explaining which PTGs we use:
         if (navlogOutputFirstEntry_)
         {
             navlogOutputFirstEntry_ = false;
@@ -1563,6 +1644,32 @@ void NavEngine::internal_write_to_navlog_file()
     r.ptg_last_k_NOP = m_lastSentVelCmd.ptg_alpha_index;
     r.ptg_last_navDynState = m_lastSentVelCmd.ptg_dynState;
 #endif
+
+        // Sent-out motion command:
+        r.cmd_vel = _.sentOutCmdInThisIteration;
+
+        // opengl additional viz stuff:
+#if MRPT_VERSION >= 0x257
+        if (_.planVizForNavLog) r.visuals.push_back(_.planVizForNavLog);
+        if (_.stateVizForNavLog) r.visuals.push_back(_.stateVizForNavLog);
+#endif
+
+        // debug strings:
+        {
+            std::vector<std::string> splitLines;
+            for (const auto& str : innerState_.navlogDebugMessages)
+            {
+                std::vector<std::string> lins;
+                mrpt::system::tokenize(str, "\n", lins);
+                // Add in reverse order since navlog-viewer shows lines
+                // down-up:
+                for (auto rit = lins.rbegin(); rit != lins.rend(); rit++)
+                    splitLines.push_back(*rit);
+            }
+
+            for (size_t i = 0; i < splitLines.size(); i++)
+                r.additional_debug_msgs[std::to_string(i)] = splitLines[i];
+        }
 
         mrpt::serialization::archiveFrom(*navlog_output_file_) << r;
     }
