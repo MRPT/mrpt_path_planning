@@ -259,8 +259,10 @@ class NavEngine : public mrpt::system::COutputLogger
         const PlannerInput&                    originalPlanInput,
         const std::vector<CostEvaluator::Ptr>& costEvaluators);
 
-    /** If the GUI is enabled, update current path plan details */
-    void send_current_state_to_viz();
+    /** Update current path plan visualization details in the GUI, or in the
+     *  opengl object buffered to be writen to navlog files.
+     */
+    void send_current_state_to_viz_and_navlog();
 
    protected:
     /** Current and last internal state of navigator: */
