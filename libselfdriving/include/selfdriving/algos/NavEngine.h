@@ -254,7 +254,7 @@ class NavEngine : public mrpt::system::COutputLogger
     void send_planner_output_to_viz(const PathPlannerOutput& ppo);
 
     /** Update the GUI with a partial or final path only (no whole tree) */
-    void send_path_to_viz(
+    void send_path_to_viz_and_navlog(
         const MotionPrimitivesTreeSE2& tree, const TNodeID finalNode,
         const PlannerInput&                    originalPlanInput,
         const std::vector<CostEvaluator::Ptr>& costEvaluators);
@@ -268,8 +268,7 @@ class NavEngine : public mrpt::system::COutputLogger
     NavStatus      lastNavigationState_ = NavStatus::IDLE;
     NavErrorReason navErrorReason_;
 
-    std::optional<double> lastNavigationStepEndTime_;
-    std::optional<double> timStartThisNavStep_;
+    mrpt::system::output_logger_callback_t loggerToNavlog_;
 
     bool initialized_ = false;
 
@@ -395,6 +394,27 @@ class NavEngine : public mrpt::system::COutputLogger
         /** The robot pose in the *odom* frame when the first motion edge is
          * executed from send_next_motion_cmd_or_nop() */
         std::optional<mrpt::math::TPose2D> activePlanInitOdometry;
+
+        /** @name Data to be cleared upon each iteration
+         *  @{ */
+        /** Copy of sent-out cmd, for the log record */
+        mrpt::kinematics::CVehicleVelCmd::Ptr sentOutCmdInThisIteration;
+        mrpt::opengl::CSetOfObjects::Ptr      planVizForNavLog;
+        mrpt::opengl::CSetOfObjects::Ptr      stateVizForNavLog;
+        std::vector<std::string>              navlogDebugMessages;
+
+        std::optional<double> lastNavigationStepEndTime;
+        std::optional<double> timStartThisNavStep;
+
+        void clearPerIterationData()
+        {
+            sentOutCmdInThisIteration.reset();
+            planVizForNavLog.reset();
+            stateVizForNavLog.reset();
+            navlogDebugMessages.clear();
+        }
+
+        /** @} */
 
         // int  counterCheckTargetIsBlocked_ = 0;
 
