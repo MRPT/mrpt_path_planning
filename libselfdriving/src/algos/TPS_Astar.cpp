@@ -162,12 +162,15 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     }
 
     // Define goal node ID:
-    auto& nodeGoal =
-        getOrCreateNodeByPose(in.stateGoal.asSE2KinState(), nextFreeId);
-    po.goalNodeId = nodeGoal.id.value();
+    // Use a pointer so we can replace it with a pointer to a different node as
+    // needed.
+    auto* nodeGoal =
+        &getOrCreateNodeByPose(in.stateGoal.asSE2KinState(), nextFreeId);
+    po.goalNodeId = nodeGoal->id.value();
 
     // Insert a dummy edge between root -> goal, just to allow new node IDs
     // to be generated in sequence:
+#if 0
     {
         MoveEdgeSE2_TPS dummyEdge;
         dummyEdge.cost      = std::numeric_limits<cost_t>::max();
@@ -175,9 +178,10 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         dummyEdge.stateFrom = in.stateStart;
         dummyEdge.stateTo   = in.stateGoal.asSE2KinState();
         tree.insert_node_and_edge(
-            tree.root, nodeGoal.id.value(), in.stateGoal.asSE2KinState(),
+            tree.root, nodeGoal->id.value(), in.stateGoal.asSE2KinState(),
             dummyEdge);
     }
+#endif
 
     // Goal cell indices:
     const auto goalCellIndices =
@@ -221,7 +225,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
                 // Correct current node location due to grid discretization,
                 // a latter refine_trajectory() stage will correct PTG path
                 // params if needed:
-                const auto& goalPt   = in.stateGoal.state.point();
+                const auto& goalPt = in.stateGoal.state.point();
+                // Update in our internal A* node:
                 current.state.pose.x = goalPt.x;
                 current.state.pose.y = goalPt.y;
 
@@ -230,9 +235,10 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
                     << in.stateGoal.state.asString() << " ==> "
                     << current.state.asString());
 
-                nodeGoal      = current;
-                po.goalNodeId = nodeGoal.id.value();
-                po.bestNodeId = po.goalNodeId;
+                nodeGoal                = &current;
+                po.goalNodeId           = nodeGoal->id.value();
+                po.bestNodeId           = po.goalNodeId;
+                po.bestNodeIdCostToGoal = 0;
             }
             else
             {
@@ -240,8 +246,13 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
                 // a latter refine_trajectory() stage will correct PTG path
                 // params if needed:
                 const auto& goalPose = in.stateGoal.state.pose();
-                current.state.pose   = goalPose;
+                // Update in our internal A* node:
+                current.state.pose = goalPose;
+
+                po.bestNodeIdCostToGoal = 0;
             }
+            // Update in the tree node also:
+            tree.node_state(*current.id).pose = current.state.pose;
 
             break;
         }
@@ -381,6 +392,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
             // Keep an updated pointer to the best, so-far, node (under the
             // heuristic criterion):
+            // Note that even if costToGoal==0, we may still need to keep
+            // iterating A*, since a better (shorter) path might be still be
+            // found.
             if (costToGoal < po.bestNodeIdCostToGoal)
             {
                 po.bestNodeIdCostToGoal = costToGoal;
@@ -444,21 +458,19 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     // A* ended, now collect the result:
     // ----------------------------------------
-    const auto [foundPath, pathEdges] =
-        tree.backtrack_path(nodeGoal.id.value());
-    bool foundPathValid = true;
+#if 0  // debug: dump tree
+    tree.visitBreadthFirst(
+        tree.root, [](const TNodeID parent, const auto& edgeToChild,
+                      const size_t depthLevel) {
+            const MoveEdgeSE2_TPS& e = edgeToChild.data;
 
-    for (const auto& step : foundPath)
-    {
-        if (step.cost_ == std::numeric_limits<distance_t>::max())
-        {
-            foundPathValid = false;
-            break;
-        }
-    }
-    po.success = foundPathValid;
+            std::cout << "tree level #" << depthLevel << ": parent=" << parent
+                      << " edgeToChild: " << e.asString() << "\n";
+        });
+#endif
 
-    po.pathCost = tree.nodes().at(nodeGoal.id.value()).cost_;
+    po.success  = po.goalNodeId == po.bestNodeId;
+    po.pathCost = tree.nodes().at(po.bestNodeId).cost_;
 
     po.computationTime = mrpt::Clock::nowDouble() - planInitTime;
 

@@ -27,8 +27,8 @@ struct PlannerOutput
     /** Time spent (in secs) */
     double computationTime = 0;
 
-    /** Distance from best found path to goal */
-    double goalDistance = std::numeric_limits<double>::max();
+    // Distance from best found path to goal
+    // double goalDistance = std::numeric_limits<double>::max();
 
     /** Total cost of the best found path.
      * Cost is the Euclidean distance, modified by the additional cost map

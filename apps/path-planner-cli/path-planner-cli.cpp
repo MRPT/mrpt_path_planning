@@ -326,7 +326,7 @@ static void do_plan_path()
 
     // backtrack:
     auto [plannedPath, pathEdges] =
-        plan.motionTree.backtrack_path(plan.goalNodeId);
+        plan.motionTree.backtrack_path(plan.bestNodeId);
 
     if (!arg_noRefine.isSet())
     {
@@ -337,7 +337,7 @@ static void do_plan_path()
     // Visualize:
     selfdriving::VisualizationOptions vizOpts;
 
-    vizOpts.renderOptions.highlight_path_to_node_id = plan.goalNodeId;
+    vizOpts.renderOptions.highlight_path_to_node_id = plan.bestNodeId;
     vizOpts.renderOptions.color_normal_edge         = {0xb0b0b0, 0x20};  // RGBA
 
     vizOpts.renderOptions.showEdgeCosts = arg_showEdgeWeights.isSet();
