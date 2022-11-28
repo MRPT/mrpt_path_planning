@@ -245,6 +245,12 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
      */
     const node_map_t& nodes() const { return nodes_; }
 
+    /** Write-access to node data (use with caution) */
+    NODE_TYPE_DATA& node_state(const TNodeID nodeId)
+    {
+        return nodes_.at(nodeId);
+    }
+
     /** Builds the path (sequence of nodes, with info about next edge) up-tree
      * from a `target_node` towards the root
      * - path_t nodes are ordered in the direction ROOT -> start_node
