@@ -18,6 +18,8 @@
 #include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
 #include <selfdriving/ptgs/SpeedTrimmablePTG.h>
 
+#include <mutex>
+
 namespace selfdriving::ptg
 {
 /** A PTG for circular-shaped robots with holonomic kinematics.
@@ -96,9 +98,10 @@ class HolonomicBlend : public SpeedTrimmablePTG,
 
     // Compilation of user-given expressions
     mrpt::expr::CRuntimeCompiledExpression m_expr_v, m_expr_w, m_expr_T_ramp;
-    double m_expr_dir = 0;  // Used as symbol "dir" in m_expr_v and m_expr_w
-    double m_expr_target_dir  = 0;  // symbol "target_dir" in expressions
-    double m_expr_target_dist = 0;  // symbol "target_dist" in expressions
+    double     m_expr_dir = 0;  // Used as symbol "dir" in m_expr_v and m_expr_w
+    double     m_expr_target_dir  = 0;  // symbol "target_dir" in expressions
+    double     m_expr_target_dist = 0;  // symbol "target_dist" in expressions
+    std::mutex m_expr_mtx;
 
     /** Evals expr_v */
     double internal_get_v(const double dir) const;

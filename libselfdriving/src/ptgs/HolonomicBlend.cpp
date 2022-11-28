@@ -21,8 +21,6 @@
 #include <mrpt/system/CTimeLogger.h>
 #include <selfdriving/ptgs/HolonomicBlend.h>
 
-// #include <iostream>  // debug!
-
 using namespace mrpt::nav;
 using namespace selfdriving::ptg;
 using namespace mrpt::system;
@@ -830,16 +828,22 @@ void HolonomicBlend::internal_construct_exprs()
 
 double HolonomicBlend::internal_get_v(const double dir) const
 {
+    auto lck = mrpt::lockHelper(m_expr_mtx);
+
     const_cast<double&>(m_expr_dir) = dir;
     return std::abs(m_expr_v.eval());
 }
 double HolonomicBlend::internal_get_w(const double dir) const
 {
+    auto lck = mrpt::lockHelper(m_expr_mtx);
+
     const_cast<double&>(m_expr_dir) = dir;
     return std::abs(m_expr_w.eval());
 }
 double HolonomicBlend::internal_get_T_ramp(const double dir) const
 {
+    auto lck = mrpt::lockHelper(m_expr_mtx);
+
     const_cast<double&>(m_expr_dir) = dir;
     return m_expr_T_ramp.eval();
 }
