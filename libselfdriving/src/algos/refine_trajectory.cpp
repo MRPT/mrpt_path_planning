@@ -4,18 +4,11 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
+#include <selfdriving/algos/edge_interpolated_path.h>
 #include <selfdriving/algos/refine_trajectory.h>
 #include <selfdriving/ptgs/SpeedTrimmablePTG.h>
 
 #include <iostream>
-
-using namespace selfdriving;
-
-void edge_interpolated_path(
-    MoveEdgeSE2_TPS& edge, const TrajectoriesAndRobotShape& trs,
-    const std::optional<mrpt::math::TPose2D>& reconstrRelPoseOpt = std::nullopt,
-    const std::optional<size_t>&              ptg_stepOpt        = std::nullopt,
-    const std::optional<size_t>&              numSegments = std::nullopt);
 
 void selfdriving::refine_trajectory(
     MotionPrimitivesTreeSE2::path_t&          inPath,
