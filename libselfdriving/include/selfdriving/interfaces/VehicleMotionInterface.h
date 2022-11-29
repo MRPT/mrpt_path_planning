@@ -144,6 +144,17 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger,
      */
     virtual bool enqeued_motion_timed_out() const { return false; }
 
+    /** Reimplement to return the exact odometry value at the precise moment
+     *  that the last enqueued motion was executed by the vehicle motion
+     * controller. The `optional<>` should be empty only if no enqueued motion
+     * has been executed yet.
+     */
+    virtual std::optional<VehicleOdometryState>
+        enqued_motion_last_odom_when_triggered() const
+    {
+        return {};
+    }
+
     /** Stops the vehicle. Different levels of abruptness in the stop can be
      * considered given the emergency condition or not of the command.
      */
