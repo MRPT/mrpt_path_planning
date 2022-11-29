@@ -53,7 +53,16 @@ void selfdriving::refine_trajectory(
 
         const bool ok = ptg->inverseMap_WS2TP(
             deltaNodes.x, deltaNodes.y, newK, newNormDist);
-        ASSERT_(ok);
+        if (!ok)
+        {
+            std::stringstream ss;
+            ss << "Assert failed: ptg->inverseMap_WS2TP() => returned "
+                  "ok=false. More info:\n";
+            ss << " - PTG: " << ptg->getDescription() << "\n";
+            ss << " - deltaNodes: " << deltaNodes.asString() << "\n";
+            ss << " - edge: " << edge.asString() << "\n";
+            THROW_EXCEPTION(ss.str());
+        }
 
         distance_t newDist = newNormDist * ptg->getRefDistance();
 

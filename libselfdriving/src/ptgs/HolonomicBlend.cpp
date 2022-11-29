@@ -21,6 +21,8 @@
 #include <mrpt/system/CTimeLogger.h>
 #include <selfdriving/ptgs/HolonomicBlend.h>
 
+#include <iostream>  // debug only, remove!
+
 using namespace mrpt::nav;
 using namespace selfdriving::ptg;
 using namespace mrpt::system;
@@ -272,8 +274,8 @@ void HolonomicBlend::saveToConfigFile(
 std::string HolonomicBlend::getDescription() const
 {
     return mrpt::format(
-        "PTG_Holo_Blend_Tramp=%.03f_Vmax=%.03f_Wmax=%.03f", T_ramp_max, V_MAX,
-        W_MAX);
+        "selfdriving_HolonomicBlend=%.03f_Vmax=%.03f_Wmax=%.03f", T_ramp_max,
+        V_MAX, W_MAX);
 }
 
 void HolonomicBlend::serializeFrom(
@@ -397,6 +399,7 @@ bool HolonomicBlend::inverseMap_WS2TP(
         const double       found_dist  = this->getPathDist(out_k, solved_step);
 
         out_d = found_dist / this->refDistance;
+
         return true;
     }
     else
