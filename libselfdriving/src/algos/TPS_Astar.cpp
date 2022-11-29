@@ -168,21 +168,6 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         &getOrCreateNodeByPose(in.stateGoal.asSE2KinState(), nextFreeId);
     po.goalNodeId = nodeGoal->id.value();
 
-    // Insert a dummy edge between root -> goal, just to allow new node IDs
-    // to be generated in sequence:
-#if 0
-    {
-        MoveEdgeSE2_TPS dummyEdge;
-        dummyEdge.cost      = std::numeric_limits<cost_t>::max();
-        dummyEdge.parentId  = tree.root;
-        dummyEdge.stateFrom = in.stateStart;
-        dummyEdge.stateTo   = in.stateGoal.asSE2KinState();
-        tree.insert_node_and_edge(
-            tree.root, nodeGoal->id.value(), in.stateGoal.asSE2KinState(),
-            dummyEdge);
-    }
-#endif
-
     // Goal cell indices:
     const auto goalCellIndices =
         in.stateGoal.state.isPoint()
@@ -469,8 +454,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         });
 #endif
 
-    po.success  = po.goalNodeId == po.bestNodeId;
-    po.pathCost = tree.nodes().at(po.bestNodeId).cost_;
+    po.success = po.goalNodeId == po.bestNodeId;
+    if (po.bestNodeId != INVALID_NODEID)
+        po.pathCost = tree.nodes().at(po.bestNodeId).cost_;
 
     po.computationTime = mrpt::Clock::nowDouble() - planInitTime;
 
