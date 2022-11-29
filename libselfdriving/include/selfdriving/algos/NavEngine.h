@@ -371,6 +371,10 @@ class NavEngine : public mrpt::system::COutputLogger
         /** A copy of the active queued condition, for viz purposes only */
         std::optional<EnqueuedCondition> activeEnqueuedConditionForViz;
 
+        /** A copy of the last odometry when an enqueued action was triggered,
+         * for viz purposed only */
+        std::optional<VehicleOdometryState> lastEnqueuedTriggerOdometryForViz;
+
         void active_plan_reset()
         {
             activePlanEdgeIndex.reset();

@@ -1066,9 +1066,20 @@ void NavEngine::send_next_motion_cmd_or_nop()
             // We are ready for the next one:
             _.activePlanEdgeIndex.value()++;
 
+            // Get the odometry value when triggered:
+            _.lastEnqueuedTriggerOdometryForViz =
+                config_.vehicleMotionInterface
+                    ->enqued_motion_last_odom_when_triggered();
+            MRPT_TODO("cont: use odom to rewrite plan");
+
             MRPT_LOG_INFO_STREAM(
-                "Enqueued motion seems to have been done. Moving to next edge #"
-                << *_.activePlanEdgeIndex);
+                "Enqueued motion seems to have "
+                "been done for odom="
+                << (_.lastEnqueuedTriggerOdometryForViz
+                        ? _.lastEnqueuedTriggerOdometryForViz.value()
+                              .odometry.asString()
+                        : "")
+                << ". Moving to next edge #" << *_.activePlanEdgeIndex);
         }
     }
 
@@ -1463,6 +1474,16 @@ void NavEngine::send_current_state_to_viz_and_navlog()
             glCorner->setPose(p1);
             glStateDetails->insert(glCorner);
         }
+    }
+
+    if (const auto& triggOdom = _.lastEnqueuedTriggerOdometryForViz;
+        triggOdom.has_value() && !_.activePlanPath.empty())
+    {
+        auto glCorner = mrpt::opengl::stock_objects::CornerXYZ(0.15);
+        glCorner->setPose(
+            _.activePlanPath.at(0).pose +
+            (triggOdom.value().odometry - _.activePlanInitOdometry.value()));
+        glStateDetails->insert(glCorner);
     }
 
     if (const auto& predPose = _.collisionCheckingPosePrediction;
