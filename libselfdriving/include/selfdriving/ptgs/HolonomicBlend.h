@@ -61,6 +61,9 @@ class HolonomicBlend : public SpeedTrimmablePTG,
 
     bool supportSpeedAtTarget() const override { return true; }
 
+    bool inverseMap_WS2TP_with_Tramp(
+        double x, double y, int& out_k, double& out_d, double& T_ramp) const;
+
     /** Converts a discretized "alpha" value into a feasible motion command or
      * action. See derived classes for the meaning of these actions */
     mrpt::kinematics::CVehicleVelCmd::Ptr directionToMotionCommand(
@@ -81,6 +84,9 @@ class HolonomicBlend : public SpeedTrimmablePTG,
     void updateTPObstacleSingle(
         double ox, double oy, uint16_t k, double& tp_obstacle_k) const override;
 
+    double internal_getPathDist(
+        uint32_t step, double T_ramp, double vxf, double vyf) const;
+
     /** Duration of each PTG "step"  (default: 10e-3=10 ms) */
     static double PATH_TIME_STEP;
 
@@ -97,18 +103,22 @@ class HolonomicBlend : public SpeedTrimmablePTG,
     mutable std::vector<int> m_pathStepCountCache;
 
     // Compilation of user-given expressions
-    mrpt::expr::CRuntimeCompiledExpression m_expr_v, m_expr_w, m_expr_T_ramp;
+    mrpt::expr::CRuntimeCompiledExpression m_expr_v, m_expr_w;
     double     m_expr_dir = 0;  // Used as symbol "dir" in m_expr_v and m_expr_w
     double     m_expr_target_dir  = 0;  // symbol "target_dir" in expressions
     double     m_expr_target_dist = 0;  // symbol "target_dist" in expressions
     std::mutex m_expr_mtx;
 
-    /** Evals expr_v */
-    double internal_get_v(const double dir) const;
-    /** Evals expr_w */
-    double internal_get_w(const double dir) const;
-    /** Evals expr_T_ramp */
-    double internal_get_T_ramp(const double dir) const;
+    struct InternalParams
+    {
+        double vxi = 0, vyi = 0;
+        double vxf = 0, vyf = 0;
+        double vf = 0, wf = 0;
+        double T_ramp = 1;
+    };
+
+    InternalParams internal_params_from_dir_and_dynstate(
+        const double dir) const;
 
     void internal_construct_exprs();
 

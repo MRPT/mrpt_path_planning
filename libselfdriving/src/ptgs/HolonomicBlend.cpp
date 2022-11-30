@@ -58,15 +58,6 @@ mrpt::system::CTimeLogger tl_holo("HolonomicBlend");
 double HolonomicBlend::PATH_TIME_STEP = 10e-3;  // 10 ms
 double HolonomicBlend::eps = 1e-4;  // epsilon for detecting 1/0 situation
 
-// As a macro instead of a function (uglier) to allow for const variables
-// (safer)
-#define COMMON_PTG_DESIGN_PARAMS                                   \
-    const double vxi    = m_nav_dyn_state.curVelLocal.vx,          \
-                 vyi    = m_nav_dyn_state.curVelLocal.vy;          \
-    const double vf_mod = internal_get_v(dir);                     \
-    const double vxf = vf_mod * cos(dir), vyf = vf_mod * sin(dir); \
-    const double T_ramp = internal_get_T_ramp(dir);
-
 #if 0
 static double calc_trans_distance_t_below_Tramp_abc_analytic(double t, double a, double b, double c)
 {
@@ -312,12 +303,20 @@ bool HolonomicBlend::inverseMap_WS2TP(
     double x, double y, int& out_k, double& out_d,
     [[maybe_unused]] double tolerance_dist) const
 {
+    double dummy_T_ramp;
+    return inverseMap_WS2TP_with_Tramp(x, y, out_k, out_d, dummy_T_ramp);
+}
+
+bool HolonomicBlend::inverseMap_WS2TP_with_Tramp(
+    double x, double y, int& out_k, double& out_d, double& out_T_ramp) const
+{
     PERFORMANCE_BENCHMARK;
 
     ASSERT_(x != 0 || y != 0);
 
-    const double err_threshold = 1e-2;
-    const double T_ramp        = T_ramp_max;
+    const double REL_SPEED_TO_CONSIDER_REACH_AND_STOP = 0.10 * 1.05 /*MARGIN*/;
+
+    const double err_threshold = 1e-3;
     const double vxi           = m_nav_dyn_state.curVelLocal.vx,
                  vyi           = m_nav_dyn_state.curVelLocal.vy;
 
@@ -326,77 +325,154 @@ bool HolonomicBlend::inverseMap_WS2TP(
     // in each case: (1) t<T_ramp and (2) t>T_ramp
 
     // Initial value:
-    mrpt::math::CVectorFixed<double, 3> q;  // [t vxf vyf]
+    mrpt::math::CVectorFixed<double, 4> q;  // [t vxf vyf T_r]
     q[0] = T_ramp_max * 1.1;
     q[1] = V_MAX * x / sqrt(x * x + y * y);
     q[2] = V_MAX * y / sqrt(x * x + y * y);
+    q[3] = T_ramp_max;
 
     // Iterate: case (2) t > T_ramp
-    double err_mod   = 1e7;
+    double err_mod   = std::numeric_limits<double>::max();
     bool   sol_found = false;
     for (int iters = 0; !sol_found && iters < 25; iters++)
     {
+        const double t   = q[0];
+        const double vxf = q[1], vyf = q[2];
+        const double alpha = atan2(vyf, vxf);
+
+        const auto lambda_vel = [this](double dir) {
+            auto lck                        = mrpt::lockHelper(m_expr_mtx);
+            const_cast<double&>(m_expr_dir) = dir;
+            return std::abs(m_expr_v.eval());
+        };
+
+        const double V_MAXsq = mrpt::square(lambda_vel(alpha));
+
+        const bool stopAtTarget =
+            V_MAXsq < mrpt::square(REL_SPEED_TO_CONSIDER_REACH_AND_STOP);
+
+        const double T_ramp = q[3];
+
         const double TR_  = 1.0 / (T_ramp);
         const double TR2_ = 1.0 / (2 * T_ramp);
 
         // Eval residual:
-        mrpt::math::CVectorFixed<double, 3> r;
-        if (q[0] >= T_ramp)
+        mrpt::math::CVectorFixed<double, 4> r;
+        if (t >= T_ramp)
         {
-            r[0] = 0.5 * T_ramp * (vxi + q[1]) + (q[0] - T_ramp) * q[1] - x;
-            r[1] = 0.5 * T_ramp * (vyi + q[2]) + (q[0] - T_ramp) * q[2] - y;
+            r[0] = 0.5 * T_ramp * (vxi + vxf) + (t - T_ramp) * vxf - x;
+            r[1] = 0.5 * T_ramp * (vyi + vyf) + (t - T_ramp) * vyf - y;
         }
         else
         {
-            r[0] = vxi * q[0] + q[0] * q[0] * TR2_ * (q[1] - vxi) - x;
-            r[1] = vyi * q[0] + q[0] * q[0] * TR2_ * (q[2] - vyi) - y;
+            r[0] = vxi * t + t * t * TR2_ * (vxf - vxi) - x;
+            r[1] = vyi * t + t * t * TR2_ * (vyf - vyi) - y;
         }
-        const double alpha   = atan2(q[2], q[1]);
-        const double V_MAXsq = mrpt::square(this->internal_get_v(alpha));
-        r[2]                 = q[1] * q[1] + q[2] * q[2] - V_MAXsq;
 
-        // Jacobian: q=[t vxf vyf]   q0=t   q1=vxf   q2=vyf
-        //  dx/dt  dx/dvxf  dx/dvyf
-        //  dy/dt  dy/dvxf  dy/dvyf
-        //  dVF/dt  dVF/dvxf  dVF/dvyf
-        mrpt::math::CMatrixDouble33 J;
-        if (q[0] >= T_ramp)
+        r[2] = vxf * vxf + vyf * vyf - V_MAXsq;
+        if (stopAtTarget)  // "S.A.T."
+                           // condition.
+            r[3] = T_ramp - t;
+        else
+            r[3] = 0;
+
+        // See doc/ for the Latex/PDF with
+        // the exact formulas.
+        //
+        // Jacobian: q=[t vxf vyf T_r] q0=t
+        // q1=vxf   q2=vyf q3=T_r
+        //
+        //  dx/dt    dx/dvxf    dx/dvyf
+        //  dx/dTr dy/dt    dy/dvxf dy/dvyf
+        //  dy/dTr dVF/dt   dVF/dvxf
+        //  dVF/dvyf    dVR/dTr dSAT/dt
+        //  dSAT/dvxf  dSAT/dvyf   dSAT/dTr
+        //
+        mrpt::math::CMatrixDouble44 J;  // all zeros
+        if (t >= T_ramp)
         {
-            J(0, 0) = q[1];
-            J(0, 1) = 0.5 * T_ramp + q[0];
-            J(0, 2) = 0.0;
-            J(1, 0) = q[2];
-            J(1, 1) = 0.0;
-            J(1, 2) = 0.5 * T_ramp + q[0];
+            J(0, 0) = vxf;
+            J(0, 1) = 0.5 * T_ramp + t;
+            // J(0, 2) = 0.0;
+            J(1, 0) = vyf;
+            // J(1, 1) = 0.0;
+            J(1, 2) = 0.5 * T_ramp + t;
+
+            if (stopAtTarget)
+            {
+                // Add derivatives wrt T_r
+                J(0, 3) = 0.5 * (vxi - vxf);
+                J(1, 3) = 0.5 * (vyi - vyf);
+            }
+            else
+            {
+                // make the Jacobian not to
+                // depend on T_r so we used
+                // the prescribed one:
+                q[3]    = T_ramp_max;
+                J(3, 3) = 1;
+            }
         }
         else
         {
-            J(0, 0) = vxi + q[0] * TR_ * (q[1] - vxi);
-            J(0, 1) = TR2_ * q[0] * q[0];
-            J(0, 2) = 0.0;
-            J(1, 0) = vyi + q[0] * TR_ * (q[2] - vyi);
-            J(1, 1) = 0.0;
-            J(1, 2) = TR2_ * q[0] * q[0];
+            // t<T_ramp case:
+            // --------------------
+            J(0, 0) = vxi + t * TR_ * (vxf - vxi);
+            J(0, 1) = TR2_ * t * t;
+            // J(0, 2) = 0.0;
+            J(1, 0) = vyi + t * TR_ * (vyf - vyi);
+            // J(1, 1) = 0.0;
+            J(1, 2) = TR2_ * t * t;
+            if (stopAtTarget)
+            {
+                // Add derivatives wrt T_r
+                J(0, 3) = -t * t * TR2_ * (vxf - vxi);
+                J(1, 3) = -t * t * TR2_ * (vyf - vyi);
+            }
+            else
+            {
+                // make the Jacobian not to
+                // depend on T_r so we used
+                // the prescribed one:
+                q[3]    = T_ramp_max;
+                J(3, 3) = 1;
+            }
         }
-        J(2, 0) = 0.0;
-        J(2, 1) = 2 * q[1];
-        J(2, 2) = 2 * q[2];
+        if (stopAtTarget)
+        {
+            // Impose "t=T_r"
+            J(3, 0) = -1;
+            J(3, 3) = 1;
+        }
 
-        mrpt::math::CVectorFixed<double, 3> q_incr = J.lu_solve(r);
+        J(2, 1) = 2 * vxf;
+        J(2, 2) = 2 * vyf;
+
+        mrpt::math::CVectorFixed<double, 4> q_incr = J.lu_solve(r);
         q -= q_incr;
 
         err_mod   = r.norm();
         sol_found = (err_mod < err_threshold);
     }
 
+#if 0
+    std::cout << "[inverseWS2TP] ws=(" << x << "," << y << ")"
+              << " finalErr: " << err_mod << " q=" << q.inMatlabFormat()
+              << "\n";
+#endif
+
     if (sol_found && q[0] >= .0)
     {
         const double alpha = atan2(q[2], q[1]);
-        out_k = CParameterizedTrajectoryGenerator::alpha2index(alpha);
+        out_k          = CParameterizedTrajectoryGenerator::alpha2index(alpha);
+        out_T_ramp     = q[3];
+        const double t = q[0];
+        const double vxf = q[1], vyf = q[2];
 
-        const double       solved_t    = q[0];
+        const double       solved_t    = t;
         const unsigned int solved_step = solved_t / PATH_TIME_STEP;
-        const double       found_dist  = this->getPathDist(out_k, solved_step);
+        const double       found_dist =
+            internal_getPathDist(solved_step, out_T_ramp, vxf, vyf);
 
         out_d = found_dist / this->refDistance;
 
@@ -425,11 +501,13 @@ mrpt::kinematics::CVehicleVelCmd::Ptr HolonomicBlend::directionToMotionCommand(
 {
     const double dir_local = CParameterizedTrajectoryGenerator::index2alpha(k);
 
+    const auto pp = internal_params_from_dir_and_dynstate(dir_local);
+
     auto* cmd      = new mrpt::kinematics::CVehicleVelCmd_Holo();
-    cmd->vel       = internal_get_v(dir_local);
+    cmd->vel       = pp.vf;
     cmd->dir_local = dir_local;
-    cmd->ramp_time = internal_get_T_ramp(dir_local);
-    cmd->rot_speed = mrpt::signWithZero(dir_local) * internal_get_w(dir_local);
+    cmd->ramp_time = pp.T_ramp;
+    cmd->rot_speed = pp.wf;
 
     return mrpt::kinematics::CVehicleVelCmd::Ptr(cmd);
 }
@@ -455,32 +533,31 @@ size_t HolonomicBlend::getPathStepCount(uint16_t k) const
 
 mrpt::math::TPose2D HolonomicBlend::getPathPose(uint16_t k, uint32_t step) const
 {
-    const double t   = PATH_TIME_STEP * step;
-    const double dir = CParameterizedTrajectoryGenerator::index2alpha(k);
-    COMMON_PTG_DESIGN_PARAMS;
-    const double wf   = mrpt::signWithZero(dir) * this->internal_get_w(dir);
-    const double TR2_ = 1.0 / (2 * T_ramp);
+    const double t    = PATH_TIME_STEP * step;
+    const double dir  = CParameterizedTrajectoryGenerator::index2alpha(k);
+    const auto   _    = internal_params_from_dir_and_dynstate(dir);
+    const double TR2_ = 1.0 / (2 * _.T_ramp);
 
     mrpt::math::TPose2D p;
     // Translational part:
-    if (t < T_ramp)
+    if (t < _.T_ramp)
     {
-        p.x = vxi * t + t * t * TR2_ * (vxf - vxi);
-        p.y = vyi * t + t * t * TR2_ * (vyf - vyi);
+        p.x = _.vxi * t + t * t * TR2_ * (_.vxf - _.vxi);
+        p.y = _.vyi * t + t * t * TR2_ * (_.vyf - _.vyi);
     }
     else
     {
-        p.x = T_ramp * 0.5 * (vxi + vxf) + (t - T_ramp) * vxf;
-        p.y = T_ramp * 0.5 * (vyi + vyf) + (t - T_ramp) * vyf;
+        p.x = _.T_ramp * 0.5 * (_.vxi + _.vxf) + (t - _.T_ramp) * _.vxf;
+        p.y = _.T_ramp * 0.5 * (_.vyi + _.vyf) + (t - _.T_ramp) * _.vyf;
     }
 
     // Rotational part:
     const double wi = m_nav_dyn_state.curVelLocal.omega;
 
-    if (t < T_ramp)
+    if (t < _.T_ramp)
     {
         // Time required to align completed?
-        const double a = TR2_ * (wf - wi), b = (wi), c = -dir;
+        const double a = TR2_ * (_.wf - wi), b = (wi), c = -dir;
 
         // Solves equation `a*x^2 + b*x + c = 0`.
         double r1, r2;
@@ -495,28 +572,38 @@ mrpt::math::TPose2D HolonomicBlend::getPathPose(uint16_t k, uint32_t step) const
             if (t > t_solve)
                 p.phi = dir;
             else
-                p.phi = wi * t + t * t * TR2_ * (wf - wi);
+                p.phi = wi * t + t * t * TR2_ * (_.wf - wi);
         }
     }
     else
     {
         // Time required to align completed?
-        const double t_solve = (dir - T_ramp * 0.5 * (wi + wf)) / wf + T_ramp;
+        const double t_solve =
+            (dir - _.T_ramp * 0.5 * (wi + _.wf)) / _.wf + _.T_ramp;
         if (t > t_solve)
             p.phi = dir;
         else
-            p.phi = T_ramp * 0.5 * (wi + wf) + (t - T_ramp) * wf;
+            p.phi = _.T_ramp * 0.5 * (wi + _.wf) + (t - _.T_ramp) * _.wf;
     }
     return p;
 }
 
 double HolonomicBlend::getPathDist(uint16_t k, uint32_t step) const
 {
-    const double t   = PATH_TIME_STEP * step;
-    const double dir = CParameterizedTrajectoryGenerator::index2alpha(k);
+    const auto pp = internal_params_from_dir_and_dynstate(
+        CParameterizedTrajectoryGenerator::index2alpha(k));
 
-    COMMON_PTG_DESIGN_PARAMS;
+    return internal_getPathDist(step, pp.T_ramp, pp.vxf, pp.vyf);
+}
+
+double HolonomicBlend::internal_getPathDist(
+    uint32_t step, double T_ramp, double vxf, double vyf) const
+{
+    const double t    = PATH_TIME_STEP * step;
     const double TR2_ = 1.0 / (2 * T_ramp);
+
+    const double vxi = m_nav_dyn_state.curVelLocal.vx;
+    const double vyi = m_nav_dyn_state.curVelLocal.vy;
 
     const double k2 = (vxf - vxi) * TR2_;
     const double k4 = (vyf - vyi) * TR2_;
@@ -537,25 +624,24 @@ bool HolonomicBlend::getPathStepForDist(
 {
     PERFORMANCE_BENCHMARK;
 
-    const double dir = CParameterizedTrajectoryGenerator::index2alpha(k);
-    COMMON_PTG_DESIGN_PARAMS;
+    const double dir  = CParameterizedTrajectoryGenerator::index2alpha(k);
+    const auto   _    = internal_params_from_dir_and_dynstate(dir);
+    const double TR2_ = 1.0 / (2 * _.T_ramp);
 
-    const double TR2_ = 1.0 / (2 * T_ramp);
-
-    const double k2 = (vxf - vxi) * TR2_;
-    const double k4 = (vyf - vyi) * TR2_;
+    const double k2 = (_.vxf - _.vxi) * TR2_;
+    const double k4 = (_.vyf - _.vyi) * TR2_;
 
     // --------------------------------------
     // Solution within  t >= T_ramp ??
     // --------------------------------------
     const double dist_trans_T_ramp =
-        calc_trans_distance_t_below_Tramp(k2, k4, vxi, vyi, T_ramp);
+        calc_trans_distance_t_below_Tramp(k2, k4, _.vxi, _.vyi, _.T_ramp);
     double t_solved = -1;
 
     if (dist >= dist_trans_T_ramp)
     {
         // Good solution:
-        t_solved = T_ramp + (dist - dist_trans_T_ramp) / V_MAX;
+        t_solved = _.T_ramp + (dist - dist_trans_T_ramp) / V_MAX;
     }
     else
     {
@@ -575,8 +661,8 @@ bool HolonomicBlend::getPathStepForDist(
         else
         {
             const double a = ((k2 * k2) * 4.0 + (k4 * k4) * 4.0);
-            const double b = (k2 * vxi * 4.0 + k4 * vyi * 4.0);
-            const double c = (vxi * vxi + vyi * vyi);
+            const double b = (k2 * _.vxi * 4.0 + k4 * _.vyi * 4.0);
+            const double c = (_.vxi * _.vxi + _.vyi * _.vyi);
 
             // Numerically-ill case: b=c=0 (initial vel=0)
             if (std::abs(b) < eps && std::abs(c) < eps)
@@ -588,10 +674,10 @@ bool HolonomicBlend::getPathStepForDist(
             {
                 // Case 3: general case with non-linear equation:
                 // dist = (t/2 + b/(4*a))*(a*t^2 + b*t + c)^(1/2) -
-                // (b*c^(1/2))/(4*a) + (log((b/2 + a*t)/a^(1/2) + (a*t^2 + b*t +
-                // c)^(1/2))*(- b^2/4 + a*c))/(2*a^(3/2)) - (log((b +
-                // 2*a^(1/2)*c^(1/2))/(2*a^(1/2)))*(- b^2/4 + a*c))/(2*a^(3/2))
-                // dist =
+                // (b*c^(1/2))/(4*a) + (log((b/2 + a*t)/a^(1/2) + (a*t^2 +
+                // b*t + c)^(1/2))*(- b^2/4 + a*c))/(2*a^(3/2)) - (log((b +
+                // 2*a^(1/2)*c^(1/2))/(2*a^(1/2)))*(- b^2/4 +
+                // a*c))/(2*a^(3/2)) dist =
                 // (t*(1.0/2.0)+(b*(1.0/4.0))/a)*sqrt(c+b*t+a*(t*t))-(b*sqrt(c)*(1.0/4.0))/a+1.0/pow(a,3.0/2.0)*log(1.0/sqrt(a)*(b*(1.0/2.0)+a*t)+sqrt(c+b*t+a*(t*t)))*(a*c-(b*b)*(1.0/4.0))*(1.0/2.0)-1.0/pow(a,3.0/2.0)*log(1.0/sqrt(a)*(b+sqrt(a)*sqrt(c)*2.0)*(1.0/2.0))*(a*c-(b*b)*(1.0/4.0))*(1.0/2.0);
 
                 // We must solve this by iterating:
@@ -600,7 +686,7 @@ bool HolonomicBlend::getPathStepForDist(
                 //  with: f(t)=calc_trans_distance_t_below_Tramp_abc(t)
                 //  and:  f'(t) = sqrt(a*t^2+b*t+c)
 
-                t_solved = T_ramp * 0.6;  // Initial value for starting
+                t_solved = _.T_ramp * 0.6;  // Initial value for starting
                 // interation inside the valid domain
                 // of the function t=[0,T_ramp]
                 for (int iters = 0; iters < 10; iters++)
@@ -630,33 +716,33 @@ bool HolonomicBlend::getPathStepForDist(
 void HolonomicBlend::updateTPObstacleSingle(
     double ox, double oy, uint16_t k, double& tp_obstacle_k) const
 {
-    const double R   = m_robotRadius;
-    const double dir = CParameterizedTrajectoryGenerator::index2alpha(k);
-    COMMON_PTG_DESIGN_PARAMS;
-
-    const double TR2_            = 1.0 / (2 * T_ramp);
-    const double TR_2            = T_ramp * 0.5;
-    const double T_ramp_thres099 = T_ramp * 0.99;
-    const double T_ramp_thres101 = T_ramp * 1.01;
+    const double R    = m_robotRadius;
+    const double dir  = CParameterizedTrajectoryGenerator::index2alpha(k);
+    const auto   _    = internal_params_from_dir_and_dynstate(dir);
+    const double TR2_ = 1.0 / (2 * _.T_ramp);
+    const double TR_2 = _.T_ramp * 0.5;
+    const double T_ramp_thres099 = _.T_ramp * 0.99;
+    const double T_ramp_thres101 = _.T_ramp * 1.01;
 
     double sol_t = -1.0;  // candidate solution for shortest time to collision
 
     // Note: It's tempting to try to solve first for t>T_ramp because it has
     // simpler (faster) equations,
-    // but there are cases in which we will have valid collisions for t>T_ramp
-    // but other valid ones
-    // for t<T_ramp as well, so the only SAFE way to detect shortest distances
-    // is to check over increasing values of "t".
+    // but there are cases in which we will have valid collisions for
+    // t>T_ramp but other valid ones for t<T_ramp as well, so the only SAFE
+    // way to detect shortest distances is to check over increasing values
+    // of "t".
 
     // Try to solve first for t<T_ramp:
-    const double k2 = (vxf - vxi) * TR2_;
-    const double k4 = (vyf - vyi) * TR2_;
+    const double k2 = (_.vxf - _.vxi) * TR2_;
+    const double k4 = (_.vyf - _.vyi) * TR2_;
 
     // equation: a*t^4 + b*t^3 + c*t^2 + d*t + e = 0
     const double a = (k2 * k2 + k4 * k4);
-    const double b = (k2 * vxi * 2.0 + k4 * vyi * 2.0);
-    const double c = -(k2 * ox * 2.0 + k4 * oy * 2.0 - vxi * vxi - vyi * vyi);
-    const double d = -(ox * vxi * 2.0 + oy * vyi * 2.0);
+    const double b = (k2 * _.vxi * 2.0 + k4 * _.vyi * 2.0);
+    const double c =
+        -(k2 * ox * 2.0 + k4 * oy * 2.0 - _.vxi * _.vxi - _.vyi * _.vyi);
+    const double d = -(ox * _.vxi * 2.0 + oy * _.vyi * 2.0);
     const double e = -R * R + ox * ox + oy * oy;
 
     double roots[4];
@@ -695,7 +781,7 @@ void HolonomicBlend::updateTPObstacleSingle(
     {
         if (roots[i] == roots[i] &&  // not NaN
             std::isfinite(roots[i]) && roots[i] >= .0 &&
-            roots[i] <= T_ramp * 1.01)
+            roots[i] <= _.T_ramp * 1.01)
         {
             if (sol_t < 0)
                 sol_t = roots[i];
@@ -710,11 +796,11 @@ void HolonomicBlend::updateTPObstacleSingle(
         // Now, attempt to solve with the equations for t>T_ramp:
         sol_t = -1.0;
 
-        const double c1 = TR_2 * (vxi - vxf) - ox;
-        const double c2 = TR_2 * (vyi - vyf) - oy;
+        const double c1 = TR_2 * (_.vxi - _.vxf) - ox;
+        const double c2 = TR_2 * (_.vyi - _.vyf) - oy;
 
-        const double xa = vf_mod * vf_mod;
-        const double xb = 2 * (c1 * vxf + c2 * vyf);
+        const double xa = _.vf * _.vf;
+        const double xb = 2 * (c1 * _.vxf + c2 * _.vyf);
         const double xc = c1 * c1 + c2 * c2 - R * R;
 
         const double discr = xb * xb - 4 * xa * xc;
@@ -724,11 +810,11 @@ void HolonomicBlend::updateTPObstacleSingle(
             const double sol_t1 = (-xb - sqrt(discr)) / (2 * xa);
 
             // Identify the shortest valid collision time:
-            if (sol_t0 < T_ramp && sol_t1 < T_ramp)
+            if (sol_t0 < _.T_ramp && sol_t1 < _.T_ramp)
                 sol_t = -1.0;
-            else if (sol_t0 < T_ramp && sol_t1 >= T_ramp_thres099)
+            else if (sol_t0 < _.T_ramp && sol_t1 >= T_ramp_thres099)
                 sol_t = sol_t1;
-            else if (sol_t1 < T_ramp && sol_t0 >= T_ramp_thres099)
+            else if (sol_t1 < _.T_ramp && sol_t0 >= T_ramp_thres099)
                 sol_t = sol_t0;
             else if (sol_t1 >= T_ramp_thres099 && sol_t0 >= T_ramp_thres099)
                 sol_t = std::min(sol_t0, sol_t1);
@@ -740,11 +826,11 @@ void HolonomicBlend::updateTPObstacleSingle(
     // Compute the transversed distance:
     double dist;
 
-    if (sol_t < T_ramp)
-        dist = calc_trans_distance_t_below_Tramp(k2, k4, vxi, vyi, sol_t);
+    if (sol_t < _.T_ramp)
+        dist = calc_trans_distance_t_below_Tramp(k2, k4, _.vxi, _.vyi, sol_t);
     else
-        dist = (sol_t - T_ramp) * V_MAX +
-               calc_trans_distance_t_below_Tramp(k2, k4, vxi, vyi, T_ramp);
+        dist = (sol_t - _.T_ramp) * V_MAX + calc_trans_distance_t_below_Tramp(
+                                                k2, k4, _.vxi, _.vyi, _.T_ramp);
 
     // Store in the output variable:
     internal_TPObsDistancePostprocess(ox, oy, dist, tp_obstacle_k);
@@ -821,34 +907,11 @@ void HolonomicBlend::internal_construct_exprs()
 
     m_expr_v.register_symbol_table(vars);
     m_expr_w.register_symbol_table(vars);
-    m_expr_T_ramp.register_symbol_table(vars);
 
     // Default expressions (can be overloaded by values in a config file)
     expr_V      = "V_MAX";
     expr_W      = "W_MAX";
     expr_T_ramp = "T_ramp_max";
-}
-
-double HolonomicBlend::internal_get_v(const double dir) const
-{
-    auto lck = mrpt::lockHelper(m_expr_mtx);
-
-    const_cast<double&>(m_expr_dir) = dir;
-    return std::abs(m_expr_v.eval());
-}
-double HolonomicBlend::internal_get_w(const double dir) const
-{
-    auto lck = mrpt::lockHelper(m_expr_mtx);
-
-    const_cast<double&>(m_expr_dir) = dir;
-    return std::abs(m_expr_w.eval());
-}
-double HolonomicBlend::internal_get_T_ramp(const double dir) const
-{
-    auto lck = mrpt::lockHelper(m_expr_mtx);
-
-    const_cast<double&>(m_expr_dir) = dir;
-    return m_expr_T_ramp.eval();
 }
 
 void HolonomicBlend::internal_initialize(
@@ -865,11 +928,43 @@ void HolonomicBlend::internal_initialize(
     // Compile user-given expressions:
     m_expr_v.compile(expr_V, {}, "expr_V");
     m_expr_w.compile(expr_W, {}, "expr_w");
-    m_expr_T_ramp.compile(expr_T_ramp, {}, "expr_T_ramp");
 
 #ifdef DO_PERFORMANCE_BENCHMARK
-    tl.dumpAllStats();
+//    tl.dumpAllStats();
 #endif
 
     m_pathStepCountCache.clear();
+}
+
+HolonomicBlend::InternalParams
+    HolonomicBlend::internal_params_from_dir_and_dynstate(
+        const double dir) const
+{
+    InternalParams p;
+
+    // Default:
+    p.T_ramp = T_ramp_max;
+
+#if 0
+    // Computes T_ramp, including the case of stop at target:
+    const auto& trg     = m_nav_dyn_state.relTarget;
+    int         dummy_k = 0;
+    double      dummy_d = 0;
+    if (trg.x != 0 && trg.y != 0 &&
+        CParameterizedTrajectoryGenerator::alpha2index(atan2(trg.y, trg.x)) ==
+            CParameterizedTrajectoryGenerator::alpha2index(dir))
+    { inverseMap_WS2TP_with_Tramp(trg.x, trg.y, dummy_k, dummy_d, p.T_ramp); }
+#endif
+
+    auto lck = mrpt::lockHelper(m_expr_mtx);
+
+    const_cast<double&>(m_expr_dir) = dir;
+    p.vf                            = std::abs(m_expr_v.eval());
+    p.wf  = mrpt::signWithZero(dir) * std::abs(m_expr_w.eval());
+    p.vxi = m_nav_dyn_state.curVelLocal.vx;
+    p.vyi = m_nav_dyn_state.curVelLocal.vy;
+    p.vxf = p.vf * cos(dir);
+    p.vyf = p.vf * sin(dir);
+
+    return p;
 }
