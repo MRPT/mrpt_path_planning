@@ -508,9 +508,11 @@ void NavEngine::check_immediate_collision()
 
         config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
 
+#if 0
         // Re-plan from scratch:
         _.pathPlannerTargetWpIdx.reset();
         _.active_plan_reset();
+#endif
     }
 }
 
