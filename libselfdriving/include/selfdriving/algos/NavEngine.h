@@ -27,6 +27,8 @@
 
 namespace selfdriving
 {
+using namespace mrpt;
+
 /** The different statuses for the navigation system. */
 enum class NavStatus : uint8_t
 {
@@ -137,10 +139,13 @@ class NavEngine : public mrpt::system::COutputLogger
         double planner_bbox_margin = 4.0;
 
         double enqueuedActionsToleranceXY       = 0.05;
-        double enqueuedActionsTolerancePhi      = mrpt::DEG2RAD(2.0);
+        double enqueuedActionsTolerancePhi      = 2.0_deg;
         double enqueuedActionsTimeoutMultiplier = 1.3;
 
         double lookAheadImmediateCollisionChecking = 1.0;  // [s]
+
+        double maxDistanceForTargetApproach        = 1.5;  // [m]
+        double maxRelativeHeadingForTargetApproach = 180.0_deg;  // [rad]
 
         bool generateNavLogFiles = false;
 
@@ -339,6 +344,37 @@ class NavEngine : public mrpt::system::COutputLogger
     // Argument is a copy instead of a const-ref intentionally.
     PathPlannerOutput path_planner_function(PathPlannerInput ppi);
 
+    struct AlignStatus
+    {
+        bool is_aligning() const { return isAligning_; }
+        bool is_aligning_after_overshoot() const { return isAfterOvershoot_; }
+        mrpt::math::TPoint2D target_waypoint{.0, .0};
+        void                 reset() { *this = AlignStatus(); }
+        double               timeSinceLast() const
+        {
+            if (timeLastAlignCmd_ == INVALID_TIMESTAMP)
+                return 1e6;
+            else
+                return mrpt::system::timeDifference(
+                    timeLastAlignCmd_, mrpt::system::now());
+        }
+        void setAsAligningNow()
+        {
+            isAligning_       = true;
+            timeLastAlignCmd_ = mrpt::system::now();
+        }
+        void setAsAligningNowAfterOvershoot()
+        {
+            setAsAligningNow();
+            isAfterOvershoot_ = true;
+        }
+
+       private:
+        mrpt::system::TTimeStamp timeLastAlignCmd_ = INVALID_TIMESTAMP;
+        bool                     isAligning_       = false;
+        bool                     isAfterOvershoot_ = false;
+    };
+
     /** Everything that should be cleared upon a new navigation command. */
     struct CurrentNavInternalState
     {
@@ -422,6 +458,9 @@ class NavEngine : public mrpt::system::COutputLogger
 
         /** @} */
 
+        /// Status
+        AlignStatus alignAtWpStatus_;
+
         // int  counterCheckTargetIsBlocked_ = 0;
 
         /** For sending an alarm (error event) when it seems that we are not
@@ -465,6 +504,40 @@ class NavEngine : public mrpt::system::COutputLogger
         const waypoint_idx_t             target,
         const selfdriving::SE2_KinState& startingFrom,
         const std::optional<TNodeID>&    startingFromNodeID = std::nullopt);
+
+    /** Special behavior: if we are about to reach a WP with a stop condition,
+     *  handle it specially if there's an obvious free path towards it.
+     *  \return true if the special motion has been generated (or it's under
+     *          execution). false if the regular path plan should go on.
+     *  \note Call from within send_next_motion_cmd_or_nop()
+     */
+    bool handle_reach_wp_and_stop();
+
+    struct AboutToReachWpInfo
+    {
+        AboutToReachWpInfo() = default;
+
+        bool   aboutToReach       = false;
+        double distanceToWaypoint = std::numeric_limits<double>::max();
+    };
+
+    /**
+     * @brief Checks whether the robot is within `maxDistanceForTargetApproach`
+     * meters of the next non-skippable waypoint. This does not check for
+     * potential obstacles, just the physical nearness.
+     * @return See AboutToReachWpInfo.
+     */
+    AboutToReachWpInfo internal_check_about_to_reach_stop_wp();
+
+    struct ApproachManeuverOutput
+    {
+        bool freePathFound        = false;
+        bool targetOvershoot      = false;
+        bool skippedDueToAligning = false;
+    };
+
+    ApproachManeuverOutput internal_approach_maneuver(
+        const double VEL_MAX_RATIO);
 
 #if 0
     bool checkHasReachedTarget(const double targetDist) const override;

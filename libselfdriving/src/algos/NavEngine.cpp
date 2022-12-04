@@ -40,6 +40,9 @@ void NavEngine::Configuration::loadFrom(const mrpt::containers::yaml& c)
     MCP_LOAD_REQ(c, enqueuedActionsTimeoutMultiplier);
     MCP_LOAD_REQ(c, lookAheadImmediateCollisionChecking);
 
+    MCP_LOAD_REQ(c, maxDistanceForTargetApproach);
+    MCP_LOAD_REQ_DEG(c, maxRelativeHeadingForTargetApproach);
+
     MCP_LOAD_OPT(c, generateNavLogFiles);
     MCP_LOAD_OPT(c, navLogFilesPrefix);
 }
@@ -52,6 +55,10 @@ mrpt::containers::yaml NavEngine::Configuration::saveTo() const
     MCP_SAVE(c, enqueuedActionsToleranceXY);
     MCP_SAVE_DEG(c, enqueuedActionsTolerancePhi);
     MCP_SAVE(c, enqueuedActionsTimeoutMultiplier);
+
+    MCP_SAVE(c, maxDistanceForTargetApproach);
+    MCP_SAVE_DEG(c, maxRelativeHeadingForTargetApproach);
+
     MCP_SAVE(c, lookAheadImmediateCollisionChecking);
     MCP_SAVE(c, generateNavLogFiles);
     MCP_SAVE(c, navLogFilesPrefix);
@@ -1009,6 +1016,9 @@ void NavEngine::send_next_motion_cmd_or_nop()
 
     auto& _ = innerState_;
 
+    // Special motions near a final waypoint?
+    if (handle_reach_wp_and_stop()) return;
+
     // No active path planning?
     if (_.activePlanPath.empty()) return;
 
@@ -1703,4 +1713,80 @@ void NavEngine::internal_write_to_navlog_file()
     catch (const std::exception& e)
     {
     }
+}
+
+bool NavEngine::handle_reach_wp_and_stop()
+{
+    const auto atrw = internal_check_about_to_reach_stop_wp();
+
+    MRPT_LOG_DEBUG_STREAM(
+        "[handle_reach_wp_and_stop] aboutToReach="
+        << (atrw.aboutToReach ? "true" : "false")
+        << " distanceToWaypoint=" << atrw.distanceToWaypoint);
+
+    if (!atrw.aboutToReach)
+    {
+        // Reset the flag for approaching waypoint:
+        innerState_.alignAtWpStatus_.reset();
+
+        return false;  // go on as normal
+    }
+
+    const double VEL_MAX_RATIO = mrpt::saturate_val(
+        atrw.distanceToWaypoint / (2.0 * config_.maxDistanceForTargetApproach),
+        0.05, 0.5);
+
+    const auto bo = internal_approach_maneuver(VEL_MAX_RATIO);
+
+    bool approachOk =
+        bo.freePathFound || bo.targetOvershoot || bo.skippedDueToAligning;
+
+    MRPT_LOG_DEBUG_FMT(
+        "Regular nav step overriden with special maneuver towards target. "
+        "targetDist=%f approachOk=%s",
+        atrw.distanceToWaypoint, approachOk ? "YES" : "NO");
+
+    return approachOk;
+}
+
+// Called from internal_rnav_step()
+NavEngine::AboutToReachWpInfo NavEngine::internal_check_about_to_reach_stop_wp()
+{
+    AboutToReachWpInfo ret;
+
+    auto& _ = innerState_;
+
+    // no plan or no active target wp?
+    if (_.waypointNavStatus.waypoints.empty() ||
+        !_.pathPlannerTargetWpIdx.has_value())
+        return ret;
+
+    const auto& wps = _.waypointNavStatus.waypoints;
+
+    // Get SE(2) (x,y,phi) relative pose of next target with respect to the
+    // current robot pose:
+    const mrpt::math::TPose2D nextTargetWrtRobot =
+        wps.at(*_.pathPlannerTargetWpIdx).targetAsPose() -
+        lastVehicleLocalization_.pose;
+
+    ret.distanceToWaypoint = nextTargetWrtRobot.norm();
+
+    if (ret.distanceToWaypoint < config_.maxDistanceForTargetApproach &&
+        std::abs(mrpt::math::wrapToPi(nextTargetWrtRobot.phi)) <
+            config_.maxRelativeHeadingForTargetApproach)
+    {  // yes:
+        ret.aboutToReach = true;
+    }
+
+    return ret;
+}
+
+NavEngine::ApproachManeuverOutput NavEngine::internal_approach_maneuver(
+    const double VEL_MAX_RATIO)
+{
+    ApproachManeuverOutput amo;
+
+    MRPT_TODO("continue!");
+
+    return amo;
 }

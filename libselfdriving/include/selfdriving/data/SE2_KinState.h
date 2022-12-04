@@ -12,8 +12,18 @@
 
 #include <variant>
 
+// Include the "_deg" literal from mrpt:
+#include <mrpt/core/bits_math.h>  // _deg literal
+#include <mrpt/version.h>
+
 namespace selfdriving
 {
+#if MRPT_VERSION >= 0x258
+using namespace mrpt::literals;  // "_deg" literal
+#else
+using namespace mrpt;  // backwards compat
+#endif
+
 /** Variant wrapper holding a SE(2) pose, a R(2) (2D) point, or none (default).
  * It is used to provide a goal or waypoint state, when the heading is not
  * important and the user only wants to specify the (x,y) coordinates of the 2D

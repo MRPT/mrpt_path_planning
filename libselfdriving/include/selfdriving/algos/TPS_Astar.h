@@ -28,7 +28,7 @@ struct TPS_Astar_Parameters
     static TPS_Astar_Parameters FromYAML(const mrpt::containers::yaml& c);
 
     double grid_resolution_xy  = 0.20;
-    double grid_resolution_yaw = mrpt::DEG2RAD(5.0);
+    double grid_resolution_yaw = 5.0_deg;
 
     double SE2_metricAngleWeight = 1.0;
 

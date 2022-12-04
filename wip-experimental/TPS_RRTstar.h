@@ -25,8 +25,8 @@ struct TPS_RRTstar_Parameters
     bool   drawInTPS           = true;  //!< Draw samples in TPS vs Euclidean
     double drawBiasTowardsGoal = 0.1;
 
-    double headingToleranceGenerate = mrpt::DEG2RAD(90.0);
-    double headingToleranceMetric   = mrpt::DEG2RAD(2.0);
+    double headingToleranceGenerate = 90.0_deg;
+    double headingToleranceMetric   = 2.0_deg;
     double metricDistanceEpsilon    = 0.01;
 
     double SE2_metricAngleWeight = 1.0;
