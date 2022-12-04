@@ -36,24 +36,33 @@ struct Waypoint
         std::optional<double> target_heading_ = std::nullopt,
         double                speed_ratio_    = 1.0);
 
-    /** [Must be set by the user] Coordinates of desired target location
+    /** [Mandatory] Coordinates of desired target location
      * (world/global coordinates).
-     * \sa target_heading */
+     * \sa target_heading, targetAsPose()
+     */
     mrpt::math::TPoint2D target{INVALID_NUM, INVALID_NUM};
 
-    /** [Default=any heading] Optionally, set to the desired orientation
-     * [radians]
-     * of the robot at this waypoint. Some navigator implementations may ignore
-     * this preferred heading anyway, read the docs of each implementation to
-     * find it out. */
+    /** Set to the optional desired orientation [radians] of the robot at this
+     * waypoint. (Default: none=any heading).
+     *
+     * Some navigator implementations may ignore this preferred heading,
+     * read the docs of each implementation to find it out.
+     *
+     * \sa targetAsPose()
+     */
     std::optional<double> targetHeading;
 
-    /** (Default="map") Frame ID in which target is given. Optional, use only
-     * for submapping applications. */
+    /** Returns the target as a SE(2) pose, with its correct heading if
+     * targetHeading is defined, or heading=0 otherwise.
+     */
+    mrpt::math::TPose2D targetAsPose() const;
+
+    /** (Default="map") Frame ID in which target is given. Optional, use
+     * only for submapping applications. */
     std::string targetFrameId = "map";
 
-    /** [Must be set by the user] How close should the robot get to this
-     * waypoint for it to be considered reached. */
+    /** [Mandatory] How close should the robot get to this waypoint for it to be
+     * considered reached. */
     double allowedDistance = INVALID_NUM;
 
     /** (Default=1.0) Desired robot speed at the target, as a ratio of the full
@@ -69,8 +78,8 @@ struct Waypoint
      * in the sequence if it determines that it is easier to skip this one
      * (e.g. it seems blocked by dynamic obstacles).
      * This value is ignored for the last waypoint in a sequence, since it is
-     * always considered to be the
-     * ultimate goal and hence not subject to be skipped.
+     * always considered to be the ultimate goal and hence not subject to be
+     * skipped.
      *
      * \sa preferNotToSkip
      */
@@ -216,9 +225,6 @@ struct WaypointStatusSequence
 
     /** Robot pose at last time step (has INVALID_NUM fields upon
      * initialization) */
-    // delete?
-    // mrpt::math::TPose2D last_robot_pose{Waypoint::INVALID_NUM,
-    // Waypoint::INVALID_NUM, Waypoint::INVALID_NUM};
 
     /** Ctor with default values */
     /** Gets navigation params as a human-readable format */

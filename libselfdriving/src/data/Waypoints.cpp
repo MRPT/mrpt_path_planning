@@ -35,6 +35,13 @@ bool Waypoint::isValid() const
            (allowedDistance != INVALID_NUM);
 }
 
+mrpt::math::TPose2D Waypoint::targetAsPose() const
+{
+    return {
+        target.x, target.y,
+        targetHeading.has_value() ? targetHeading.value() : .0};
+}
+
 std::string Waypoint::getAsText() const
 {
     std::string s;
