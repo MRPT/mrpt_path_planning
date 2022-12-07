@@ -65,6 +65,11 @@ TCLAP::ValueArg<std::string> argVehicleInterface(
     "selfdriving::MVSIM_VehicleInterface",
     "Class name to use for vehicle interface", cmd);
 
+TCLAP::ValueArg<std::string> argTargetApproachController(
+    "", "approach-controller-class",
+    "Class name to use as target approach controller (Default: none)", false,
+    "", "Class name to use for approach controller", cmd);
+
 TCLAP::ValueArg<std::string> arg_ptgs_file(
     "p", "ptg-config", "Input .ini file with PTG definitions.", true, "",
     "ptgs.ini", cmd);
@@ -257,11 +262,10 @@ void prepare_selfdriving(mvsim::World& world)
     // Vehicle interface:
     if (argVehicleInterface.isSet())
     {
-        auto obj = mrpt::rtti::classFactory(argVehicleInterface.getValue());
+        const auto name = argVehicleInterface.getValue();
+        auto       obj  = mrpt::rtti::classFactory(name);
         ASSERTMSG_(
-            obj, mrpt::format(
-                     "Unregistered class name '%s'",
-                     argVehicleInterface.getValue().c_str()));
+            obj, mrpt::format("Unregistered class name '%s'", name.c_str()));
 
         sd->navigator.config_.vehicleMotionInterface =
             std::dynamic_pointer_cast<selfdriving::VehicleMotionInterface>(obj);
@@ -270,7 +274,7 @@ void prepare_selfdriving(mvsim::World& world)
             mrpt::format(
                 "Class '%s' seems not to implement the expected interface "
                 "'selfdriving::VehicleMotionInterface'",
-                argVehicleInterface.getValue().c_str()));
+                name.c_str()));
 
         sd->navigator.config_.vehicleMotionInterface->setMinLoggingLevel(
             world.getMinLoggingLevel());
@@ -286,6 +290,28 @@ void prepare_selfdriving(mvsim::World& world)
 
         // connect now:
         sim->connect();
+    }
+
+    // target approach controller:
+    if (argTargetApproachController.isSet())
+    {
+        const auto name = argTargetApproachController.getValue();
+        auto       obj  = mrpt::rtti::classFactory(name);
+        ASSERTMSG_(
+            obj, mrpt::format("Unregistered class name '%s'", name.c_str()));
+
+        sd->navigator.config_.targetApproachController =
+            std::dynamic_pointer_cast<selfdriving::TargetApproachController>(
+                obj);
+        ASSERTMSG_(
+            sd->navigator.config_.targetApproachController,
+            mrpt::format(
+                "Class '%s' seems not to implement the expected interface "
+                "'selfdriving::TargetApproachController'",
+                name.c_str()));
+
+        sd->navigator.config_.targetApproachController->setMinLoggingLevel(
+            world.getMinLoggingLevel());
     }
 
     if (arg_planner_yaml_file.isSet())

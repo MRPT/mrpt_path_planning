@@ -1018,7 +1018,7 @@ void NavEngine::send_next_motion_cmd_or_nop()
     auto& _ = innerState_;
 
     // Special motions near a final waypoint?
-    if (handle_reach_wp_and_stop()) return;
+    if (approach_target_controller()) return;
 
     // No active path planning?
     if (_.activePlanPath.empty()) return;
@@ -1716,34 +1716,42 @@ void NavEngine::internal_write_to_navlog_file()
     }
 }
 
-bool NavEngine::handle_reach_wp_and_stop()
+bool NavEngine::approach_target_controller()
 {
+    auto& _ = innerState_;
+
     const auto atrw = internal_check_about_to_reach_stop_wp();
 
     MRPT_LOG_DEBUG_STREAM(
-        "[handle_reach_wp_and_stop] aboutToReach="
+        "[approach_target_controller] aboutToReach="
         << (atrw.aboutToReach ? "true" : "false")
         << " distanceToWaypoint=" << atrw.distanceToWaypoint);
 
     if (!atrw.aboutToReach)
     {
-        // Reset the flag for approaching waypoint:
-        innerState_.alignAtWpStatus_.reset();
+        // Reset statuses for approaching algorithm:
+        if (config_.targetApproachController)
+            config_.targetApproachController->reset_state();
 
-        return false;  // go on as normal
+        // go on as normal
+        return false;
     }
 
-    const double VEL_MAX_RATIO = mrpt::saturate_val(
-        atrw.distanceToWaypoint / (2.0 * config_.maxDistanceForTargetApproach),
-        0.05, 0.5);
+    // No user-defined controller? -> skip the rest of this step
+    if (!config_.targetApproachController) return false;
 
-    const auto bo = internal_approach_maneuver(VEL_MAX_RATIO);
+    const auto& wps = _.waypointNavStatus.waypoints;
+    const auto& wp  = wps.at(*_.pathPlannerTargetWpIdx);
 
-    bool approachOk =
-        bo.freePathFound || bo.targetOvershoot || bo.skippedDueToAligning;
+    TargetApproachInput tacIn;
+    tacIn.target = wp;
 
-    MRPT_LOG_DEBUG_FMT(
-        "Regular nav step overriden with special maneuver towards target. "
+    const auto out = config_.targetApproachController->execute(tacIn);
+
+    bool approachOk = out.handled;
+
+    MRPT_LOG_INFO_FMT(
+        "Regular nav step overriden with special controller towards target. "
         "targetDist=%f approachOk=%s",
         atrw.distanceToWaypoint, approachOk ? "YES" : "NO");
 
@@ -1763,14 +1771,21 @@ NavEngine::AboutToReachWpInfo NavEngine::internal_check_about_to_reach_stop_wp()
         return ret;
 
     const auto& wps = _.waypointNavStatus.waypoints;
+    const auto& wp  = wps.at(*_.pathPlannerTargetWpIdx);
 
     // Get SE(2) (x,y,phi) relative pose of next target with respect to the
     // current robot pose:
     const mrpt::math::TPose2D nextTargetWrtRobot =
-        wps.at(*_.pathPlannerTargetWpIdx).targetAsPose() -
-        lastVehicleLocalization_.pose;
+        wp.targetAsPose() - lastVehicleLocalization_.pose;
 
     ret.distanceToWaypoint = nextTargetWrtRobot.norm();
+
+    // If the waypoint is not a reach-and-stop one, ignore special behaviors:
+    if (wp.speedRatio > 0)
+    {
+        // Regular, non-stop waypoint. Do nothing especial.
+        return ret;
+    }
 
     if (ret.distanceToWaypoint < config_.maxDistanceForTargetApproach &&
         std::abs(mrpt::math::wrapToPi(nextTargetWrtRobot.phi)) <
@@ -1780,14 +1795,4 @@ NavEngine::AboutToReachWpInfo NavEngine::internal_check_about_to_reach_stop_wp()
     }
 
     return ret;
-}
-
-NavEngine::ApproachManeuverOutput NavEngine::internal_approach_maneuver(
-    const double VEL_MAX_RATIO)
-{
-    ApproachManeuverOutput amo;
-
-    MRPT_TODO("continue!");
-
-    return amo;
 }
