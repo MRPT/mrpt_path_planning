@@ -20,6 +20,7 @@
 #include <selfdriving/data/TrajectoriesAndRobotShape.h>
 #include <selfdriving/data/Waypoints.h>
 #include <selfdriving/interfaces/ObstacleSource.h>
+#include <selfdriving/interfaces/TargetApproachController.h>
 #include <selfdriving/interfaces/VehicleMotionInterface.h>
 
 #include <functional>
@@ -106,15 +107,16 @@ class NavEngine : public mrpt::system::COutputLogger
     {
         Configuration() = default;
 
-        /** @name Mandatory configuration fields; must fill before initialize()
+        /** @name Main configuration fields; must fill before initialize()
          *  @{ */
         VehicleMotionInterface::Ptr vehicleMotionInterface;
 
-        ObstacleSource::Ptr globalMapObstacleSource;
-        ObstacleSource::Ptr localSensedObstacleSource;
+        /** Having at least one of these is mandatory */
+        ObstacleSource::Ptr globalMapObstacleSource, localSensedObstacleSource;
 
         TrajectoriesAndRobotShape ptgs;
 
+        TargetApproachController::Ptr targetApproachController;
         /** @} */
 
         /** @name Parameters
@@ -134,8 +136,8 @@ class NavEngine : public mrpt::system::COutputLogger
 #endif
 
         /** (Default=4.0) Hoy many meters to add at each side
-         * (up,down,left,right) of the bbox enclosing the starting and goal pose
-         * for each individual call to the A* planner. */
+         * (up,down,left,right) of the bbox enclosing the starting and goal
+         * pose for each individual call to the A* planner. */
         double planner_bbox_margin = 4.0;
 
         double enqueuedActionsToleranceXY       = 0.05;
@@ -458,11 +460,6 @@ class NavEngine : public mrpt::system::COutputLogger
 
         /** @} */
 
-        /// Status
-        AlignStatus alignAtWpStatus_;
-
-        // int  counterCheckTargetIsBlocked_ = 0;
-
         /** For sending an alarm (error event) when it seems that we are not
          * approaching toward the target in a while... */
         double badNavAlarmMinDistTarget_ = std::numeric_limits<double>::max();
@@ -511,7 +508,7 @@ class NavEngine : public mrpt::system::COutputLogger
      *          execution). false if the regular path plan should go on.
      *  \note Call from within send_next_motion_cmd_or_nop()
      */
-    bool handle_reach_wp_and_stop();
+    bool approach_target_controller();
 
     struct AboutToReachWpInfo
     {
@@ -528,16 +525,6 @@ class NavEngine : public mrpt::system::COutputLogger
      * @return See AboutToReachWpInfo.
      */
     AboutToReachWpInfo internal_check_about_to_reach_stop_wp();
-
-    struct ApproachManeuverOutput
-    {
-        bool freePathFound        = false;
-        bool targetOvershoot      = false;
-        bool skippedDueToAligning = false;
-    };
-
-    ApproachManeuverOutput internal_approach_maneuver(
-        const double VEL_MAX_RATIO);
 
 #if 0
     bool checkHasReachedTarget(const double targetDist) const override;

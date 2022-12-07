@@ -8,6 +8,7 @@
 #include <selfdriving/algos/CostEvaluatorCostMap.h>
 #include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
 #include <selfdriving/algos/TPS_Astar.h>
+#include <selfdriving/interfaces/TargetApproachController.h>
 #include <selfdriving/interfaces/VehicleMotionInterface.h>
 #include <selfdriving/ptgs/HolonomicBlend.h>
 
@@ -27,6 +28,7 @@ MRPT_INITIALIZER(selfdriving_register)
 
     // Interfaces:
     registerClass(CLASS_ID(VehicleMotionInterface));
+    registerClass(CLASS_ID(TargetApproachController));
 
     // PTGs:
     registerClass(CLASS_ID(ptg::HolonomicBlend));
