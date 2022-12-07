@@ -73,7 +73,8 @@ void NavEngine::initialize()
 
     // Check that config_ holds all the required fields:
     ASSERT_(config_.vehicleMotionInterface);
-    ASSERT_(config_.globalMapObstacleSource);
+    ASSERT_(
+        config_.globalMapObstacleSource || config_.localSensedObstacleSource);
     ASSERT_(config_.ptgs.initialized());
     ASSERT_(!config_.ptgs.ptgs.empty());
 
