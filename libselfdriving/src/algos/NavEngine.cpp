@@ -1744,7 +1744,14 @@ bool NavEngine::approach_target_controller()
     const auto& wp  = wps.at(*_.pathPlannerTargetWpIdx);
 
     TargetApproachInput tacIn;
-    tacIn.target = wp;
+    tacIn.speedLimits = innerState_.absoluteSpeedLimits;
+    tacIn.vls         = lastVehicleLocalization_;
+    tacIn.vos         = lastVehicleOdometry_;
+    tacIn.target      = wp;
+    if (*_.pathPlannerTargetWpIdx >= 1)
+        tacIn.previous = wps.at(*_.pathPlannerTargetWpIdx - 1);
+    tacIn.localSensedObstacleSource = config_.localSensedObstacleSource;
+    tacIn.vehicleMotionInterface    = config_.vehicleMotionInterface;
 
     const auto out = config_.targetApproachController->execute(tacIn);
 
@@ -1795,4 +1802,12 @@ NavEngine::AboutToReachWpInfo NavEngine::internal_check_about_to_reach_stop_wp()
     }
 
     return ret;
+}
+
+void NavEngine::absoluteSpeedLimits(
+    const mrpt::kinematics::CVehicleVelCmd::TVelCmdParams& newLimits)
+{
+    // TODO: anything else with current under-execution motion? Abort and
+    // replan?
+    innerState_.absoluteSpeedLimits = newLimits;
 }

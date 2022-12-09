@@ -9,9 +9,13 @@
 #include <mrpt/kinematics/CVehicleVelCmd.h>
 #include <mrpt/rtti/CObject.h>
 #include <mrpt/system/COutputLogger.h>
+#include <selfdriving/data/TrajectoriesAndRobotShape.h>
 #include <selfdriving/data/VehicleLocalizationState.h>
 #include <selfdriving/data/VehicleOdometryState.h>
 #include <selfdriving/data/Waypoints.h>
+#include <selfdriving/data/const_ref_t.h>
+#include <selfdriving/interfaces/ObstacleSource.h>
+#include <selfdriving/interfaces/VehicleMotionInterface.h>
 
 namespace selfdriving
 {
@@ -19,10 +23,14 @@ using mrpt::kinematics::CVehicleVelCmd;
 
 struct TargetApproachInput
 {
-    VehicleLocalizationState vls;
-    VehicleOdometryState     vos;
-    Waypoint                 target;
-    std::optional<Waypoint>  previous;
+    const_ref_t<VehicleLocalizationState>           vls;
+    const_ref_t<VehicleOdometryState>               vos;
+    mrpt::kinematics::CVehicleVelCmd::TVelCmdParams speedLimits;
+    Waypoint                                        target;
+    std::optional<Waypoint>                         previous;
+    const_ref_t<TrajectoriesAndRobotShape>          ptgsAndShape;
+    ObstacleSource::Ptr                             localSensedObstacleSource;
+    VehicleMotionInterface::Ptr                     vehicleMotionInterface;
 };
 
 struct TargetApproachOutput
