@@ -183,6 +183,17 @@ class NavEngine : public mrpt::system::COutputLogger
 
     Configuration config_;
 
+    /** Read access to current absolute speed limits */
+    const mrpt::kinematics::CVehicleVelCmd::TVelCmdParams& absoluteSpeedLimits()
+        const
+    {
+        return innerState_.absoluteSpeedLimits;
+    }
+
+    /** Changes the current speed limits */
+    void absoluteSpeedLimits(
+        const mrpt::kinematics::CVehicleVelCmd::TVelCmdParams& newLimits);
+
     /** @} */
 
     /** \name Waypoint navigation control API
@@ -387,6 +398,9 @@ class NavEngine : public mrpt::system::COutputLogger
         /** The latest waypoints navigation command and the up-to-date control
          * status. */
         WaypointStatusSequence waypointNavStatus;
+
+        /** Speed limits. */
+        mrpt::kinematics::CVehicleVelCmd::TVelCmdParams absoluteSpeedLimits;
 
         /** Latest robot poses, updated in navigation_Step() */
         mrpt::poses::CPose2DInterpolator latestPoses, latestOdomPoses;
