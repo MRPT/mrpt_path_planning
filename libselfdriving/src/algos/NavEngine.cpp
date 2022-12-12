@@ -1755,14 +1755,29 @@ bool NavEngine::approach_target_controller()
 
     const auto out = config_.targetApproachController->execute(tacIn);
 
-    bool approachOk = out.handled;
-
     MRPT_LOG_INFO_FMT(
         "Regular nav step overriden with special controller towards target. "
-        "targetDist=%f approachOk=%s",
-        atrw.distanceToWaypoint, approachOk ? "YES" : "NO");
+        "targetDist=%f handled=%s",
+        atrw.distanceToWaypoint, out.handled ? "YES" : "NO");
 
-    return approachOk;
+    MRPT_TODO("Check out.reachedDetected");
+
+    if (out.handled)
+    {
+        ASSERT_(config_.vehicleMotionInterface);
+        if (out.generatedMotion)
+        {
+            config_.vehicleMotionInterface->motion_execute(
+                out.generatedMotion, std::nullopt);
+        }
+        else
+        {
+            config_.vehicleMotionInterface->motion_execute(
+                std::nullopt, std::nullopt);
+        }
+    }
+
+    return out.handled;
 }
 
 // Called from internal_rnav_step()
