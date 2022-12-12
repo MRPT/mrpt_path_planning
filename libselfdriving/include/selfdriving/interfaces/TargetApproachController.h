@@ -42,8 +42,7 @@ struct TargetApproachOutput
      * the rest of fields in this struct). */
     bool handled = false;
 
-    // bool freePathFound   = false;
-    // bool targetOvershoot = false;
+    bool reachedDetected = false;
 
     /** If `handled==true`, this should be a motion primitive to execute on the
      * robot, or an empty pointer if we are still waiting for the completion of
