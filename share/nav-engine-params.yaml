@@ -11,5 +11,8 @@ minEdgeTimeToRefinePath: 0.75  # [seconds]
 
 lookAheadImmediateCollisionChecking: 1.0 # [seconds]
 
+maxDistanceForTargetApproach: 1.0 # [m]
+maxRelativeHeadingForTargetApproach: 180 # [deg]
+
 # For debugging later with the MRPT navlog-viewer app:
 #generateNavLogFiles: true
