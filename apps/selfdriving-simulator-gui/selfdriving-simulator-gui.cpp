@@ -311,7 +311,7 @@ void prepare_selfdriving(mvsim::World& world)
                 name.c_str()));
 
         sd->navigator.config_.targetApproachController->setMinLoggingLevel(
-            world.getMinLoggingLevel());
+            sd->navigator.getMinLoggingLevel());
     }
 
     if (arg_planner_yaml_file.isSet())

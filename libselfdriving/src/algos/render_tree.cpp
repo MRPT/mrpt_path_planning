@@ -114,7 +114,8 @@ auto selfdriving::render_tree(
     // so far:
     MotionPrimitivesTreeSE2::path_t best_path;
 
-    if (ro.highlight_path_to_node_id)
+    if (ro.highlight_path_to_node_id &&
+        tree.nodes().count(ro.highlight_path_to_node_id.value()))
     {
         auto [path, edges] = tree.backtrack_path(*ro.highlight_path_to_node_id);
 

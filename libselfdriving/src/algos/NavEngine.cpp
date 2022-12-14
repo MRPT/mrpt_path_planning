@@ -95,6 +95,9 @@ void NavEngine::initialize()
             };
         mrpt::system::COutputLogger::logRegisterCallback(loggerToNavlog_);
     }
+    // Copy absolute speed limit from the first PTG:
+    absoluteSpeedLimits_.robotMax_V_mps =
+        config_.ptgs.ptgs.at(0)->getMaxLinVel();
 
     initialized_ = true;
 
@@ -1744,7 +1747,7 @@ bool NavEngine::approach_target_controller()
     const auto& wp  = wps.at(*_.pathPlannerTargetWpIdx);
 
     TargetApproachInput tacIn;
-    tacIn.speedLimits = innerState_.absoluteSpeedLimits;
+    tacIn.speedLimits = absoluteSpeedLimits_;
     tacIn.vls         = lastVehicleLocalization_;
     tacIn.vos         = lastVehicleOdometry_;
     tacIn.target      = wp;
@@ -1825,5 +1828,5 @@ void NavEngine::absoluteSpeedLimits(
 {
     // TODO: anything else with current under-execution motion? Abort and
     // replan?
-    innerState_.absoluteSpeedLimits = newLimits;
+    absoluteSpeedLimits_ = newLimits;
 }

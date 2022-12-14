@@ -61,13 +61,17 @@ void selfdriving::refine_trajectory(
             ss << " - PTG: " << ptg->getDescription() << "\n";
             ss << " - deltaNodes: " << deltaNodes.asString() << "\n";
             ss << " - edge: " << edge.asString() << "\n";
-            THROW_EXCEPTION(ss.str());
+            // THROW_EXCEPTION(ss.str());
+            std::cerr << "[refine_trajectory] Warning: Could not refine this "
+                         "path segment:\n"
+                      << ss.str() << std::endl;
         }
+        else
+        {
+            distance_t newDist = newNormDist * ptg->getRefDistance();
 
-        distance_t newDist = newNormDist * ptg->getRefDistance();
-
-        uint32_t newPtgStep = 0;
-        ptg->getPathStepForDist(newK, newDist, newPtgStep);
+            uint32_t newPtgStep = 0;
+            ptg->getPathStepForDist(newK, newDist, newPtgStep);
 
 #if 0
         std::cout << "    Corrections: pathIndex " << edge.ptgPathIndex
@@ -75,10 +79,11 @@ void selfdriving::refine_trajectory(
                   << newDist << "\n";
 #endif
 
-        edge.ptgPathIndex = newK;
-        edge.ptgDist      = newDist;
+            edge.ptgPathIndex = newK;
+            edge.ptgDist      = newDist;
 
-        // Update interpolated path:
-        edge_interpolated_path(edge, ptgInfo, deltaNodes, newPtgStep);
+            // Update interpolated path:
+            edge_interpolated_path(edge, ptgInfo, deltaNodes, newPtgStep);
+        }
     }
 }
