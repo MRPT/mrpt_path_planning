@@ -1752,6 +1752,7 @@ bool NavEngine::approach_target_controller()
         tacIn.previous = wps.at(*_.pathPlannerTargetWpIdx - 1);
     tacIn.localSensedObstacleSource = config_.localSensedObstacleSource;
     tacIn.vehicleMotionInterface    = config_.vehicleMotionInterface;
+    tacIn.ptgsAndShape              = config_.ptgs;
 
     const auto out = config_.targetApproachController->execute(tacIn);
 
