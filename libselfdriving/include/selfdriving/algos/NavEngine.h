@@ -187,7 +187,7 @@ class NavEngine : public mrpt::system::COutputLogger
     const mrpt::kinematics::CVehicleVelCmd::TVelCmdParams& absoluteSpeedLimits()
         const
     {
-        return innerState_.absoluteSpeedLimits;
+        return absoluteSpeedLimits_;
     }
 
     /** Changes the current speed limits */
@@ -399,9 +399,6 @@ class NavEngine : public mrpt::system::COutputLogger
          * status. */
         WaypointStatusSequence waypointNavStatus;
 
-        /** Speed limits. */
-        mrpt::kinematics::CVehicleVelCmd::TVelCmdParams absoluteSpeedLimits;
-
         /** Latest robot poses, updated in navigation_Step() */
         mrpt::poses::CPose2DInterpolator latestPoses, latestOdomPoses;
 
@@ -486,6 +483,10 @@ class NavEngine : public mrpt::system::COutputLogger
 
     /** Navigation state variables, protected by navMtx_ */
     CurrentNavInternalState innerState_;
+
+    /** Speed limits: If not defined, the values from the first PTG will be
+     * copied here upon initialize() */
+    mrpt::kinematics::CVehicleVelCmd::TVelCmdParams absoluteSpeedLimits_;
 
     /** Checks whether the current motion leads us into an obstacle */
     void check_immediate_collision();
