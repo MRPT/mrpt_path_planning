@@ -177,14 +177,62 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger,
     /** @name Event callbacks
      *  @{ */
 
+    /**
+     * @brief Callback if current navigation ended due to some error
+     */
     virtual void on_nav_end_due_to_error()
     {
         MRPT_LOG_WARN("Default on_nav_end_due_to_error() called.");
     }
-
+    /**
+     * @brief Callback upon starting a new waypointsequence navigation
+     */
     virtual void on_nav_start()
     {
         MRPT_LOG_WARN("Default on_nav_start() event handler called.");
+    }
+    /**
+     * @brief Callback if navigation ended by an accepted trigger or reached the last 
+     * specified waypoint
+     */
+    virtual void on_nav_end() 
+    {
+        MRPT_LOG_WARN("Default on_nav_end() event handler called.");
+    }
+    /**
+     * @brief Callback when NavEngine encounters a blocked way
+     * Could lead to path replan
+     */
+    virtual void on_path_seems_blocked()
+    {
+        MRPT_LOG_WARN("Default on_path_seems_blocked() event handler called.");
+    }
+    /**
+     * @brief Callback when the NavEngine predicts a collision with an obstacle
+     */
+    virtual void on_apparent_collision()
+    {
+        MRPT_LOG_WARN("Default on_apparent_collision() event handler called.");
+    }
+    /**
+     * @brief Callback upon reaching a waypoint in a waypoint sequeunce. 
+     * Mostly used for logging
+     * @param waypoint_index index of waypoint in the sequence
+     * @param reached_skipped bool indicator if waypoint was reached or skipped
+     */
+    virtual void on_waypoint_reached(const size_t waypoint_index, 
+                                    [[maybe_unused]]bool reached_skipped)
+    {
+        MRPT_LOG_WARN(mrpt::format("Default on_waypoint_reached() index = %zu event handler called.",
+        waypoint_index).c_str());
+    }
+    /**
+     * @brief Callback when NavEngine cannot reach a specified target location
+     * because there are obstacles at the specified target
+     */
+    virtual void on_cannot_get_closer_to_blocked_target()
+    {
+        MRPT_LOG_WARN("Default on_apparent_collision() event handler called.");
     }
 
     /** @} */
