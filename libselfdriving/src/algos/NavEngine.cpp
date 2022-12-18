@@ -567,7 +567,8 @@ void NavEngine::check_have_to_replan()
     {
         MRPT_LOG_INFO_STREAM(
             "Launching a path continuation planning from edge #"
-            << *_.activePlanEdgeSentIndex);
+            << *_.activePlanEdgeSentIndex
+            << " < |activePlanPathEdges|=" << _.activePlanPathEdges.size());
 
         // find next target wp:
         auto nextWp = find_next_waypoint_for_planner();
@@ -788,7 +789,8 @@ NavEngine::PathPlannerOutput NavEngine::path_planner_function(
     // visualization,...
     ret.costEvaluators = planner.costEvaluators_;
 
-    ret.startingFromCurrentPlanNode = ppi.startingFromCurrentPlanNode;
+    ret.startingFromCurrentPlanNode     = ppi.startingFromCurrentPlanNode;
+    ret.startingFromCurrentPlanNodePose = ppi.startingFromCurrentPlanNodePose;
 
     return ret;
 }
@@ -828,7 +830,8 @@ void NavEngine::enqueue_path_planner_towards(
     }
 
     // save optional start node ID:
-    ppi.startingFromCurrentPlanNode = startingFromNodeID;
+    ppi.startingFromCurrentPlanNode     = startingFromNodeID;
+    ppi.startingFromCurrentPlanNodePose = startingFrom.pose;
 
     // speed at target:
     // ppi.pi.stateGoal.vel
@@ -872,7 +875,15 @@ void NavEngine::check_new_planner_output()
                 _.activePlanPath.at(*_.activePlanEdgeSentIndex + 1).nodeID_;
             const auto initialNextNode = *result.startingFromCurrentPlanNode;
 
-            isObsolete = newNextNodeId != initialNextNode;
+            const auto& newNextNodePose =
+                _.activePlanPath.at(*_.activePlanEdgeSentIndex + 1).pose;
+            const auto& initialNextNodePose =
+                *result.startingFromCurrentPlanNodePose;
+
+            isObsolete =
+                (newNextNodeId != initialNextNode) ||
+                (initialNextNodePose - newNextNodePose).translation().norm() >
+                    config_.plannerParams.grid_resolution_xy;
         }
 
         if (isObsolete)
@@ -1089,13 +1100,16 @@ void NavEngine::send_next_motion_cmd_or_nop()
             MRPT_TODO("cont: use odom to rewrite plan");
 
             MRPT_LOG_INFO_STREAM(
-                "Enqueued motion seems to have "
-                "been done for odom="
+                "Enqueued motion seems to have been done for odom="
                 << (_.lastEnqueuedTriggerOdometryForViz
                         ? _.lastEnqueuedTriggerOdometryForViz.value()
                               .odometry.asString()
                         : "")
-                << ". Moving to next edge #" << *_.activePlanEdgeIndex);
+                << ". Moving to next edge #" << *_.activePlanEdgeIndex
+                << " out of " << _.activePlanPathEdges.size());
+
+            // Remove the visual mark of "pending trigger area":
+            _.activeEnqueuedConditionForViz.reset();
         }
     }
 
@@ -1725,10 +1739,13 @@ bool NavEngine::approach_target_controller()
 
     const auto atrw = internal_check_about_to_reach_stop_wp();
 
-    MRPT_LOG_DEBUG_STREAM(
-        "[approach_target_controller] aboutToReach="
-        << (atrw.aboutToReach ? "true" : "false")
-        << " distanceToWaypoint=" << atrw.distanceToWaypoint);
+    if (atrw.aboutToReach)
+    {
+        MRPT_LOG_DEBUG_STREAM(
+            "[approach_target_controller] aboutToReach="
+            << (atrw.aboutToReach ? "true" : "false")
+            << " distanceToWaypoint=" << atrw.distanceToWaypoint);
+    }
 
     if (!atrw.aboutToReach)
     {
@@ -1760,8 +1777,8 @@ bool NavEngine::approach_target_controller()
     const auto out = config_.targetApproachController->execute(tacIn);
 
     MRPT_LOG_INFO_FMT(
-        "Regular nav step overriden with special controller towards target. "
-        "targetDist=%f handled=%s reachedDetected=%s",
+        "Controller towards target executed since atrw.aboutToReach==true, "
+        "results: targetDist=%f handled=%s reachedDetected=%s",
         atrw.distanceToWaypoint, out.handled ? "YES" : "NO",
         out.reachedDetected ? "YES" : "NO");
 

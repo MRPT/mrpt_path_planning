@@ -265,6 +265,8 @@ class NavEngine : public mrpt::system::COutputLogger
 
         /// (See same name field in PathPlannerInput)
         std::optional<TNodeID> startingFromCurrentPlanNode;
+        /// (See same name field in PathPlannerInput)
+        std::optional<mrpt::math::TPose2D> startingFromCurrentPlanNodePose;
     };
 
     /** Use the callbacks above and render_tree() to update a visualization
@@ -352,6 +354,11 @@ class NavEngine : public mrpt::system::COutputLogger
          * that acts as starting state, with the ID in the current activePlan.
          */
         std::optional<TNodeID> startingFromCurrentPlanNode;
+        /** Like above, but with the SE(2) pose of that node. Used to tell from
+         *  ambiguous situations where the node ID actually remains the same,
+         * but after a path merging, so the node pose is different.
+         */
+        std::optional<mrpt::math::TPose2D> startingFromCurrentPlanNodePose;
     };
 
     // Argument is a copy instead of a const-ref intentionally.
