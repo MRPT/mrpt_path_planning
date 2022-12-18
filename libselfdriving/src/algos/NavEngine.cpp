@@ -1791,6 +1791,9 @@ bool NavEngine::approach_target_controller()
         {
             config_.vehicleMotionInterface->motion_execute(
                 out.generatedMotion, std::nullopt);
+
+            // log record copy:
+            _.sentOutCmdInThisIteration = out.generatedMotion;
         }
         else
         {
