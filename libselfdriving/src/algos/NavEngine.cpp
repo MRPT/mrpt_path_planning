@@ -1761,8 +1761,9 @@ bool NavEngine::approach_target_controller()
 
     MRPT_LOG_INFO_FMT(
         "Regular nav step overriden with special controller towards target. "
-        "targetDist=%f handled=%s",
-        atrw.distanceToWaypoint, out.handled ? "YES" : "NO");
+        "targetDist=%f handled=%s reachedDetected=%s",
+        atrw.distanceToWaypoint, out.handled ? "YES" : "NO",
+        out.reachedDetected ? "YES" : "NO");
 
     MRPT_TODO("Check out.reachedDetected");
 
