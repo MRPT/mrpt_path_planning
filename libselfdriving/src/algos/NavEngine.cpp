@@ -1090,19 +1090,22 @@ void NavEngine::send_next_motion_cmd_or_nop()
     {
         if (!config_.vehicleMotionInterface->enqeued_motion_pending())
         {
+            const auto formerActiveNodeIndex = *_.activePlanEdgeIndex + 1;
+
             // We are ready for the next one:
             _.activePlanEdgeIndex.value()++;
 
+            const auto newActiveNodeIndex = *_.activePlanEdgeIndex + 1;
+
             // Get the odometry value when triggered:
-            _.lastEnqueuedTriggerOdometryForViz =
+            _.lastEnqueuedTriggerOdometry =
                 config_.vehicleMotionInterface
                     ->enqued_motion_last_odom_when_triggered();
-            MRPT_TODO("cont: use odom to rewrite plan");
 
             MRPT_LOG_INFO_STREAM(
                 "Enqueued motion seems to have been done for odom="
-                << (_.lastEnqueuedTriggerOdometryForViz
-                        ? _.lastEnqueuedTriggerOdometryForViz.value()
+                << (_.lastEnqueuedTriggerOdometry
+                        ? _.lastEnqueuedTriggerOdometry.value()
                               .odometry.asString()
                         : "")
                 << ". Moving to next edge #" << *_.activePlanEdgeIndex
@@ -1110,6 +1113,49 @@ void NavEngine::send_next_motion_cmd_or_nop()
 
             // Remove the visual mark of "pending trigger area":
             _.activeEnqueuedConditionForViz.reset();
+
+            // Use odometry at the trigger point to correct path plan:
+            if (*_.activePlanEdgeIndex < _.activePlanPathEdges.size())
+            {
+                const auto nodesDelta =
+                    _.activePlanPath.at(newActiveNodeIndex).pose -
+                    _.activePlanPath.at(formerActiveNodeIndex).pose;
+
+                MRPT_LOG_DEBUG_STREAM(
+                    "activePlanPath[former]:"
+                    << _.activePlanPath.at(formerActiveNodeIndex).asString());
+                MRPT_LOG_DEBUG_STREAM(
+                    " activePlanPath[new]:"
+                    << _.activePlanPath.at(newActiveNodeIndex).asString());
+
+                const auto nextNodeOdomPose =
+                    _.lastEnqueuedTriggerOdometry->odometry + nodesDelta;
+
+                MRPT_LOG_DEBUG_STREAM("nextNodeOdomPose:" << nextNodeOdomPose);
+
+                const auto nextNodeRelPoseWrtInit =
+                    nextNodeOdomPose - *_.activePlanInitOdometry;
+
+                const auto firstNodeLocPose = _.activePlanPath.at(0).pose;
+                const auto nextNodeCorrected =
+                    firstNodeLocPose + nextNodeRelPoseWrtInit;
+
+                MRPT_LOG_DEBUG_STREAM("firstNodeLocPose: " << firstNodeLocPose);
+
+                MRPT_LOG_INFO_STREAM(
+                    "Applying triggered odometry-based node pose correction: "
+                    << _.activePlanPath.at(newActiveNodeIndex).asString()
+                    << " ==> " << nextNodeCorrected);
+
+                // Apply correction to pose:
+                _.activePlanPath.at(newActiveNodeIndex).pose =
+                    nextNodeCorrected;
+
+                // Correct PTG arguments according to the final actual poses.
+                // Needed to correct for lattice approximations:
+                refine_trajectory(
+                    _.activePlanPath, _.activePlanPathEdges, config_.ptgs);
+            }
         }
     }
 
@@ -1506,7 +1552,7 @@ void NavEngine::send_current_state_to_viz_and_navlog()
         }
     }
 
-    if (const auto& triggOdom = _.lastEnqueuedTriggerOdometryForViz;
+    if (const auto& triggOdom = _.lastEnqueuedTriggerOdometry;
         triggOdom.has_value() && !_.activePlanPath.empty())
     {
         auto glCorner = mrpt::opengl::stock_objects::CornerXYZ(0.15);

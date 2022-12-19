@@ -424,12 +424,14 @@ class NavEngine : public mrpt::system::COutputLogger
         std::vector<MotionPrimitivesTreeSE2::node_t> activePlanPath;
         std::vector<MotionPrimitivesTreeSE2::edge_t> activePlanPathEdges;
 
-        /** A copy of the active queued condition, for viz purposes only */
+        /** A copy of the active queued condition, for viz purposes only
+         *  (coordinates here are in the odometry frame)
+         */
         std::optional<EnqueuedCondition> activeEnqueuedConditionForViz;
 
         /** A copy of the last odometry when an enqueued action was triggered,
          * for viz purposed only */
-        std::optional<VehicleOdometryState> lastEnqueuedTriggerOdometryForViz;
+        std::optional<VehicleOdometryState> lastEnqueuedTriggerOdometry;
 
         void active_plan_reset()
         {
