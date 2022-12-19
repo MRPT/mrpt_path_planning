@@ -10,19 +10,17 @@
 
 #include <iostream>
 
+// see docs in .h
 void selfdriving::refine_trajectory(
-    MotionPrimitivesTreeSE2::path_t&          inPath,
-    MotionPrimitivesTreeSE2::edge_sequence_t& inEdges,
-    const TrajectoriesAndRobotShape&          ptgInfo)
+    const selfdriving::MotionPrimitivesTreeSE2::path_t& inPath,
+    MotionPrimitivesTreeSE2::edge_sequence_t&           edgesToRefine,
+    const TrajectoriesAndRobotShape&                    ptgInfo)
 {
-    auto                                     outPath = inPath;
-    MotionPrimitivesTreeSE2::edge_sequence_t outEdges;
-
-    const size_t nEdges = inEdges.size();
+    const size_t nEdges = edgesToRefine.size();
     ASSERT_EQUAL_(inPath.size(), nEdges + 1);
 
     auto itPath = inPath.begin();
-    auto itEdge = inEdges.begin();
+    auto itEdge = edgesToRefine.begin();
     for (size_t i = 0; i < nEdges; i++, itPath++, itEdge++)
     {
         // Get edge:
@@ -38,7 +36,7 @@ void selfdriving::refine_trajectory(
         auto itNextPath = itPath;
         itNextPath++;
         const auto& startNode = *itPath;
-        auto&       endNode   = *itNextPath;
+        const auto& endNode   = *itNextPath;
 
 #if 0
         std::cout << "[refine_trajectory] Step #" << i << " INPUT \n     "
@@ -47,6 +45,9 @@ void selfdriving::refine_trajectory(
 #endif
 
         const auto deltaNodes = endNode.pose - startNode.pose;
+
+        // Should never happen, except in buggy callers:
+        if (deltaNodes.x == 0 && deltaNodes.y == 0) continue;
 
         int                   newK        = -1;
         normalized_distance_t newNormDist = 0;
@@ -86,4 +87,20 @@ void selfdriving::refine_trajectory(
             edge_interpolated_path(edge, ptgInfo, deltaNodes, newPtgStep);
         }
     }
+}
+
+void selfdriving::refine_trajectory(
+    const std::vector<selfdriving::MotionPrimitivesTreeSE2::node_t>& inPath,
+    std::vector<selfdriving::MotionPrimitivesTreeSE2::edge_t>& edgesToRefine,
+    const TrajectoriesAndRobotShape&                           ptgInfo)
+{
+    selfdriving::MotionPrimitivesTreeSE2::path_t newPath;
+    MotionPrimitivesTreeSE2::edge_sequence_t     newEdges;
+
+    for (const auto& p : inPath) newPath.push_back(p);
+    for (auto& e : edgesToRefine) newEdges.push_back(&e);
+
+    // this will store the output directly in "edgesToRefine" since we use
+    // pointers above:
+    refine_trajectory(newPath, newEdges, ptgInfo);
 }
