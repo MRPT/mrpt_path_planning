@@ -275,7 +275,8 @@ class NavEngine : public mrpt::system::COutputLogger
 
     /** Update the GUI with a partial or final path only (no whole tree) */
     void send_path_to_viz_and_navlog(
-        const MotionPrimitivesTreeSE2& tree, const TNodeID finalNode,
+        const MotionPrimitivesTreeSE2&         tree,
+        const std::optional<TNodeID>&          finalNode,
         const PlannerInput&                    originalPlanInput,
         const std::vector<CostEvaluator::Ptr>& costEvaluators);
 
@@ -535,6 +536,8 @@ class NavEngine : public mrpt::system::COutputLogger
     bool approach_target_controller();
 
     void merge_new_plan_if_better(const PathPlannerOutput& result);
+
+    void internal_mark_current_wp_as_reached();
 
     struct AboutToReachWpInfo
     {

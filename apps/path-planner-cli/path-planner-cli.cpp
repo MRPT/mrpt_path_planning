@@ -324,9 +324,15 @@ static void do_plan_path()
               << " overall edges, " << plan.motionTree.nodes().size()
               << " nodes\n";
 
+    if (!plan.bestNodeId.has_value())
+    {
+        std::cerr << "No bestNodeId in plan output.\n";
+        return;
+    }
+
     // backtrack:
     auto [plannedPath, pathEdges] =
-        plan.motionTree.backtrack_path(plan.bestNodeId);
+        plan.motionTree.backtrack_path(*plan.bestNodeId);
 
     if (!arg_noRefine.isSet())
     {

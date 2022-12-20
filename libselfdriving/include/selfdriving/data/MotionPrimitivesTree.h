@@ -20,12 +20,12 @@
 #include <cstdint>
 #include <deque>
 #include <list>
+#include <optional>
 #include <set>
 #include <tuple>
 
 namespace selfdriving
 {
-using mrpt::graphs::INVALID_NODEID;
 using mrpt::graphs::TNodeID;
 
 /** Generic base for metrics */

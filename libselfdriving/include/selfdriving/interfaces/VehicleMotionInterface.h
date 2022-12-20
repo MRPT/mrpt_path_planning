@@ -192,10 +192,10 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger,
         MRPT_LOG_WARN("Default on_nav_start() event handler called.");
     }
     /**
-     * @brief Callback if navigation ended by an accepted trigger or reached the last 
-     * specified waypoint
+     * @brief Callback if navigation ended by an accepted trigger or reached the
+     * last specified waypoint
      */
-    virtual void on_nav_end() 
+    virtual void on_nav_end()
     {
         MRPT_LOG_WARN("Default on_nav_end() event handler called.");
     }
@@ -215,16 +215,18 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger,
         MRPT_LOG_WARN("Default on_apparent_collision() event handler called.");
     }
     /**
-     * @brief Callback upon reaching a waypoint in a waypoint sequeunce. 
+     * @brief Callback upon reaching a waypoint in a waypoint sequeunce.
      * Mostly used for logging
      * @param waypoint_index index of waypoint in the sequence
-     * @param reached_skipped bool indicator if waypoint was reached or skipped
+     * @param reached_skipped whether it was reached(true) or skipped (false)
      */
-    virtual void on_waypoint_reached(const size_t waypoint_index, 
-                                    [[maybe_unused]]bool reached_skipped)
+    virtual void on_waypoint_reached(
+        const size_t waypoint_index, bool reached_skipped)
     {
-        MRPT_LOG_WARN(mrpt::format("Default on_waypoint_reached() index = %zu event handler called.",
-        waypoint_index).c_str());
+        MRPT_LOG_WARN_FMT(
+            "Default on_waypoint_reached() index = %zu event "
+            "handler called (event='%s').",
+            waypoint_index, reached_skipped ? "reached" : "skipped");
     }
     /**
      * @brief Callback when NavEngine cannot reach a specified target location
