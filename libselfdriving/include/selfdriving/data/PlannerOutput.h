@@ -10,6 +10,7 @@
 #include <selfdriving/data/MotionPrimitivesTree.h>
 #include <selfdriving/data/PlannerInput.h>
 
+#include <optional>
 #include <set>
 
 namespace selfdriving
@@ -37,14 +38,15 @@ struct PlannerOutput
     double pathCost = std::numeric_limits<double>::max();
 
     /** The tree node ID for the goal pose */
-    TNodeID goalNodeId = mrpt::graphs::INVALID_NODEID;
+    std::optional<TNodeID> goalNodeId;
 
-    /** The tree node with the smallest cost-to-goal. This will be identical
-     *  to goalNodeId for successful plans reaching the desired goal state, or
-     *  something different for unfinished or unsuccessful plans.
+    /** The tree node with the smallest cost-to-goal. This will be
+     * identical to goalNodeId for successful plans reaching the desired
+     * goal state, or something different for unfinished or unsuccessful
+     * plans.
      */
-    TNodeID bestNodeId           = mrpt::graphs::INVALID_NODEID;
-    cost_t  bestNodeIdCostToGoal = std::numeric_limits<cost_t>::max();
+    std::optional<TNodeID> bestNodeId;
+    cost_t bestNodeIdCostToGoal = std::numeric_limits<cost_t>::max();
 
     /** The generated motion tree that explores free space starting at "start"
      */

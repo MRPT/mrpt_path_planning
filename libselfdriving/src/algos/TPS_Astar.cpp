@@ -424,11 +424,11 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             tLastCallback = tNow;
 
             const auto [foundPath, pathEdges] =
-                tree.backtrack_path(po.bestNodeId);
+                tree.backtrack_path(*po.bestNodeId);
 
             // call user callback:
             ProgressCallbackData pcd;
-            pcd.bestCostFromStart = tree.nodes().at(po.bestNodeId).cost_;
+            pcd.bestCostFromStart = tree.nodes().at(*po.bestNodeId).cost_;
             pcd.bestCostToGoal    = po.bestNodeIdCostToGoal;
             pcd.bestFinalNode     = po.bestNodeId;
             pcd.bestPath          = std::move(pathEdges);
@@ -455,8 +455,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 #endif
 
     po.success = po.goalNodeId == po.bestNodeId;
-    if (po.bestNodeId != INVALID_NODEID)
-        po.pathCost = tree.nodes().at(po.bestNodeId).cost_;
+    if (po.bestNodeId) po.pathCost = tree.nodes().at(*po.bestNodeId).cost_;
 
     po.computationTime = mrpt::Clock::nowDouble() - planInitTime;
 

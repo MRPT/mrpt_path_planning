@@ -917,7 +917,7 @@ void NavEngine::check_new_planner_output()
         _.active_plan_reset();
 
         auto [path, edges] = _.activePlanOutput.po.motionTree.backtrack_path(
-            _.activePlanOutput.po.bestNodeId);
+            *_.activePlanOutput.po.bestNodeId);
 
         // Correct PTG arguments according to the final actual poses.
         // Needed to correct for lattice approximations:
@@ -1342,7 +1342,8 @@ void NavEngine::send_planner_output_to_viz(const PathPlannerOutput& ppo)
 }
 
 void NavEngine::send_path_to_viz_and_navlog(
-    const MotionPrimitivesTreeSE2& tree, const TNodeID finalNode,
+    const MotionPrimitivesTreeSE2&         tree,
+    const std::optional<TNodeID>&          finalNode,
     const PlannerInput&                    originalPlanInput,
     const std::vector<CostEvaluator::Ptr>& costEvaluators)
 {
@@ -1487,7 +1488,8 @@ void NavEngine::send_current_state_to_viz_and_navlog()
     }
 
     if (const auto& triggOdom = _.lastEnqueuedTriggerOdometry;
-        triggOdom.has_value() && !_.activePlanPath.empty())
+        triggOdom.has_value() && !_.activePlanPath.empty() &&
+        _.activePlanInitOdometry.has_value())
     {
         auto glCorner = mrpt::opengl::stock_objects::CornerXYZ(0.15);
         glCorner->setPose(
@@ -1757,28 +1759,35 @@ bool NavEngine::approach_target_controller()
     const auto out = config_.targetApproachController->execute(tacIn);
 
     MRPT_LOG_INFO_FMT(
-        "Controller towards target executed since atrw.aboutToReach==true, "
+        "Controller towards target executed since atrw. aboutToReach=true, "
         "results: targetDist=%f handled=%s reachedDetected=%s",
         atrw.distanceToWaypoint, out.handled ? "YES" : "NO",
         out.reachedDetected ? "YES" : "NO");
 
-    MRPT_TODO("Check out.reachedDetected");
-
     if (out.handled)
     {
-        ASSERT_(config_.vehicleMotionInterface);
-        if (out.generatedMotion)
+        if (out.reachedDetected)
         {
-            config_.vehicleMotionInterface->motion_execute(
-                out.generatedMotion, std::nullopt);
-
-            // log record copy:
-            _.sentOutCmdInThisIteration = out.generatedMotion;
+            // end of navigation to waypoint:
+            internal_mark_current_wp_as_reached();
         }
         else
         {
-            config_.vehicleMotionInterface->motion_execute(
-                std::nullopt, std::nullopt);
+            // It's a motion command:
+            ASSERT_(config_.vehicleMotionInterface);
+            if (out.generatedMotion)
+            {
+                config_.vehicleMotionInterface->motion_execute(
+                    out.generatedMotion, std::nullopt);
+
+                // log record copy:
+                _.sentOutCmdInThisIteration = out.generatedMotion;
+            }
+            else
+            {
+                config_.vehicleMotionInterface->motion_execute(
+                    std::nullopt, std::nullopt);
+            }
         }
     }
 
@@ -1844,8 +1853,15 @@ void NavEngine::merge_new_plan_if_better(const PathPlannerOutput& result)
     const double currentPlanDistToGoal =
         (goal - _.activePlanPath.rbegin()->pose).translation().norm();
 
+    if (!result.po.bestNodeId.has_value())
+    {
+        // error: no good plan.
+        MRPT_LOG_WARN("Dropping new path planning result, no bestNodeID.");
+        return;
+    }
+
     const double newPlanDistToGoal =
-        (goal - result.po.motionTree.nodes().at(result.po.bestNodeId).pose)
+        (goal - result.po.motionTree.nodes().at(*result.po.bestNodeId).pose)
             .translation()
             .norm();
 
@@ -1866,7 +1882,7 @@ void NavEngine::merge_new_plan_if_better(const PathPlannerOutput& result)
     // for-the-future segment that was just received:
 
     auto [newPath, newEdges] =
-        result.po.motionTree.backtrack_path(result.po.bestNodeId);
+        result.po.motionTree.backtrack_path(*result.po.bestNodeId);
 
     // Correct PTG arguments according to the final actual poses.
     // Needed to correct for lattice approximations:
@@ -1923,4 +1939,49 @@ void NavEngine::merge_new_plan_if_better(const PathPlannerOutput& result)
     for (size_t i = 0; i <= formerEdgeIndex; i++)
         _.activePlanEdgesSentOut.insert(i);
     _.activePlanInitOdometry = formerEdgeInitOdometry;
+}
+
+void NavEngine::internal_mark_current_wp_as_reached()
+{
+    auto& _ = innerState_;
+
+    // sanity checks:
+    ASSERT_(_.pathPlannerTargetWpIdx.has_value());
+    ASSERT_LT_(*_.pathPlannerTargetWpIdx, _.waypointNavStatus.waypoints.size());
+
+    const waypoint_idx_t reachedIdx = *_.pathPlannerTargetWpIdx;
+
+    // We are about to mark "reachedIdx" as reached.
+    // First, go over the former ones, since the last "reached" and mark them as
+    // skipped:
+    {
+        waypoint_idx_t lastReached = reachedIdx;
+        while (lastReached > 0 &&
+               !_.waypointNavStatus.waypoints.at(lastReached).reached)
+        {  // go back:
+            lastReached--;
+        }
+        // now, mark all in the range [lastReached+1, ..., reachedIdx-1] as
+        // skipped:
+        for (waypoint_idx_t i = lastReached + 1; i + 1 <= reachedIdx; i++)
+        {
+            // mark as skipped:
+            _.waypointNavStatus.waypoints.at(i).skipped = true;
+
+            // user callbacks:
+            config_.vehicleMotionInterface->on_waypoint_reached(
+                i, false /* =skipped */);
+        }
+    }
+
+    // mark final one as reached:
+    _.waypointNavStatus.waypoints.at(reachedIdx).reached = true;
+
+    // user callbacks:
+    config_.vehicleMotionInterface->on_waypoint_reached(
+        reachedIdx, true /* =reached*/);
+
+    // clear statuses so we can launch a new plan in the next iteration:
+    _.pathPlannerTargetWpIdx.reset();
+    _.active_plan_reset();
 }

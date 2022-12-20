@@ -24,7 +24,7 @@ struct ProgressCallbackData
     cost_t bestCostFromStart = std::numeric_limits<cost_t>::max();
     cost_t bestCostToGoal    = std::numeric_limits<cost_t>::max();
     MotionPrimitivesTreeSE2::edge_sequence_t bestPath;
-    TNodeID                                  bestFinalNode     = INVALID_NODEID;
+    std::optional<TNodeID>                   bestFinalNode;
     const MotionPrimitivesTreeSE2*           tree              = nullptr;
     const PlannerInput*                      originalPlanInput = nullptr;
     const std::vector<CostEvaluator::Ptr>*   costEvaluators    = nullptr;
