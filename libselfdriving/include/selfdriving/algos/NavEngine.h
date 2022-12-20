@@ -534,6 +534,8 @@ class NavEngine : public mrpt::system::COutputLogger
      */
     bool approach_target_controller();
 
+    void merge_new_plan_if_better(const PathPlannerOutput& result);
+
     struct AboutToReachWpInfo
     {
         AboutToReachWpInfo() = default;
