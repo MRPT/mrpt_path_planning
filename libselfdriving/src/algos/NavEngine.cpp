@@ -907,73 +907,7 @@ void NavEngine::check_new_planner_output()
 
     // Merge or overwrite current plan:
     if (result.startingFromCurrentPlanNode.has_value())
-    {
-        MRPT_LOG_INFO_STREAM("Merging new path planning result...");
-
-        // merge current under-execution path planning and the new
-        // for-the-future segment that was just received:
-
-        auto [newPath, newEdges] =
-            result.po.motionTree.backtrack_path(result.po.bestNodeId);
-
-        // Correct PTG arguments according to the final actual poses.
-        // Needed to correct for lattice approximations:
-        refine_trajectory(newPath, newEdges, config_.ptgs);
-
-        _.activePlanOutput = std::move(result);
-
-        // Overwrite the plan, starting from the next node on:
-        const auto formerEdgeIndex = *_.activePlanEdgeSentIndex;
-
-        const auto formerEdgeInitOdometry =
-            *_.activePlanInitOdometry +
-            (_.activePlanPath.at(formerEdgeIndex).pose -
-             _.activePlanPath.at(0).pose);
-
-        _.active_plan_reset();
-
-        /* Remap:
-         *
-         * Old edges:
-         *  - [0,...,formerActiveEdgeIndex-1] => dissapear
-         *  - [formerActiveEdgeIndex]         => new edge #0
-         *  - [formerActiveEdgeIndex+1,...]   => dissapear
-
-         * Old nodes:
-         *  - [0,...,formerActiveEdgeIndex-1] => dissapear
-         *  - formerActiveEdgeIndex           => new node #0
-         *  - formerActiveEdgeIndex+1         => new node #1
-         *  - [formerActiveEdgeIndex+2,...]   => dissapear
-         *
-         */
-        std::vector<MotionPrimitivesTreeSE2::node_t> newPlanPath;
-        std::vector<MotionPrimitivesTreeSE2::edge_t> newPathEdges;
-
-        for (size_t i = 0; i <= formerEdgeIndex; i++)
-            newPathEdges.push_back(_.activePlanPathEdges.at(i));
-
-        // No need to add the last one, so it's "<" instead of "<=", since
-        // that node is also duplicated as the new node list at position #0:
-        for (size_t i = 0; i < formerEdgeIndex + 1; i++)
-            newPlanPath.push_back(_.activePlanPath.at(formerEdgeIndex));
-
-        _.activePlanPath      = std::move(newPlanPath);
-        _.activePlanPathEdges = std::move(newPathEdges);
-
-        for (const auto& node : newPath) _.activePlanPath.push_back(node);
-
-        for (const auto& edge : newEdges)
-            _.activePlanPathEdges.push_back(*edge);
-
-        // Reconstruct current state:
-        // We are waiting for the execution of the old "formerEdgeIndex", new
-        // #0, edge motion:
-        _.activePlanEdgeIndex     = formerEdgeIndex;
-        _.activePlanEdgeSentIndex = formerEdgeIndex;
-        for (size_t i = 0; i <= formerEdgeIndex; i++)
-            _.activePlanEdgesSentOut.insert(i);
-        _.activePlanInitOdometry = formerEdgeInitOdometry;
-    }
+    { merge_new_plan_if_better(result); }
     else
     {
         MRPT_LOG_INFO_STREAM("Taking new path planning result.");
@@ -1896,4 +1830,97 @@ void NavEngine::absoluteSpeedLimits(
     // TODO: anything else with current under-execution motion? Abort and
     // replan?
     absoluteSpeedLimits_ = newLimits;
+}
+
+void NavEngine::merge_new_plan_if_better(const PathPlannerOutput& result)
+{
+    auto& _ = innerState_;
+
+    // Check if the new plan is any better than the current one?
+    const auto goal =
+        _.waypointNavStatus.waypoints.at(_.pathPlannerTargetWpIdx.value())
+            .targetAsPose();
+
+    const double currentPlanDistToGoal =
+        (goal - _.activePlanPath.rbegin()->pose).translation().norm();
+
+    const double newPlanDistToGoal =
+        (goal - result.po.motionTree.nodes().at(result.po.bestNodeId).pose)
+            .translation()
+            .norm();
+
+    if (currentPlanDistToGoal < config_.plannerParams.grid_resolution_xy ||
+        newPlanDistToGoal > currentPlanDistToGoal * 0.99)
+    {
+        MRPT_LOG_INFO_STREAM(
+            "Dropping new path planning result, improvement is not good "
+            "enough. CurrentDistToGoal="
+            << currentPlanDistToGoal
+            << " NewPlanDistToGoal=" << newPlanDistToGoal);
+        return;
+    }
+
+    MRPT_LOG_INFO_STREAM("Merging new path planning result...");
+
+    // merge current under-execution path planning and the new
+    // for-the-future segment that was just received:
+
+    auto [newPath, newEdges] =
+        result.po.motionTree.backtrack_path(result.po.bestNodeId);
+
+    // Correct PTG arguments according to the final actual poses.
+    // Needed to correct for lattice approximations:
+    refine_trajectory(newPath, newEdges, config_.ptgs);
+
+    _.activePlanOutput = std::move(result);
+
+    // Overwrite the plan, starting from the next node on:
+    const auto formerEdgeIndex = *_.activePlanEdgeSentIndex;
+
+    const auto formerEdgeInitOdometry =
+        *_.activePlanInitOdometry + (_.activePlanPath.at(formerEdgeIndex).pose -
+                                     _.activePlanPath.at(0).pose);
+
+    _.active_plan_reset();
+
+    /* Remap:
+     *
+     * Old edges:
+     *  - [0,...,formerActiveEdgeIndex-1] => dissapear
+     *  - [formerActiveEdgeIndex]         => new edge #0
+     *  - [formerActiveEdgeIndex+1,...]   => dissapear
+
+     * Old nodes:
+     *  - [0,...,formerActiveEdgeIndex-1] => dissapear
+     *  - formerActiveEdgeIndex           => new node #0
+     *  - formerActiveEdgeIndex+1         => new node #1
+     *  - [formerActiveEdgeIndex+2,...]   => dissapear
+     *
+     */
+    std::vector<MotionPrimitivesTreeSE2::node_t> newPlanPath;
+    std::vector<MotionPrimitivesTreeSE2::edge_t> newPathEdges;
+
+    for (size_t i = 0; i <= formerEdgeIndex; i++)
+        newPathEdges.push_back(_.activePlanPathEdges.at(i));
+
+    // No need to add the last one, so it's "<" instead of "<=", since
+    // that node is also duplicated as the new node list at position #0:
+    for (size_t i = 0; i < formerEdgeIndex + 1; i++)
+        newPlanPath.push_back(_.activePlanPath.at(formerEdgeIndex));
+
+    _.activePlanPath      = std::move(newPlanPath);
+    _.activePlanPathEdges = std::move(newPathEdges);
+
+    for (const auto& node : newPath) _.activePlanPath.push_back(node);
+
+    for (const auto& edge : newEdges) _.activePlanPathEdges.push_back(*edge);
+
+    // Reconstruct current state:
+    // We are waiting for the execution of the old "formerEdgeIndex", new
+    // #0, edge motion:
+    _.activePlanEdgeIndex     = formerEdgeIndex;
+    _.activePlanEdgeSentIndex = formerEdgeIndex;
+    for (size_t i = 0; i <= formerEdgeIndex; i++)
+        _.activePlanEdgesSentOut.insert(i);
+    _.activePlanInitOdometry = formerEdgeInitOdometry;
 }
