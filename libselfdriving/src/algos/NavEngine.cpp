@@ -238,7 +238,7 @@ void NavEngine::cancel()
 
     MRPT_LOG_DEBUG("NavEngine::cancel() called.");
     navigationStatus_ = NavStatus::IDLE;
-    innerState_.active_plan_reset();
+    innerState_.active_plan_reset(true);
 
     if (config_.vehicleMotionInterface)
     {
@@ -411,6 +411,24 @@ void NavEngine::impl_navigation_step()
     if (lastNavigationState_ != NavStatus::NAVIGATING)
         internal_on_start_new_navigation();
 
+    // navigation ended?
+    if (check_all_waypoints_are_done())
+    {
+        MRPT_LOG_INFO("All waypoints reached, status NAVIGATING -> IDLE.");
+        navigationStatus_ = NavStatus::IDLE;
+        innerState_.active_plan_reset();
+        if (config_.vehicleMotionInterface)
+        {
+            config_.vehicleMotionInterface->stop(STOP_TYPE::REGULAR);
+            config_.vehicleMotionInterface->stop_watchdog();
+        }
+
+        pendingEvents_.emplace_back(
+            [this]() { config_.vehicleMotionInterface->on_nav_end(); });
+
+        return;
+    }
+
     // Get current robot kinematic state:
     update_robot_kinematic_state();
 
@@ -519,11 +537,13 @@ void NavEngine::check_immediate_collision()
 
         config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
 
-#if 0
-        // Re-plan from scratch:
-        _.pathPlannerTargetWpIdx.reset();
-        _.active_plan_reset();
-#endif
+        // clear path and recompute:
+        _.active_plan_reset(true);
+
+        // user callbacks:
+        pendingEvents_.emplace_back([this]() {
+            config_.vehicleMotionInterface->on_apparent_collision();
+        });
     }
 }
 
@@ -974,9 +994,16 @@ void NavEngine::send_next_motion_cmd_or_nop()
     // Following error due to enqueued motion time out?
     if (config_.vehicleMotionInterface->enqeued_motion_timed_out())
     {
-        // Abort path planning:
-        cancel();
-        MRPT_TODO("Re-plan and/or send error event out?");
+        // stop the robot, report, and try to recover:
+        if (config_.vehicleMotionInterface)
+            config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
+
+        MRPT_LOG_ERROR(
+            "Enqueued motion primitive did not triggered (TIMEOUT). Stopping "
+            "the robot and replanning.");
+
+        innerState_.active_plan_reset();
+
         return;
     }
 
@@ -1969,8 +1996,10 @@ void NavEngine::internal_mark_current_wp_as_reached()
             _.waypointNavStatus.waypoints.at(i).skipped = true;
 
             // user callbacks:
-            config_.vehicleMotionInterface->on_waypoint_reached(
-                i, false /* =skipped */);
+            pendingEvents_.emplace_back([this, i]() {
+                config_.vehicleMotionInterface->on_waypoint_reached(
+                    i, false /* =skipped */);
+            });
         }
     }
 
@@ -1978,10 +2007,21 @@ void NavEngine::internal_mark_current_wp_as_reached()
     _.waypointNavStatus.waypoints.at(reachedIdx).reached = true;
 
     // user callbacks:
-    config_.vehicleMotionInterface->on_waypoint_reached(
-        reachedIdx, true /* =reached*/);
+    pendingEvents_.emplace_back([this, reachedIdx]() {
+        config_.vehicleMotionInterface->on_waypoint_reached(
+            reachedIdx, true /* =reached */);
+    });
 
     // clear statuses so we can launch a new plan in the next iteration:
-    _.pathPlannerTargetWpIdx.reset();
-    _.active_plan_reset();
+    _.active_plan_reset(true);
+}
+
+bool NavEngine::check_all_waypoints_are_done()
+{
+    auto& _ = innerState_;
+    if (_.waypointNavStatus.waypoints.empty())
+        return false;  // should never happen...
+
+    // Was the last waypoint reached?
+    return _.waypointNavStatus.waypoints.rbegin()->reached;
 }
