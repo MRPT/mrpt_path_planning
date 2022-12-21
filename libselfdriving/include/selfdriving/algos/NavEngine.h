@@ -434,12 +434,20 @@ class NavEngine : public mrpt::system::COutputLogger
          * for viz purposed only */
         std::optional<VehicleOdometryState> lastEnqueuedTriggerOdometry;
 
-        void active_plan_reset()
+        void active_plan_reset(bool alsoClearComputedPath = false)
         {
             activePlanEdgeIndex.reset();
             activePlanEdgeSentIndex.reset();
             activePlanEdgesSentOut.clear();
             activePlanInitOdometry.reset();
+
+            if (alsoClearComputedPath)
+            {
+                activePlanOutput = {};
+                activePlanPath.clear();
+                activePlanPathEdges.clear();
+                pathPlannerTargetWpIdx.reset();
+            }
         }
 
         /** 0-based index of which edge in activePlanPathEdges[] is currently
@@ -538,6 +546,9 @@ class NavEngine : public mrpt::system::COutputLogger
     void merge_new_plan_if_better(const PathPlannerOutput& result);
 
     void internal_mark_current_wp_as_reached();
+
+    /** Returns true if all waypoints has been reached successfully. */
+    bool check_all_waypoints_are_done();
 
     struct AboutToReachWpInfo
     {
