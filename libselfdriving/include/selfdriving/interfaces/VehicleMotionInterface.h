@@ -164,8 +164,8 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger,
     {
         MRPT_LOG_INFO("Default stop_watchdog() called.");
     }
-    virtual void start_watchdog([
-        [maybe_unused]] const size_t periodMilliseconds)
+    virtual void start_watchdog(
+        [[maybe_unused]] const size_t periodMilliseconds)
     {
         MRPT_LOG_INFO("Default start_watchdog() called.");
     }
@@ -184,6 +184,7 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger,
     {
         MRPT_LOG_WARN("Default on_nav_end_due_to_error() called.");
     }
+
     /**
      * @brief Callback upon starting a new waypointsequence navigation
      */
@@ -191,6 +192,7 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger,
     {
         MRPT_LOG_WARN("Default on_nav_start() event handler called.");
     }
+
     /**
      * @brief Callback if navigation ended by an accepted trigger or reached the
      * last specified waypoint
@@ -199,16 +201,25 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger,
     {
         MRPT_LOG_WARN("Default on_nav_end() event handler called.");
     }
+
     /**
-     * @brief Callback when NavEngine encounters a blocked way
-     * Could lead to path replan
+     * @brief Callback for when NavEngine cannot make progress to get
+     * increasingly closer to the final target during a certain period of time.
+     * It may indicate that the high-level path the vehicle is trying to follow
+     * is no longer valid due to a blocked way. On your user side, you could
+     * call NavEngine::cancel() and/or re-compute an alternative path and issue
+     * a new set of navigation waypoints or just report the error to the user.
+     *
+     * \sa NavEngine::Configuration::timeoutNotGettingCloserGoal
      */
     virtual void on_path_seems_blocked()
     {
         MRPT_LOG_WARN("Default on_path_seems_blocked() event handler called.");
     }
+
     /**
-     * @brief Callback when the NavEngine predicts a collision with an obstacle
+     * @brief Callback when the NavEngine *predicts* a collision with an
+     * obstacle and needed to issue a stop command.
      */
     virtual void on_apparent_collision()
     {
@@ -228,6 +239,7 @@ class VehicleMotionInterface : public mrpt::system::COutputLogger,
             "handler called (event='%s').",
             waypoint_index, reached_skipped ? "reached" : "skipped");
     }
+
     /**
      * @brief Callback when NavEngine cannot reach a specified target location
      * because there are obstacles at the specified target
