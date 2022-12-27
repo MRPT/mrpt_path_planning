@@ -266,6 +266,7 @@ void NavEngine::suspend()
     if (navigationStatus_ == NavStatus::NAVIGATING)
     {
         navigationStatus_ = NavStatus::SUSPENDED;
+        innerState_.active_plan_reset(true);
 
         if (config_.vehicleMotionInterface)
         {
@@ -393,7 +394,9 @@ void NavEngine::update_robot_kinematic_state()
                innerState_.latestPoses.begin()->first,
                innerState_.latestPoses.rbegin()->first) >
                PREVIOUS_POSES_MAX_AGE)
-    { innerState_.latestPoses.erase(innerState_.latestPoses.begin()); }
+    {
+        innerState_.latestPoses.erase(innerState_.latestPoses.begin());
+    }
     while (innerState_.latestOdomPoses.size() > 1 &&
            mrpt::system::timeDifference(
                innerState_.latestOdomPoses.begin()->first,
@@ -927,7 +930,9 @@ void NavEngine::check_new_planner_output()
 
     // Merge or overwrite current plan:
     if (result.startingFromCurrentPlanNode.has_value())
-    { merge_new_plan_if_better(result); }
+    {
+        merge_new_plan_if_better(result);
+    }
     else
     {
         MRPT_LOG_INFO_STREAM("Taking new path planning result.");
@@ -1748,6 +1753,35 @@ bool NavEngine::approach_target_controller()
 
     const auto atrw = internal_check_about_to_reach_stop_wp();
 
+    // Check for no-getting-closer timeout here, since we have the distance to
+    // goal:
+    if (!_.lastDistanceToGoal.has_value() ||
+        atrw.distanceToWaypoint < *_.lastDistanceToGoal)
+    {
+        // Good: we are making progress:
+        _.lastDistanceToGoal = atrw.distanceToWaypoint;
+        _.lastDistanceToGoalTimestamp =
+            config_.vehicleMotionInterface->robot_time();
+    }
+    else if (_.lastDistanceToGoalTimestamp.has_value())
+    {
+        // we are not making progress:
+        const double age = config_.vehicleMotionInterface->robot_time() -
+                           *_.lastDistanceToGoalTimestamp;
+        if (age > config_.timeoutNotGettingCloserGoal)
+        {
+            MRPT_LOG_INFO_FMT(
+                "Triggering on_path_seems_blocked() event since distance to "
+                "goal could not get shorter than %f for %f seconds.",
+                _.lastDistanceToGoal.value(), age);
+
+            pendingEvents_.emplace_back([this]() {
+                config_.vehicleMotionInterface->on_path_seems_blocked();
+            });
+        }
+    }
+
+    // check about-to-reach-waypoint return values:
     if (atrw.aboutToReach)
     {
         MRPT_LOG_DEBUG_STREAM(

@@ -127,8 +127,6 @@ class NavEngine : public mrpt::system::COutputLogger
          * user in the navigation request. */
         double dist_to_target_for_sending_event{0};
 
-        /** navigator timeout (seconds) [Default=30 sec] */
-        double alarm_seems_not_approaching_target_timeout{30};
 
         /** (Default value=0.6) When closer than this distance, check if the
          * target is blocked to abort navigation with an error. */
@@ -148,6 +146,11 @@ class NavEngine : public mrpt::system::COutputLogger
 
         double maxDistanceForTargetApproach        = 1.5;  // [m]
         double maxRelativeHeadingForTargetApproach = 180.0_deg;  // [rad]
+
+        /** Navigation timeout (seconds) [Default=30 sec]
+         *  See description of VehicleMotionInterface::on_path_seems_blocked()
+         */
+        double timeoutNotGettingCloserGoal = 30;
 
         bool generateNavLogFiles = false;
 
@@ -447,6 +450,8 @@ class NavEngine : public mrpt::system::COutputLogger
                 activePlanPath.clear();
                 activePlanPathEdges.clear();
                 pathPlannerTargetWpIdx.reset();
+                lastDistanceToGoalTimestamp.reset();
+                lastDistanceToGoal.reset();
             }
         }
 
@@ -486,6 +491,11 @@ class NavEngine : public mrpt::system::COutputLogger
             stateVizForNavLog.reset();
             navlogDebugMessages.clear();
         }
+
+        /** Values used to check against
+         * Configuration::timeoutNotGettingCloserGoal
+         */
+        std::optional<double> lastDistanceToGoalTimestamp, lastDistanceToGoal;
 
         /** @} */
 
