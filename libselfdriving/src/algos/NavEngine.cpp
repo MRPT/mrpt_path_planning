@@ -394,9 +394,7 @@ void NavEngine::update_robot_kinematic_state()
                innerState_.latestPoses.begin()->first,
                innerState_.latestPoses.rbegin()->first) >
                PREVIOUS_POSES_MAX_AGE)
-    {
-        innerState_.latestPoses.erase(innerState_.latestPoses.begin());
-    }
+    { innerState_.latestPoses.erase(innerState_.latestPoses.begin()); }
     while (innerState_.latestOdomPoses.size() > 1 &&
            mrpt::system::timeDifference(
                innerState_.latestOdomPoses.begin()->first,
@@ -930,9 +928,7 @@ void NavEngine::check_new_planner_output()
 
     // Merge or overwrite current plan:
     if (result.startingFromCurrentPlanNode.has_value())
-    {
-        merge_new_plan_if_better(result);
-    }
+    { merge_new_plan_if_better(result); }
     else
     {
         MRPT_LOG_INFO_STREAM("Taking new path planning result.");
@@ -1819,7 +1815,7 @@ bool NavEngine::approach_target_controller()
 
     const auto out = config_.targetApproachController->execute(tacIn);
 
-    MRPT_LOG_INFO_FMT(
+    MRPT_LOG_DEBUG_FMT(
         "Controller towards target executed since atrw. aboutToReach=true, "
         "results: targetDist=%f handled=%s reachedDetected=%s",
         atrw.distanceToWaypoint, out.handled ? "YES" : "NO",
