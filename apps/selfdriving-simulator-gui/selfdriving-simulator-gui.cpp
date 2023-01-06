@@ -632,7 +632,7 @@ void prepare_selfdriving_window(
         std::cout << "Waypoints:\n" << sd->waypts.getAsText() << std::endl;
 
         {
-            auto lckgui = mrpt::lockHelper(world->guiUserObjectsViz_);
+            auto lckgui = mrpt::lockHelper(world->guiUserObjectsMtx_);
             world->guiUserObjectsViz_->insert(glWaypoints);
         }
 
