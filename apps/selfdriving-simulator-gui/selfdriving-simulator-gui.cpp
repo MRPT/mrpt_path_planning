@@ -546,21 +546,21 @@ void prepare_selfdriving_window(
 
     // navigator 3D visualization interface:
     sd->navigator.config_.on_viz_pre_modify = [world, &gui]() {
-        world->m_gui_user_objects_mtx.lock();
+        world->guiUserObjectsMtx_.lock();
         gui->background_scene_mtx.lock();
     };
     sd->navigator.config_.on_viz_post_modify = [world, &gui]() {
-        world->m_gui_user_objects_mtx.unlock();
+        world->guiUserObjectsMtx_.unlock();
         gui->background_scene_mtx.unlock();
     };
 
     // prepare custom gl objects for selfdriving lib:
     {
-        auto lckgui = mrpt::lockHelper(world->m_gui_user_objects_mtx);
-        world->m_gui_user_objects_viz = mrpt::opengl::CSetOfObjects::Create();
-        world->m_gui_user_objects_viz->setName("gui_user_objects_viz");
+        auto lckgui               = mrpt::lockHelper(world->guiUserObjectsMtx_);
+        world->guiUserObjectsViz_ = mrpt::opengl::CSetOfObjects::Create();
+        world->guiUserObjectsViz_->setName("gui_user_objects_viz");
 
-        sd->navigator.config_.vizSceneToModify = world->m_gui_user_objects_viz;
+        sd->navigator.config_.vizSceneToModify = world->guiUserObjectsViz_;
     }
 
 #if MRPT_VERSION >= 0x211
@@ -632,8 +632,8 @@ void prepare_selfdriving_window(
         std::cout << "Waypoints:\n" << sd->waypts.getAsText() << std::endl;
 
         {
-            auto lckgui = mrpt::lockHelper(world->m_gui_user_objects_mtx);
-            world->m_gui_user_objects_viz->insert(glWaypoints);
+            auto lckgui = mrpt::lockHelper(world->guiUserObjectsViz_);
+            world->guiUserObjectsViz_->insert(glWaypoints);
         }
 
         lbNavStatus =
@@ -691,8 +691,8 @@ void prepare_selfdriving_window(
         glTargetSign->setVisibility(false);
 
         {
-            auto lckgui = mrpt::lockHelper(world->m_gui_user_objects_mtx);
-            world->m_gui_user_objects_viz->insert(glTargetSign);
+            auto lckgui = mrpt::lockHelper(world->guiUserObjectsMtx_);
+            world->guiUserObjectsViz_->insert(glTargetSign);
         }
 
         nanogui::Button* pickBtn = nullptr;
