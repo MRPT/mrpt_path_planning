@@ -11,6 +11,7 @@
 #include <selfdriving/interfaces/TargetApproachController.h>
 #include <selfdriving/interfaces/VehicleMotionInterface.h>
 #include <selfdriving/ptgs/HolonomicBlend.h>
+#include <selfdriving/ptgs/DiffDrive_C.h>
 
 MRPT_INITIALIZER(selfdriving_register)
 {
@@ -32,4 +33,5 @@ MRPT_INITIALIZER(selfdriving_register)
 
     // PTGs:
     registerClass(CLASS_ID(ptg::HolonomicBlend));
+    registerClass(CLASS_ID(ptg::DiffDrive_C));
 }
