@@ -9,6 +9,7 @@
 #pragma once
 
 #include <mrpt/nav/tpspace/CPTG_DiffDrive_CollisionGridBased.h>
+#include <selfdriving/ptgs/SpeedTrimmablePTG.h>
 
 namespace selfdriving::ptg
 {
@@ -37,7 +38,8 @@ namespace selfdriving::ptg
  * \note [Before MRPT 1.5.0 this was named CPTG1]
  *  \ingroup nav_tpspace
  */
-class DiffDrive_C : public mrpt::nav::CPTG_DiffDrive_CollisionGridBased
+class DiffDrive_C : public mrpt::nav::CPTG_DiffDrive_CollisionGridBased,
+					public SpeedTrimmablePTG
 {
 	DEFINE_SERIALIZABLE(DiffDrive_C, selfdriving::ptg)
    public:
