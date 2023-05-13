@@ -10,6 +10,7 @@
 #include <mrpt/img/TColor.h>
 #include <mrpt/maps/CPointsMap.h>
 #include <mrpt/math/TPoint3D.h>
+#include <mrpt/math/TPose2D.h>
 
 #include <optional>
 #include <string>
