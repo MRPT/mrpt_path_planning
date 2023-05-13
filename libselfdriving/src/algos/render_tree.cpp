@@ -296,7 +296,7 @@ auto selfdriving::render_tree(
                 objLb->setPose(obj->getPose() + relPose);
                 objLb->setScale(ro.edgeCostLabelSize);
                 objLb->setString(mrpt::format(
-                    "cost=%.01f(d=%.01f)", etp->cost,
+                    "c=%.02f d=%.02f", etp->cost,
                     etp->ptgDist != std::numeric_limits<double>::max()
                         ? etp->ptgDist
                         : .0));
