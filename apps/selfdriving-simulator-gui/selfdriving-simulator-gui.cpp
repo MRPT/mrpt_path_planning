@@ -409,7 +409,7 @@ int launchSimulation()
     while (!do_exit)
     {
         // was the quit button hit in the GUI?
-        if (world->gui_thread_must_close()) break;
+        if (world->simulator_must_close()) break;
 
         // Simulation
         // ============================================================
