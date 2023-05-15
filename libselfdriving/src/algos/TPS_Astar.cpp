@@ -660,10 +660,6 @@ TPS_Astar::list_paths_to_neighbors_t
                     // timestamp:
                     const auto maxSteps = ptg->getPathStepCount(trjIdx);
 
-                    std::cout << "speed: " << speed << " trkIdx: " << trjIdx
-                              << " trjStep: " << trjStep << " / " << maxSteps
-                              << " ptg_dt:" << ptg_dt << "\n";
-
                     ASSERT_(maxSteps >= 1);
                     if (trjStep >= maxSteps) continue;
 
