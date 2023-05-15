@@ -101,167 +101,102 @@ mrpt::serialization::CArchive& selfdriving::ptg::operator>>(
     Solve trajectories and fill cells.
   ---------------------------------------------------------------*/
 void DiffDriveCollisionGridBased::simulateTrajectories(
-    float max_time, float max_dist, unsigned int max_n, float diferencial_t,
-    float min_dist, float* out_max_acc_v, float* out_max_acc_w)
+    float max_time, float max_dist, float dt)
 {
     using mrpt::square;
 
     internal_deinitialize();  // Free previous paths
 
-    m_stepTimeDuration = diferencial_t;
+    m_stepTimeDuration = dt;
 
     // Reserve the size in the buffers:
     m_trajectory.resize(m_alphaValuesCount);
-
-    const float radio_max_robot = 1.0f;  // Arbitrary "robot radius", only to
-    // determine the spacing of points
-    // under pure rotation
-
-    // Aux buffer:
-    TCPointVector points;
-
-    float ult_dist, ult_dist1, ult_dist2;
 
     // For the grid:
     float x_min = 1e3f, x_max = -1e3;
     float y_min = 1e3f, y_max = -1e3;
 
-    // Para averiguar las maximas ACELERACIONES lineales y angulares:
-    float max_acc_lin, max_acc_ang;
-
-    max_acc_lin = max_acc_ang = 0;
-
-    try
+    for (unsigned int k = 0; k < m_alphaValuesCount; k++)
     {
-        for (unsigned int k = 0; k < m_alphaValuesCount; k++)
+        // Simulate / evaluate the trajectory selected by this "alpha":
+        // ------------------------------------------------------------
+        const float alpha = index2alpha(k);
+
+        TCPointVector points;
+
+        float t = .0f, dist = .0f, turned = .0f;
+        float x = .0f, y = .0f, phi = .0f, v = .0f, w = .0f;
+
+        // Add the first, initial point:
+        points.push_back(TCPoint(x, y, phi, t, dist, v, w));
+
+        // Simulate until...
+        while (t < max_time && dist < max_dist && fabs(turned) < 1.95 * M_PI)
         {
-            // Simulate / evaluate the trajectory selected by this "alpha":
-            // ------------------------------------------------------------
-            const float alpha = index2alpha(k);
+            // Compute new movement command (v,w):
+            ptgDiffDriveSteeringFunction(alpha, t, x, y, phi, v, w);
 
-            points.clear();
-            float t = .0f, dist = .0f, girado = .0f;
-            float x = .0f, y = .0f, phi = .0f, v = .0f, w = .0f, _x = .0f,
-                  _y = .0f, _phi = .0f;
+            // Finite difference equation:
+            x += cos(phi) * v * dt;
+            y += sin(phi) * v * dt;
+            phi += w * dt;
 
-            // Sliding window with latest movement commands (for the optional
-            // low-pass filtering):
-            float last_vs[2] = {.0f, .0f}, last_ws[2] = {.0f, .0f};
+            // Counters:
+            turned += w * dt;
 
-            // Add the first, initial point:
-            points.push_back(TCPoint(x, y, phi, t, dist, v, w));
+            float v_inTPSpace =
+                sqrt(square(v) + square(w * turningRadiusReference));
 
-            // Simulate until...
-            while (t < max_time && dist < max_dist && points.size() < max_n &&
-                   fabs(girado) < 1.95 * M_PI)
-            {
-                // Max. aceleraciones:
-                if (t > 1)
-                {
-                    float acc_lin =
-                        fabs((last_vs[0] - last_vs[1]) / diferencial_t);
-                    float acc_ang =
-                        fabs((last_ws[0] - last_ws[1]) / diferencial_t);
-                    mrpt::keep_max(max_acc_lin, acc_lin);
-                    mrpt::keep_max(max_acc_ang, acc_ang);
-                }
+            dist += v_inTPSpace * dt;
 
-                // Compute new movement command (v,w):
-                ptgDiffDriveSteeringFunction(alpha, t, x, y, phi, v, w);
+            t += dt;
 
-                // History of v/w ----------------------------------
-                last_vs[1] = last_vs[0];
-                last_ws[1] = last_ws[0];
-                last_vs[0] = v;
-                last_ws[0] = w;
-                // -------------------------------------------
-
-                // Finite difference equation:
-                x += cos(phi) * v * diferencial_t;
-                y += sin(phi) * v * diferencial_t;
-                phi += w * diferencial_t;
-
-                // Counters:
-                girado += w * diferencial_t;
-
-                float v_inTPSpace =
-                    sqrt(square(v) + square(w * turningRadiusReference));
-
-                dist += v_inTPSpace * diferencial_t;
-
-                t += diferencial_t;
-
-                // Save sample if we moved far enough:
-                ult_dist1 = sqrt(square(_x - x) + square(_y - y));
-                ult_dist2 = fabs(radio_max_robot * (_phi - phi));
-                ult_dist  = std::max(ult_dist1, ult_dist2);
-
-                if (ult_dist > min_dist)
-                {
-                    // Set the (v,w) to the last record:
-                    points.back().v = v;
-                    points.back().w = w;
-
-                    // And add the new record:
-                    points.push_back(TCPoint(x, y, phi, t, dist, v, w));
-
-                    // For the next iter:
-                    _x   = x;
-                    _y   = y;
-                    _phi = phi;
-                }
-
-                // for the grid:
-                x_min = std::min(x_min, x);
-                x_max = std::max(x_max, x);
-                y_min = std::min(y_min, y);
-                y_max = std::max(y_max, y);
-            }
-
-            // Add the final point:
+            // Set the (v,w) to the last record:
             points.back().v = v;
             points.back().w = w;
+
+            // And add the new record:
             points.push_back(TCPoint(x, y, phi, t, dist, v, w));
 
-            // Save data to C-Space path structure:
-            m_trajectory[k] = points;
-
-        }  // end for "k"
-
-        // Save accelerations
-        if (out_max_acc_v) *out_max_acc_v = max_acc_lin;
-        if (out_max_acc_w) *out_max_acc_w = max_acc_ang;
-
-        // --------------------------------------------------------
-        // Build the speeding-up grid for lambda function:
-        // --------------------------------------------------------
-        const TCellForLambdaFunction defaultCell;
-        m_lambdaFunctionOptimizer.setSize(
-            x_min - 0.5f, x_max + 0.5f, y_min - 0.5f, y_max + 0.5f, 0.25f,
-            &defaultCell);
-
-        for (uint16_t k = 0; k < m_alphaValuesCount; k++)
-        {
-            const auto M = static_cast<uint32_t>(m_trajectory[k].size());
-            for (uint32_t n = 0; n < M; n++)
-            {
-                TCellForLambdaFunction* cell =
-                    m_lambdaFunctionOptimizer.cellByPos(
-                        m_trajectory[k][n].x, m_trajectory[k][n].y);
-                ASSERT_(cell);
-                // Keep limits:
-                mrpt::keep_min(cell->k_min, k);
-                mrpt::keep_max(cell->k_max, k);
-                mrpt::keep_min(cell->n_min, n);
-                mrpt::keep_max(cell->n_max, n);
-            }
+            // for the grid:
+            x_min = std::min(x_min, x);
+            x_max = std::max(x_max, x);
+            y_min = std::min(y_min, y);
+            y_max = std::max(y_max, y);
         }
-    }
-    catch (...)
+
+        // Add the final point:
+        points.back().v = v;
+        points.back().w = w;
+        points.push_back(TCPoint(x, y, phi, t, dist, v, w));
+
+        // Save data to C-Space path structure:
+        m_trajectory[k] = std::move(points);
+
+    }  // end for "k"
+
+    // --------------------------------------------------------
+    // Build the speeding-up grid for lambda function:
+    // --------------------------------------------------------
+    const TCellForLambdaFunction defaultCell;
+    m_lambdaFunctionOptimizer.setSize(
+        x_min - 0.5f, x_max + 0.5f, y_min - 0.5f, y_max + 0.5f, 0.25f,
+        &defaultCell);
+
+    for (uint16_t k = 0; k < m_alphaValuesCount; k++)
     {
-        std::cout
-            << "[CPTG_DiffDrive_CollisionGridBased::simulateTrajectories] "
-               "Simulation aborted: unexpected exception!\n";
+        const auto M = static_cast<uint32_t>(m_trajectory[k].size());
+        for (uint32_t n = 0; n < M; n++)
+        {
+            TCellForLambdaFunction* cell = m_lambdaFunctionOptimizer.cellByPos(
+                m_trajectory[k][n].x, m_trajectory[k][n].y);
+            ASSERT_(cell);
+            // Keep limits:
+            mrpt::keep_min(cell->k_min, k);
+            mrpt::keep_max(cell->k_max, k);
+            mrpt::keep_min(cell->n_min, n);
+            mrpt::keep_max(cell->n_max, n);
+        }
     }
 }
 
@@ -705,13 +640,13 @@ void DiffDriveCollisionGridBased::internal_initialize(
     if (verbose) cout << "Initializing PTG '" << cacheFilename << "'...";
 
     // Simulate paths:
-    const float min_dist = 0.015f;
+    float trajectory_max_time  = 100.0f;  // [s]
+    float trajectory_time_step = 1.0e-3f;  // [s]
+
     simulateTrajectories(
-        100,  // max.tim,
+        trajectory_max_time,
         refDistance,  // max.dist,
-        10 * refDistance / min_dist,  // max.n,
-        0.0005f,  // diferencial_t
-        min_dist  // min_dist
+        trajectory_time_step  // timestep
     );
 
     // Just for debugging, etc.

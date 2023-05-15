@@ -149,10 +149,7 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
 
     /** Numerically solve the diferential equations to generate a family of
      * trajectories */
-    void simulateTrajectories(
-        float max_time, float max_dist, unsigned int max_n, float diferencial_t,
-        float min_dist, float* out_max_acc_v = nullptr,
-        float* out_max_acc_w = nullptr);
+    void simulateTrajectories(float max_time, float max_dist, float dt);
 
     mrpt::math::TTwist2D getPathTwist(uint16_t k, uint32_t step) const override;
 
