@@ -15,8 +15,8 @@ Planner::~Planner() = default;
 cost_t Planner::cost_path_segment(const MoveEdgeSE2_TPS& edge) const
 {
     // Base cost: distance
-    cost_t c = edge.ptgDist;
-    // cost_t c = edge.estimatedExecTime;
+    // cost_t c = edge.ptgDist;
+    cost_t c = edge.estimatedExecTime;
 
     // Additional optional cost evaluators:
     for (const auto& ce : costEvaluators_)
