@@ -656,11 +656,16 @@ TPS_Astar::list_paths_to_neighbors_t
                 {
                     ptg_step_t trjStep = mrpt::round(t / ptg_dt);
 
-                    // saturate if this PTG path ends earlier than the specified
+                    // skip if this PTG path ends earlier than the specified
                     // timestamp:
                     const auto maxSteps = ptg->getPathStepCount(trjIdx);
+
+                    std::cout << "speed: " << speed << " trkIdx: " << trjIdx
+                              << " trjStep: " << trjStep << " / " << maxSteps
+                              << " ptg_dt:" << ptg_dt << "\n";
+
                     ASSERT_(maxSteps >= 1);
-                    mrpt::keep_min(trjStep, maxSteps - 1);
+                    if (trjStep >= maxSteps) continue;
 
                     tpsPointsToConsider.emplace_back(trjIdx, trjStep, speed);
                 }

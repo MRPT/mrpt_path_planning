@@ -8,7 +8,7 @@
    +------------------------------------------------------------------------+ */
 #pragma once
 
-#include <mrpt/nav/tpspace/CPTG_DiffDrive_CollisionGridBased.h>
+#include <selfdriving/ptgs/DiffDriveCollisionGridBased.h>
 #include <selfdriving/ptgs/SpeedTrimmablePTG.h>
 
 namespace selfdriving::ptg
@@ -38,36 +38,35 @@ namespace selfdriving::ptg
  * \note [Before MRPT 1.5.0 this was named CPTG1]
  *  \ingroup nav_tpspace
  */
-class DiffDrive_C : public mrpt::nav::CPTG_DiffDrive_CollisionGridBased,
-					public SpeedTrimmablePTG
+class DiffDrive_C : public DiffDriveCollisionGridBased, public SpeedTrimmablePTG
 {
-	DEFINE_SERIALIZABLE(DiffDrive_C, selfdriving::ptg)
+    DEFINE_SERIALIZABLE(DiffDrive_C, selfdriving::ptg)
    public:
-	DiffDrive_C() = default;
-	DiffDrive_C(
-		const mrpt::config::CConfigFileBase& cfg, const std::string& sSection)
-	{
-		loadFromConfigFile(cfg, sSection);
-	}
-	void loadFromConfigFile(
-		const mrpt::config::CConfigFileBase& cfg,
-		const std::string& sSection) override;
-	void saveToConfigFile(
-		mrpt::config::CConfigFileBase& cfg,
-		const std::string& sSection) const override;
+    DiffDrive_C() = default;
+    DiffDrive_C(
+        const mrpt::config::CConfigFileBase& cfg, const std::string& sSection)
+    {
+        DiffDrive_C::loadFromConfigFile(cfg, sSection);
+    }
+    void loadFromConfigFile(
+        const mrpt::config::CConfigFileBase& cfg,
+        const std::string&                   sSection) override;
+    void saveToConfigFile(
+        mrpt::config::CConfigFileBase& cfg,
+        const std::string&             sSection) const override;
 
-	std::string getDescription() const override;
-	bool inverseMap_WS2TP(
-		double x, double y, int& out_k, double& out_d,
-		double tolerance_dist = 0.10) const override;
-	bool PTG_IsIntoDomain(double x, double y) const override;
-	void ptgDiffDriveSteeringFunction(
-		float alpha, float t, float x, float y, float phi, float& v,
-		float& w) const override;
-	void loadDefaultParams() override;
+    std::string getDescription() const override;
+    bool        inverseMap_WS2TP(
+               double x, double y, int& out_k, double& out_d,
+               double tolerance_dist = 0.10) const override;
+    bool PTG_IsIntoDomain(double x, double y) const override;
+    void ptgDiffDriveSteeringFunction(
+        float alpha, float t, float x, float y, float phi, float& v,
+        float& w) const override;
+    void loadDefaultParams() override;
 
    protected:
-	/** A generation parameter */
-	double K{0};
+    /** A generation parameter */
+    double K{0};
 };
 }  // namespace selfdriving::ptg
