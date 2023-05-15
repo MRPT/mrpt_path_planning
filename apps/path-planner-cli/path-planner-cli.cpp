@@ -133,6 +133,11 @@ TCLAP::ValueArg<std::string> arg_InterpolatePath(
     "Interpolates the path and saves it into a .csv file", false, "path.csv",
     "path.csv", cmd);
 
+TCLAP::SwitchArg arg_playAnimation(
+    "", "play-animation",
+    "Shows the GUI with an animation of the vehicle moving along the path",
+    cmd);
+
 static mrpt::maps::CPointsMap::Ptr load_obstacles()
 {
     auto obsPts = mrpt::maps::CSimplePointsMap::Create();
@@ -351,9 +356,11 @@ static void do_plan_path()
     // Hide regular tree edges and only show best path?
     if (!arg_showTree.isSet()) vizOpts.renderOptions.width_normal_edge = 0;
 
-    // generate path sequence:
+    std::optional<selfdriving::trajectory_t> traj;  // interpolated path
+
     if (plan.success)
     {
+        // generate path sequence:
         if (arg_printPathEdges.isSet())
         {
             std::cout << "Planned path edges:\n";
@@ -361,27 +368,38 @@ static void do_plan_path()
         }
 
         // interpolate path:
-        if (arg_InterpolatePath.isSet())
+        if (arg_InterpolatePath.isSet() || arg_playAnimation.isSet())
         {
-            std::cout << "Computing interpolated path..." << std::endl;
-
             const auto t0 = mrpt::Clock::nowDouble();
 
-            const selfdriving::trajectory_t traj =
-                selfdriving::plan_to_trajectory(pathEdges, pi.ptgs);
+            traj = selfdriving::plan_to_trajectory(pathEdges, pi.ptgs);
 
             const auto dt = mrpt::Clock::nowDouble() - t0;
 
             std::cout << "Interpolated path done in "
-                      << mrpt::system::intervalFormat(dt) << ". Saving to "
-                      << arg_InterpolatePath.getValue() << std::endl;
+                      << mrpt::system::intervalFormat(dt) << ".\n";
 
-            selfdriving::save_to_txt(traj, arg_InterpolatePath.getValue());
+            if (arg_InterpolatePath.isSet())
+            {
+                std::cout << "Saving path to " << arg_InterpolatePath.getValue()
+                          << std::endl;
+                selfdriving::save_to_txt(*traj, arg_InterpolatePath.getValue());
+            }
         }
     }
 
     // GUI:
-    selfdriving::viz_nav_plan(plan, vizOpts, planner->costEvaluators_);
+    if (!arg_playAnimation.isSet() || !traj.has_value())
+    {
+        // regular UI:
+        selfdriving::viz_nav_plan(plan, vizOpts, planner->costEvaluators_);
+    }
+    else
+    {
+        // Animation UI:
+        selfdriving::viz_nav_plan_animation(
+            plan, *traj, vizOpts.renderOptions, planner->costEvaluators_);
+    }
 }
 
 int main(int argc, char** argv)
