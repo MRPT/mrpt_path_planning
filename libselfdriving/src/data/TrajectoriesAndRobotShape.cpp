@@ -89,7 +89,7 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
         // Init:
         new_ptg->initialize(
             mrpt::format(
-                "%s/ReacNavGrid_%03u.dat.gz", ptg_cache_files_directory.c_str(),
+                "%s/ptg_grid_%03u.dat.gz", ptg_cache_files_directory.c_str(),
                 n),
             false /*verbose*/
         );
