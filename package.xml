@@ -6,7 +6,7 @@
 <package format="3">
   <name>selfdrivinglib</name>
   <version>0.1.0</version>
-  <description>Self-driving (autonomous navigation) algorithms for robots moving on planar environments. 
+  <description>Self-driving (autonomous navigation) algorithms for robots moving on planar environments.
      This builds upon mrpt-nav and the theory behind PTGs to generate libraries of "motion primitives" for
      vehicles with arbitrary shape and realistic kinematics and dynamics.</description>
 
@@ -20,9 +20,6 @@
   <!-- Deps required by user code (they are in public headers or built as ROS (vs system) packages -->
   <depend>mrpt2</depend>
   <depend>mvsim</depend>
-
-  <!-- Deps required by building only -->
-<!--  <build_depend>assimp-dev</build_depend> -->
 
   <doc_depend>doxygen</doc_depend>
 
