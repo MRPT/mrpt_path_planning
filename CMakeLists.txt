@@ -8,7 +8,7 @@ endif()
 # Set the possible values of build type for cmake-gui
 set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo" "SanitizeAddress" "SanitizeThread")
 
-project(SelfdrivingProject LANGUAGES CXX)
+project(MRPTPathPlanningProject LANGUAGES CXX)
 
 # Include std cmake scripts:
 include(CheckCXXCompilerFlag) # for check_cxx_compiler_flag()
@@ -45,16 +45,16 @@ find_package(mrpt-gui REQUIRED)
 find_package(mrpt-nav REQUIRED)
 
 # Targets:
-add_subdirectory(libselfdriving)
+add_subdirectory(mrpt_path_planning)
 
-option(SELFDRIVING_BUILD_APPS "Build selfdriving cli/gui tools" ON)
-if (SELFDRIVING_BUILD_APPS)
+option(MRPT_PATH_PLANNING_BUILD_APPS "Build mrpt_path_planning cli/gui tools" ON)
+if (MRPT_PATH_PLANNING_BUILD_APPS)
 	add_subdirectory(apps)
 endif()
 
 # Summary:
 message(STATUS "")
-message(STATUS "${PROJECT_NAME} version ${SELFDRIVING_VERSION}")
+message(STATUS "${PROJECT_NAME} version ${MRPT_PATH_PLANNING_VERSION}")
 message(STATUS "----------------------------------------------------------")
 message(STATUS " CMAKE_BUILD_TYPE                : ${CMAKE_BUILD_TYPE}")
 message(STATUS " MRPT                            : ${mrpt-nav_VERSION}")

@@ -175,7 +175,7 @@ function(selfdriving_configure_library TARGETNAME)
   # make project importable from build_dir:
   export(
     TARGETS ${TARGETNAME}
-    NAMESPACE selfdriving::
+    NAMESPACE mpp::
     # export to ROOT cmake directory (when building MOLA as a superproject)
     FILE ${CMAKE_BINARY_DIR}/${TARGETNAME}-targets.cmake
   )
@@ -183,7 +183,7 @@ function(selfdriving_configure_library TARGETNAME)
   set(ALL_DEPS_LIST ${ARGN}) # used in xxx-config.cmake.in
   set(SELFDRIVING_MODULE_NAME ${TARGETNAME})
   configure_file(
-    "${SelfdrivingProject_SOURCE_DIR}/cmake/template-config.cmake.in"
+    "${MRPTPathPlanningProject_SOURCE_DIR}/cmake/template-config.cmake.in"
     "${CMAKE_BINARY_DIR}/${TARGETNAME}-config.cmake" IMMEDIATE @ONLY
   )
   # Version file:

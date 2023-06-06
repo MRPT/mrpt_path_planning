@@ -1,7 +1,10 @@
 [![CI Linux](https://github.com/jlblancoc/selfdriving/actions/workflows/build-linux.yml/badge.svg)](https://github.com/jlblancoc/selfdriving/actions/workflows/build-linux.yml) [![Documentation Status](https://readthedocs.org/projects/selfdriving/badge/?version=latest)](https://selfdriving.readthedocs.io/en/latest/?badge=latest)
 
-# selfdriving
-Self-driving (autonomous navigation) algorithms for robots/vehicles moving on planar environments. This builds upon mrpt-nav and the theory behind PTGs to generate libraries of "motion primitives" for vehicles with arbitrary shape and realistic kinematics and dynamics.
+# mrpt_path_planning
+
+Path planning and navigation algorithms for robots/vehicles moving on planar environments. 
+This library builds upon mrpt-nav and the theory behind PTGs to generate libraries of "motion primitives"
+for vehicles with arbitrary shape and realistic kinematics and dynamics.
 
 ## Build requisites
 
@@ -28,8 +31,8 @@ sudo apt install libmrpt-dev
 From your CMake script:
 
 ```
-find_package(selfdriving REQUIRED)
-target_link_libraries(YOUR_TARGET selfdriving::selfdriving)
+find_package(mrpt_path_planning REQUIRED)
+target_link_libraries(YOUR_TARGET mpp::mrpt_path_planning)
 ```
 
 ## Demo runs
@@ -42,7 +45,7 @@ Command-line app to test the A* planner:
 
 ```
 build-Release/bin/path-planner-cli -g "[4 2.5 45]" -s "[0.5 0 0]" \
-    --planner "selfdriving::TPS_Astar"  \
+    --planner "mpp::TPS_Astar"  \
     -c share/ptgs_holonomic_robot.ini  \
     --obstacles share/obstacles_01.txt  \
     --planner-parameters share/mvsim-demo-astar-planner-params.yaml  \

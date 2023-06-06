@@ -4,4 +4,4 @@ Write me!
 
 ![selfdriving-architecture](selfdriving-architecture.png)
 
-selfdriving::TPS_Astar: Implements the A* algorithm itself.
+mpp::TPS_Astar: Implements the A* algorithm itself.

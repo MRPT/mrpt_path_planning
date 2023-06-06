@@ -6,11 +6,11 @@
 
 #pragma once
 
+#include <mpp/algos/CostEvaluator.h>
+#include <mpp/algos/Planner.h>
 #include <mrpt/system/COutputLogger.h>
-#include <selfdriving/algos/CostEvaluator.h>
-#include <selfdriving/algos/Planner.h>
 
-namespace selfdriving
+namespace mpp
 {
 struct TPS_RRTstar_Parameters
 {
@@ -44,7 +44,7 @@ struct TPS_RRTstar_Parameters
 
 class TPS_RRTstar : virtual public mrpt::system::COutputLogger, public Planner
 {
-    DEFINE_MRPT_OBJECT(TPS_RRTstar, selfdriving)
+    DEFINE_MRPT_OBJECT(TPS_RRTstar, mpp)
 
    public:
     TPS_RRTstar();
@@ -159,4 +159,4 @@ class TPS_RRTstar : virtual public mrpt::system::COutputLogger, public Planner
     std::map<TNodeID, LocalObstaclesInfo> local_obstacles_cache_;
 };
 
-}  // namespace selfdriving
+}  // namespace mpp
