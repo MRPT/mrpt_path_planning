@@ -4,21 +4,21 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
+#include <mpp/algos/TPS_RRTstar.h>
+#include <mpp/algos/render_tree.h>
+#include <mpp/algos/tp_obstacles_single_path.h>
+#include <mpp/algos/transform_pc_square_clipping.h>
+#include <mpp/algos/within_bbox.h>
 #include <mrpt/maps/COccupancyGridMap2D.h>
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/opengl/COpenGLScene.h>
 #include <mrpt/random/RandomGenerators.h>
-#include <selfdriving/algos/TPS_RRTstar.h>
-#include <selfdriving/algos/render_tree.h>
-#include <selfdriving/algos/tp_obstacles_single_path.h>
-#include <selfdriving/algos/transform_pc_square_clipping.h>
-#include <selfdriving/algos/within_bbox.h>
 
 #include <iostream>
 
-IMPLEMENTS_MRPT_OBJECT(TPS_RRTstar, Planner, selfdriving)
+IMPLEMENTS_MRPT_OBJECT(TPS_RRTstar, Planner, mpp)
 
-using namespace selfdriving;
+using namespace mpp;
 
 mrpt::containers::yaml TPS_RRTstar_Parameters::as_yaml()
 {
@@ -587,8 +587,7 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_euclidean(
 
             const auto closestObsWrtRobot = q.inverseComposePoint(closestObs);
 
-            if (selfdriving::obstaclePointCollides(
-                    closestObsWrtRobot, p.pi_.ptgs))
+            if (mpp::obstaclePointCollides(closestObsWrtRobot, p.pi_.ptgs))
             {
                 isCollision = true;
                 break;

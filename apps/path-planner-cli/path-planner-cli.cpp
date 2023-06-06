@@ -4,6 +4,13 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
+#include <mpp/algos/CostEvaluatorCostMap.h>
+#include <mpp/algos/CostEvaluatorPreferredWaypoint.h>
+#include <mpp/algos/TPS_Astar.h>
+#include <mpp/algos/refine_trajectory.h>
+#include <mpp/algos/trajectories.h>
+#include <mpp/algos/viz.h>
+#include <mpp/data/Waypoints.h>
 #include <mrpt/3rdparty/tclap/CmdLine.h>
 #include <mrpt/config/CConfigFile.h>
 #include <mrpt/core/exceptions.h>  // exception_to_str()
@@ -16,13 +23,6 @@
 #include <mrpt/system/filesystem.h>
 #include <mrpt/system/os.h>  // plugins
 #include <mrpt/version.h>
-#include <selfdriving/algos/CostEvaluatorCostMap.h>
-#include <selfdriving/algos/CostEvaluatorPreferredWaypoint.h>
-#include <selfdriving/algos/TPS_Astar.h>
-#include <selfdriving/algos/refine_trajectory.h>
-#include <selfdriving/algos/trajectories.h>
-#include <selfdriving/algos/viz.h>
-#include <selfdriving/data/Waypoints.h>
 
 #include <fstream>
 #include <iostream>
@@ -37,8 +37,8 @@ TCLAP::ValueArg<std::string> arg_obs_file(
     true, "", "obs.txt", cmd);
 
 TCLAP::ValueArg<std::string> argPlanner(
-    "p", "planner", "Planner C++ class name to use", false,
-    "selfdriving::TPS_Astar", "selfdriving::TPS_Astar", cmd);
+    "p", "planner", "Planner C++ class name to use", false, "mpp::TPS_Astar",
+    "mpp::TPS_Astar", cmd);
 
 TCLAP::ValueArg<std::string> argVerbosity(
     "v", "verbose", "Verbosity level for path planner", false, "INFO",
@@ -192,17 +192,16 @@ static void do_plan_path()
 {
     // Load obstacles:
     mrpt::maps::CPointsMap::Ptr obsPts = load_obstacles();
-    auto obs = selfdriving::ObstacleSource::FromStaticPointcloud(obsPts);
+    auto obs = mpp::ObstacleSource::FromStaticPointcloud(obsPts);
 
     // Prepare planner input data:
-    selfdriving::PlannerInput pi;
+    mpp::PlannerInput pi;
 
     pi.stateStart.pose.fromString(arg_start_pose.getValue());
     if (arg_start_vel.isSet())
         pi.stateStart.vel.fromString(arg_start_vel.getValue());
 
-    pi.stateGoal.state =
-        selfdriving::PoseOrPoint::FromString(arg_goal_pose.getValue());
+    pi.stateGoal.state = mpp::PoseOrPoint::FromString(arg_goal_pose.getValue());
     if (arg_goal_vel.isSet())
         pi.stateGoal.vel.fromString(arg_goal_vel.getValue());
 
@@ -235,9 +234,8 @@ static void do_plan_path()
               << pi.worldBboxMax.asString() << "\n";
 
     // Do the path planning :
-    selfdriving::Planner::Ptr planner =
-        std::dynamic_pointer_cast<selfdriving::Planner>(
-            mrpt::rtti::classFactory(argPlanner.getValue()));
+    mpp::Planner::Ptr planner = std::dynamic_pointer_cast<mpp::Planner>(
+        mrpt::rtti::classFactory(argPlanner.getValue()));
 
     if (!planner)
     {
@@ -254,35 +252,32 @@ static void do_plan_path()
     {
         // cost map:
         const auto costMapParams =
-            selfdriving::CostEvaluatorCostMap::Parameters::FromYAML(
+            mpp::CostEvaluatorCostMap::Parameters::FromYAML(
                 mrpt::containers::yaml::FromFile(arg_costMap.getValue()));
 
-        auto costmap =
-            selfdriving::CostEvaluatorCostMap::FromStaticPointObstacles(
-                *obsPts, costMapParams, pi.stateStart.pose);
+        auto costmap = mpp::CostEvaluatorCostMap::FromStaticPointObstacles(
+            *obsPts, costMapParams, pi.stateStart.pose);
 
         planner->costEvaluators_.push_back(costmap);
     }
 
     // Preferred waypoints:
-    auto wpParams = selfdriving::CostEvaluatorPreferredWaypoint::Parameters();
+    auto wpParams = mpp::CostEvaluatorPreferredWaypoint::Parameters();
     if (arg_waypointsParams.isSet())
     {
-        wpParams =
-            selfdriving::CostEvaluatorPreferredWaypoint::Parameters::FromYAML(
-                mrpt::containers::yaml::FromFile(
-                    arg_waypointsParams.getValue()));
+        wpParams = mpp::CostEvaluatorPreferredWaypoint::Parameters::FromYAML(
+            mrpt::containers::yaml::FromFile(arg_waypointsParams.getValue()));
     }
 
     if (arg_waypoints.isSet())
     {
-        const auto wps = selfdriving::WaypointSequence::FromYAML(
+        const auto wps = mpp::WaypointSequence::FromYAML(
             mrpt::containers::yaml::FromFile(arg_waypoints.getValue()));
 
         std::vector<mrpt::math::TPoint2D> lstPts;
         for (const auto& wp : wps.waypoints) lstPts.emplace_back(wp.target);
 
-        auto costEval = selfdriving::CostEvaluatorPreferredWaypoint::Create();
+        auto costEval     = mpp::CostEvaluatorPreferredWaypoint::Create();
         costEval->params_ = wpParams;
         costEval->setPreferredWaypoints(lstPts);
         planner->costEvaluators_.push_back(costEval);
@@ -305,14 +300,12 @@ static void do_plan_path()
     }
 
     // Insert custom progress callback:
-    planner->progressCallback_ =
-        [](const selfdriving::ProgressCallbackData& pcd) {
-            std::cout << "[progressCallback] bestCostFromStart: "
-                      << pcd.bestCostFromStart
-                      << " bestCostToGoal: " << pcd.bestCostToGoal
-                      << " bestPathLength: " << pcd.bestPath.size()
-                      << std::endl;
-        };
+    planner->progressCallback_ = [](const mpp::ProgressCallbackData& pcd) {
+        std::cout << "[progressCallback] bestCostFromStart: "
+                  << pcd.bestCostFromStart
+                  << " bestCostToGoal: " << pcd.bestCostToGoal
+                  << " bestPathLength: " << pcd.bestPath.size() << std::endl;
+    };
 
     // PTGs config file:
     mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
@@ -321,7 +314,7 @@ static void do_plan_path()
     // ==================================================
     // ACTUAL PATH PLANNING
     // ==================================================
-    const selfdriving::PlannerOutput plan = planner->plan(pi);
+    const mpp::PlannerOutput plan = planner->plan(pi);
 
     std::cout << "\nDone.\n";
     std::cout << "Success: " << (plan.success ? "YES" : "NO") << "\n";
@@ -342,11 +335,11 @@ static void do_plan_path()
     if (!arg_noRefine.isSet())
     {
         // refine:
-        selfdriving::refine_trajectory(plannedPath, pathEdges, pi.ptgs);
+        mpp::refine_trajectory(plannedPath, pathEdges, pi.ptgs);
     }
 
     // Visualize:
-    selfdriving::VisualizationOptions vizOpts;
+    mpp::VisualizationOptions vizOpts;
 
     vizOpts.renderOptions.highlight_path_to_node_id = plan.bestNodeId;
     vizOpts.renderOptions.color_normal_edge         = {0xb0b0b0, 0x20};  // RGBA
@@ -356,7 +349,7 @@ static void do_plan_path()
     // Hide regular tree edges and only show best path?
     if (!arg_showTree.isSet()) vizOpts.renderOptions.width_normal_edge = 0;
 
-    std::optional<selfdriving::trajectory_t> traj;  // interpolated path
+    std::optional<mpp::trajectory_t> traj;  // interpolated path
 
     if (plan.success)
     {
@@ -372,7 +365,7 @@ static void do_plan_path()
         {
             const auto t0 = mrpt::Clock::nowDouble();
 
-            traj = selfdriving::plan_to_trajectory(pathEdges, pi.ptgs);
+            traj = mpp::plan_to_trajectory(pathEdges, pi.ptgs);
 
             const auto dt = mrpt::Clock::nowDouble() - t0;
 
@@ -383,7 +376,7 @@ static void do_plan_path()
             {
                 std::cout << "Saving path to " << arg_InterpolatePath.getValue()
                           << std::endl;
-                selfdriving::save_to_txt(*traj, arg_InterpolatePath.getValue());
+                mpp::save_to_txt(*traj, arg_InterpolatePath.getValue());
             }
         }
     }
@@ -392,12 +385,12 @@ static void do_plan_path()
     if (!arg_playAnimation.isSet() || !traj.has_value())
     {
         // regular UI:
-        selfdriving::viz_nav_plan(plan, vizOpts, planner->costEvaluators_);
+        mpp::viz_nav_plan(plan, vizOpts, planner->costEvaluators_);
     }
     else
     {
         // Animation UI:
-        selfdriving::viz_nav_plan_animation(
+        mpp::viz_nav_plan_animation(
             plan, *traj, vizOpts.renderOptions, planner->costEvaluators_);
     }
 }
@@ -410,8 +403,8 @@ int main(int argc, char** argv)
 
         if (argPlanner_yaml_output_file.isSet())
         {
-            selfdriving::TPS_Astar_Parameters defaults;
-            const auto                        c = defaults.as_yaml();
+            mpp::TPS_Astar_Parameters defaults;
+            const auto                c = defaults.as_yaml();
             const auto    sFile = argPlanner_yaml_output_file.getValue();
             std::ofstream fileYaml(sFile);
             ASSERT_(fileYaml.is_open());

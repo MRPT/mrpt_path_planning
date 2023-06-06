@@ -10,6 +10,6 @@ selfdriving_add_executable(
   SOURCES selfdriving-simulator-gui.cpp
   LINK_LIBRARIES 
     mrpt::tclap
-    selfdriving
+    mrpt_path_planning
     mvsim::mvsim-simulator
 )

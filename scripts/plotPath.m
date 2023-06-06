@@ -1,5 +1,5 @@
 function [] = plotPath(fileName)
-% PLOTPATH Plots a trajectory file from selfdriving::save_to_txt()
+% PLOTPATH Plots a trajectory file from mpp::save_to_txt()
 %
 
 %  Time [s]     x_global [m]    y_global [m]       phi [rad]   vx_local [m]

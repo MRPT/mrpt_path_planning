@@ -10,6 +10,6 @@ selfdriving_add_executable(
     mrpt::gui
     mrpt::nav
     mrpt::tclap
-    selfdriving
+    mrpt_path_planning
 )
 
