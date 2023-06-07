@@ -4,16 +4,14 @@
      side-by-side to real ROS packages in a catkin/ament environment.
 -->
 <package format="3">
-  <name>selfdrivinglib</name>
-  <version>0.1.0</version>
-  <description>Self-driving (autonomous navigation) algorithms for robots moving on planar environments.
-     This builds upon mrpt-nav and the theory behind PTGs to generate libraries of "motion primitives" for
-     vehicles with arbitrary shape and realistic kinematics and dynamics.</description>
+  <name>mrpt_path_planning</name>
+  <version>0.0.1</version>
+  <description>Path planning and navigation algorithms for robots/vehicles moving on planar environments. This library builds upon mrpt-nav and the theory behind PTGs to generate libraries of "motion primitives" for vehicles with arbitrary shape and realistic kinematics and dynamics.</description>
 
   <author     email="joseluisblancoc@gmail.com">Jose-Luis Blanco-Claraco</author>
   <maintainer email="joseluisblancoc@gmail.com">Jose-Luis Blanco-Claraco</maintainer>
 
-  <url type="website">https://github.com/jlblancoc/selfdriving</url>
+  <url type="website">https://github.com/MRPT/mrpt_path_planning</url>
 
   <license>BSD</license>
 
