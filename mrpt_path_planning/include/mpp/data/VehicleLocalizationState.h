@@ -29,7 +29,7 @@ struct VehicleLocalizationState
     mrpt::math::TPose2D pose;
 
     /** The timestamp for the read pose.
-     * Use mrpt::system::now() unless you have something more accurate. */
+     * Use mrpt::Clock::now() unless you have something more accurate. */
     mrpt::system::TTimeStamp timestamp = INVALID_TIMESTAMP;
 
     /** Optional: if available, place here the (x,y,phi) covariance matrix
