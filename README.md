@@ -20,7 +20,7 @@ for vehicles with arbitrary shape and realistic kinematics and dynamics.
 
 ## Build requisites
 
-- [MRPT](https://github.com/MRPT/mrpt/) (>=2.3.2)
+- [MRPT](https://github.com/MRPT/mrpt/) (>=2.12.0)
 - [mvsim](https://github.com/MRPT/mvsim/) (optional to run the live control simulator).
 
 In Ubuntu 22.04 or newer, installed it with:
@@ -32,7 +32,7 @@ sudo apt install libmrpt-dev
 For older versions of Ubuntu: 
 
 ```
-# MRPT >=2.3.2, for now from this PPA (or build from sources if preferred):
+# MRPT from this PPA (or build from sources if preferred, or from ROS package `mrpt2`):
 sudo add-apt-repository ppa:joseluisblancoc/mrpt
 sudo apt update
 sudo apt install libmrpt-dev
