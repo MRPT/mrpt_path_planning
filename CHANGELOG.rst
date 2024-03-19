@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.1 (2024-03-19)
+------------------
 * Fix usage of obsolete mrpt methods
 * update ros badges
 * Contributors: Jose Luis Blanco-Claraco
