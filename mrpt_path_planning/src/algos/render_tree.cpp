@@ -29,7 +29,8 @@ auto mpp::render_tree(
     ret->setName("render_tree");
     auto& scene = *ret;
 
-    const auto poseHeight = [&ro](const mrpt::poses::CPose3D& p) {
+    const auto poseHeight = [&ro](const mrpt::poses::CPose3D& p)
+    {
         if (ro.phi2z_scale == 0)
             return p;
         else
@@ -39,7 +40,8 @@ auto mpp::render_tree(
             return r;
         }
     };
-    const auto poseHeightT = [&ro](const mrpt::math::TPose3D& p) {
+    const auto poseHeightT = [&ro](const mrpt::math::TPose3D& p)
+    {
         if (ro.phi2z_scale == 0)
             return p;
         else
@@ -377,13 +379,10 @@ auto mpp::render_tree(
         obj->setName("GOAL");
         obj->enableShowName();
         obj->setColor_u8(ro.color_goal);
-        obj->setLocation(pi.stateGoal.state.point());
+        obj->setLocation(mrpt::math::TPoint3D(pi.stateGoal.state.point()));
         scene.insert(obj);
     }
-    else
-    {
-        THROW_EXCEPTION("Unknown type for goal.state");
-    }
+    else { THROW_EXCEPTION("Unknown type for goal.state"); }
 
     // Log msg:
     if (!ro.log_msg.empty())
