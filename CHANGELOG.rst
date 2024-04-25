@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.2 (2024-04-25)
+------------------
 * Fix usage of (new explicit) TPoint3D constructors
 * Update build instructions
 * Contributors: Jose Luis Blanco-Claraco
