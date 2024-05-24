@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.3 (2024-05-24)
+------------------
 * Update badges for ROS2 distros
 * bump minimum cmake version to 3.5
 * Contributors: Jose Luis Blanco-Claraco
