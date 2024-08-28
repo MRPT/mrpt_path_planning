@@ -18,7 +18,6 @@ for vehicles with arbitrary shape and realistic kinematics and dynamics.
 | ROS 2 Rolling (u24.04) | [![Build Status](https://build.ros2.org/job/Rdev__mrpt_path_planning__ubuntu_noble_amd64/badge/icon)](https://build.ros2.org/job/Rdev__mrpt_path_planning__ubuntu_noble_amd64/) | [![Build Status](https://build.ros2.org/job/Rbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/badge/icon)](https://build.ros2.org/job/Rbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/) | [![Version](https://img.shields.io/ros/v/rolling/mrpt_path_planning)](https://index.ros.org/search/?term=mrpt_path_planning) |
 
 
-
 ## Build requisites
 
 - [MRPT](https://github.com/MRPT/mrpt/) (>=2.12.0)
