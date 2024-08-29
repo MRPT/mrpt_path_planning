@@ -2,6 +2,11 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Depend on new mrpt_lib packages (deprecate mrpt2)
+* Contributors: Jose Luis Blanco-Claraco
+
 0.1.3 (2024-05-24)
 ------------------
 * Update badges for ROS2 distros
