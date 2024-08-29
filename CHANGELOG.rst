@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.4 (2024-08-29)
+------------------
 * Depend on new mrpt_lib packages (deprecate mrpt2)
 * Contributors: Jose Luis Blanco-Claraco
 
