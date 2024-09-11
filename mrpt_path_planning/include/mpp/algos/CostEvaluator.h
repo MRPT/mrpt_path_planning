@@ -9,14 +9,17 @@
 #include <mpp/data/MoveEdgeSE2_TPS.h>
 #include <mrpt/opengl/CSetOfObjects.h>
 #include <mrpt/rtti/CObject.h>
-
-#include <functional>
+#include <mrpt/version.h>
 
 namespace mpp
 {
 class CostEvaluator : public mrpt::rtti::CObject
 {
+#if MRPT_VERSION < 0x020e00
     DEFINE_VIRTUAL_MRPT_OBJECT(CostEvaluator)
+#else
+    DEFINE_VIRTUAL_MRPT_OBJECT(CostEvaluator, mpp)
+#endif
 
    public:
     CostEvaluator() = default;

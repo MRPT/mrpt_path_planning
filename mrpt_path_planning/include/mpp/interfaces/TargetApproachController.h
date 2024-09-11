@@ -16,6 +16,7 @@
 #include <mrpt/kinematics/CVehicleVelCmd.h>
 #include <mrpt/rtti/CObject.h>
 #include <mrpt/system/COutputLogger.h>
+#include <mrpt/version.h>
 
 namespace mpp
 {
@@ -60,7 +61,11 @@ struct TargetApproachOutput
 class TargetApproachController : public mrpt::system::COutputLogger,
                                  public mrpt::rtti::CObject
 {
+#if MRPT_VERSION < 0x020e00
     DEFINE_VIRTUAL_MRPT_OBJECT(TargetApproachController)
+#else
+    DEFINE_VIRTUAL_MRPT_OBJECT(TargetApproachController, mpp)
+#endif
 
    public:
     TargetApproachController()
