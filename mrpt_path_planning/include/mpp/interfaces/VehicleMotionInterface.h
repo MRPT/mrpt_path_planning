@@ -12,6 +12,7 @@
 #include <mrpt/kinematics/CVehicleVelCmd.h>
 #include <mrpt/rtti/CObject.h>
 #include <mrpt/system/COutputLogger.h>
+#include <mrpt/version.h>
 
 namespace mpp
 {
@@ -52,7 +53,11 @@ enum class STOP_TYPE : uint8_t
 class VehicleMotionInterface : public mrpt::system::COutputLogger,
                                public mrpt::rtti::CObject
 {
+#if MRPT_VERSION < 0x020e00
     DEFINE_VIRTUAL_MRPT_OBJECT(VehicleMotionInterface)
+#else
+    DEFINE_VIRTUAL_MRPT_OBJECT(VehicleMotionInterface, mpp)
+#endif
 
    public:
     VehicleMotionInterface()

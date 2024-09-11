@@ -13,6 +13,7 @@
 #include <mrpt/rtti/CObject.h>
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
+#include <mrpt/version.h>
 
 #include <optional>
 #include <vector>
@@ -22,7 +23,11 @@ namespace mpp
 class Planner : public mrpt::rtti::CObject,
                 virtual public mrpt::system::COutputLogger
 {
+#if MRPT_VERSION < 0x020e00
     DEFINE_VIRTUAL_MRPT_OBJECT(Planner)
+#else
+    DEFINE_VIRTUAL_MRPT_OBJECT(Planner, mpp)
+#endif
 
    public:
     Planner() = default;
