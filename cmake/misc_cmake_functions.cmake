@@ -107,7 +107,6 @@ function(selfdriving_set_target_build_options TARGETNAME)
       -Wall -Wextra -Wshadow
       -Werror=return-type # error on missing return();
       -Wformat              -Werror=format-security
-      -Wabi=11
       -Wtype-limits -Wcast-align -Wparentheses
       -fPIC
     )
