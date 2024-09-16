@@ -51,6 +51,10 @@ void mpp::viz_nav_plan(
     win->setCameraElevationDeg(90);
     win->setCameraProjective(false);
 
+    // Look at path start:
+    const auto& start = plan.originalInput.stateStart.pose;
+    win->setCameraPointingToPoint(start.x, start.y, .0f);
+
     // Render:
     win->updateWindow();
 
@@ -59,10 +63,7 @@ void mpp::viz_nav_plan(
         // Wait:
         win->waitForKey();
     }
-    else
-    {
-        nonmodal_wins.push_back(win);
-    }
+    else { nonmodal_wins.push_back(win); }
 
     MRPT_END
 }
@@ -127,6 +128,9 @@ void mpp::viz_nav_plan_animation(
     win->setCameraAzimuthDeg(-90);
     win->setCameraElevationDeg(90);
     win->setCameraProjective(false);
+    // Look at path start:
+    const auto& start = plan.originalInput.stateStart.pose;
+    win->setCameraPointingToPoint(start.x, start.y, .0f);
 
     // Render:
     win->updateWindow();
