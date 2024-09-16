@@ -5,7 +5,7 @@
 -->
 <package format="3">
   <name>mrpt_path_planning</name>
-  <version>0.1.4</version>
+  <version>0.1.5</version>
   <description>Path planning and navigation algorithms for robots/vehicles moving on planar environments. This library builds upon mrpt-nav and the theory behind PTGs to generate libraries of "motion primitives" for vehicles with arbitrary shape and realistic kinematics and dynamics.</description>
 
   <author     email="joseluisblancoc@gmail.com">Jose-Luis Blanco-Claraco</author>
