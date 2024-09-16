@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.5 (2024-09-16)
+------------------
 * Update RTTI macros for upcoming MRPT 2.14.0
 * Contributors: Jose Luis Blanco-Claraco
 
