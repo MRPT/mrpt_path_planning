@@ -300,7 +300,8 @@ static void do_plan_path()
     }
 
     // Insert custom progress callback:
-    planner->progressCallback_ = [](const mpp::ProgressCallbackData& pcd) {
+    planner->progressCallback_ = [](const mpp::ProgressCallbackData& pcd)
+    {
         std::cout << "[progressCallback] bestCostFromStart: "
                   << pcd.bestCostFromStart
                   << " bestCostToGoal: " << pcd.bestCostToGoal
@@ -308,8 +309,12 @@ static void do_plan_path()
     };
 
     // PTGs config file:
+    std::cout << "[PTGs] Initializing PTGs..." << std::endl;
+
     mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
     pi.ptgs.initFromConfigFile(cfg, arg_config_file_section.getValue());
+
+    std::cout << "[PTGs] Done." << std::endl;
 
     // ==================================================
     // ACTUAL PATH PLANNING
