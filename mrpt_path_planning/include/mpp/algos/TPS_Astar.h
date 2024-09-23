@@ -10,7 +10,6 @@
 #include <mpp/algos/Planner.h>
 #include <mpp/data/MotionPrimitivesTree.h>
 #include <mrpt/core/bits_math.h>  // 0.0_deg
-#include <mrpt/poses/CPose2DGridTemplate.h>
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
 
@@ -93,9 +92,8 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         const SE2_KinState& from, const mrpt::math::TPoint2D& goal) const;
 
     astar_heuristic_t heuristic = astar_heuristic_t(
-        [this](const SE2_KinState& from, const SE2orR2_KinState& goal) {
-            return this->default_heuristic(from, goal);
-        });
+        [this](const SE2_KinState& from, const SE2orR2_KinState& goal)
+        { return this->default_heuristic(from, goal); });
 
    private:
     struct NodeCoords
@@ -181,14 +179,6 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     using nodes_with_desired_speed_t =
         std::unordered_map<NodeCoords, normalized_speed_t, NodeCoordsHash>;
 
-    using absolute_cell_index_t = size_t;
-
-    absolute_cell_index_t nodeCoordsToAbsIndex(const NodeCoords& n) const
-    {
-        return grid_.getSizeX() * grid_.getSizeY() * n.idxYaw.value() +
-               grid_.getSizeX() * n.idxY + n.idxX;
-    }
-
 #if 0
     mrpt::math::TPose2D nodeCoordsToPose(
         const NodeCoords&                     n,
@@ -227,32 +217,31 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         bool visited          = false;
     };
 
-    mrpt::poses::CPose2DGridTemplate<Node> grid_;
+    using SE2_Lattice = std::unordered_map<NodeCoords, Node, NodeCoordsHash>;
+
+    SE2_Lattice grid_;
+
+    int32_t x2idx(float x) const { return x / params_.grid_resolution_xy; }
+    int32_t y2idx(float y) const { return y / params_.grid_resolution_xy; }
+    int32_t phi2idx(float yaw) const
+    {
+        auto phi = mrpt::math::wrapToPi(yaw);
+        return phi / params_.grid_resolution_yaw;
+    }
 
     /// throws on out of grid limits.
     /// Returns a ref to the node.
     Node& getOrCreateNodeByPose(
-        const mpp::SE2_KinState& p, mrpt::graphs::TNodeID& nextFreeId)
-    {
-        Node& n = *grid_.getByPos(p.pose.x, p.pose.y, p.pose.phi);
-        if (!n.id.has_value())
-        {
-            n.id    = nextFreeId++;
-            n.state = p;
-        }
-
-        return n;
-    }
+        const mpp::SE2_KinState& p, mrpt::graphs::TNodeID& nextFreeId);
 
     /// throws on out of grid limits.
     NodeCoords nodeGridCoords(const mrpt::math::TPose2D& p) const
     {
-        return NodeCoords(
-            grid_.x2idx(p.x), grid_.y2idx(p.y), grid_.phi2idx(p.phi));
+        return NodeCoords(x2idx(p.x), y2idx(p.y), phi2idx(p.phi));
     }
     NodeCoords nodeGridCoords(const mrpt::math::TPoint2D& p) const
     {
-        return NodeCoords(grid_.x2idx(p.x), grid_.y2idx(p.y));
+        return NodeCoords(x2idx(p.x), y2idx(p.y));
     }
 
     struct NodePtr
@@ -308,7 +297,9 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         const SE2orR2_KinState&                         goalState,
         const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
         double                            MAX_XY_OBSTACLES_CLIPPING_DIST,
-        const nodes_with_desired_speed_t& nodesWithSpeed);
+        const nodes_with_desired_speed_t& nodesWithSpeed,
+        const mrpt::math::TPose2D&        worldBboxMin,
+        const mrpt::math::TPose2D&        worldBboxMax);
 
     mrpt::maps::CPointsMap::Ptr cached_local_obstacles(
         const mrpt::math::TPose2D&                      queryPose,
