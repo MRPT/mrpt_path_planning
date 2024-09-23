@@ -128,12 +128,16 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     // ------------------------------------------------------------------
     tree.edges_to_children.clear();
 
+    MRPT_LOG_DEBUG_STREAM("Initializing lattice...");
+    mrpt::system::CTimeLoggerEntry tle_lat(profiler_(), "plan.lattice");
     grid_.setSize(
         in.worldBboxMin.x, in.worldBboxMax.x,  // x
         in.worldBboxMin.y, in.worldBboxMax.y,  // y
         params_.grid_resolution_xy, params_.grid_resolution_yaw,  // res
         in.worldBboxMin.phi, in.worldBboxMax.phi  // phi / yaw
     );
+    tle_lat.stop();
+    MRPT_LOG_DEBUG_STREAM("Lattice init done.");
 
     // ----------------------------------------
     //
