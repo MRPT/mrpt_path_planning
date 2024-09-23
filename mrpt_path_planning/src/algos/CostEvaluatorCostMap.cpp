@@ -97,7 +97,7 @@ CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
             if (d < D)
             {
                 const auto cost =
-                    p.maxCost * std::pow(-0.99999 + 1. / (d / D), 0.1);
+                    p.maxCost * std::pow(-0.99999 + 1. / (d / D), 0.4);
                 ASSERT_GE_(cost, .0);
 
                 double* cell = g.cellByIndex(cx, cy);
@@ -123,7 +123,8 @@ double CostEvaluatorCostMap::operator()(const MoveEdgeSE2_TPS& edge) const
     double cost = .0;
     size_t n    = 0;
 
-    auto lambdaAddPose = [this, &cost, &n](const mrpt::math::TPose2D& p) {
+    auto lambdaAddPose = [this, &cost, &n](const mrpt::math::TPose2D& p)
+    {
         const auto c = eval_single_pose(p);
         ASSERT_GE_(c, .0);
 
