@@ -80,7 +80,7 @@ TCLAP::ValueArg<std::string> arg_goal_pose(
     "\"[x y phi_deg]\" or \"[x y]\"", cmd);
 
 TCLAP::ValueArg<double> argBBoxMargin(
-    "", "bbox-margin", "Margin to add to the start-goal bbox poses", false, 1.0,
+    "", "bbox-margin", "Margin to add to the start-goal bbox poses", false, 2.0,
     "A distance [meters]", cmd);
 
 TCLAP::ValueArg<std::string> arg_goal_vel(
@@ -117,6 +117,10 @@ TCLAP::ValueArg<std::string> arg_waypointsParams(
 TCLAP::SwitchArg arg_showTree(
     "", "show-tree",
     "Shows the whole search tree instead of just the best path", cmd);
+
+TCLAP::SwitchArg arg_ignoreObstaclesBbox(
+    "", "ignore-obstacles-bbox",
+    "Ignore obstacles for estimating the problem world bounding box", cmd);
 
 TCLAP::SwitchArg arg_noRefine(
     "", "no-refine", "Skips the post-plan refine stage", cmd);
@@ -207,7 +211,17 @@ static void do_plan_path()
 
     pi.obstacles.emplace_back(obs);
 
-    auto bbox = obs->obstacles()->boundingBox();
+    mrpt::math::TBoundingBoxf bbox;
+
+    if (!arg_ignoreObstaclesBbox.isSet())
+    {
+        bbox = obs->obstacles()->boundingBox();
+    }
+    else
+    {
+        // This will ensure the next updateWithPoint() will set the bbox:
+        bbox = mrpt::math::TBoundingBoxf::PlusMinusInfinity();
+    }
 
     // Make sure goal and start are within bbox:
     {
