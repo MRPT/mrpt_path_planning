@@ -9,11 +9,13 @@
 #include <mrpt/core/lock_helper.h>
 #include <mrpt/maps/CPointsMap.h>
 #include <mrpt/maps/CSimplePointsMap.h>
+#include <mrpt/math/TBoundingBox.h>
 #include <mrpt/obs/CObservation.h>
 #include <mrpt/system/datetime.h>
 
 namespace mpp
 {
+/** Virtual base class for obstacle sources */
 class ObstacleSource
 {
    public:
@@ -25,9 +27,18 @@ class ObstacleSource
     static Ptr FromStaticPointcloud(const mrpt::maps::CPointsMap::Ptr& pc);
 
     /** Returns all global obstacle points, in global "map" reference frame.
+     *  Points may have been clipped by previous calls to apply_clipping_box().
      */
     virtual mrpt::maps::CPointsMap::Ptr obstacles(
         mrpt::system::TTimeStamp t = mrpt::system::TTimeStamp()) = 0;
+
+    /** This method can be called as many times as desired, and only the last
+     * call will be the active clipping region for obstacles returned by
+     * obstacles(). Calls with nullopt will remove any previously applied
+     * clipping region.
+     */
+    virtual void apply_clipping_box(
+        const std::optional<mrpt::math::TBoundingBox>& bbox = std::nullopt) = 0;
 
     virtual bool dynamic() const { return false; }
 };
@@ -41,17 +52,22 @@ class ObstacleSourceStaticPointcloud : public ObstacleSource
         : static_obs_(staticObstacles)
     {
         ASSERT_(static_obs_);
+        clipped_obs_ = static_obs_;
     }
 
     mrpt::maps::CPointsMap::Ptr obstacles(
         [[maybe_unused]] mrpt::system::TTimeStamp t =
             mrpt::system::TTimeStamp()) override
     {
-        return static_obs_;
+        return clipped_obs_;
     }
 
+    void apply_clipping_box(
+        const std::optional<mrpt::math::TBoundingBox>& bbox =
+            std::nullopt) override;
+
    private:
-    mrpt::maps::CPointsMap::Ptr static_obs_;
+    mrpt::maps::CPointsMap::Ptr static_obs_, clipped_obs_;
 };
 
 /** Obstacles from a generic MRPT observation (2D lidar, 3D camera, velodyne,
@@ -81,21 +97,18 @@ class ObstacleSourceGenericSensor : public ObstacleSource
 
     mrpt::maps::CPointsMap::Ptr obstacles(
         [[maybe_unused]] mrpt::system::TTimeStamp t =
-            mrpt::system::TTimeStamp()) override
-    {
-        auto lck = mrpt::lockHelper(obsMtx_);
+            mrpt::system::TTimeStamp()) override;
 
-        // TODO: Cached pts with obs timestamp for checking.
-        auto pts = mrpt::maps::CSimplePointsMap::Create();
-        if (obs_) { pts->insertObservation(*obs_, robotPoseForObs_); }
-
-        return pts;
-    }
+    void apply_clipping_box(
+        const std::optional<mrpt::math::TBoundingBox>& bbox =
+            std::nullopt) override;
 
    private:
-    std::mutex                   obsMtx_;
-    mrpt::obs::CObservation::Ptr obs_;
-    mrpt::poses::CPose3D         robotPoseForObs_;
+    std::mutex                              obsMtx_;
+    mrpt::obs::CObservation::Ptr            obs_;
+    mrpt::poses::CPose3D                    robotPoseForObs_;
+    mrpt::maps::CPointsMap::Ptr             raw_obs_, clipped_obs_;
+    std::optional<mrpt::math::TBoundingBox> clipping_bbox_;
 };
 
 }  // namespace mpp
