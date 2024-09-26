@@ -11,15 +11,19 @@
 #include <mpp/interfaces/ObstacleSource.h>
 #include <mrpt/math/TPose2D.h>
 
-#include <functional>
-
 namespace mpp
 {
 struct PlannerInput
 {
     SE2_KinState        stateStart;
     SE2orR2_KinState    stateGoal;
-    mrpt::math::TPose2D worldBboxMin, worldBboxMax;  //!< World bounds
+    
+    /** World bounds, with two purposes:
+     *  1) Clip obstacles outside of these coordinates,
+     *  2) Limit the trajectory search space to these limits.
+     */
+    mrpt::math::TPose2D worldBboxMin, worldBboxMax;
+    
     std::vector<ObstacleSource::Ptr> obstacles;
     TrajectoriesAndRobotShape        ptgs;
 };

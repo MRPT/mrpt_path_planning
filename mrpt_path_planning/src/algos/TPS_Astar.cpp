@@ -122,7 +122,18 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     // obstacles (TODO: dynamic over future time?):
     std::vector<mrpt::maps::CPointsMap::Ptr> obstaclePoints;
     for (const auto& os : in.obstacles)
-        if (os) obstaclePoints.emplace_back(os->obstacles());
+    {
+        if (!os) continue;  // should never happen?
+
+        // apply clipping for efficiency:
+        // (z is arbitrary and ignored inside)
+        os->apply_clipping_box(mrpt::math::TBoundingBox(
+            {in.worldBboxMin.x, in.worldBboxMin.y, -1.0},
+            {in.worldBboxMax.x, in.worldBboxMax.y, 1.0}));
+
+        // Get obstacles:
+        obstaclePoints.emplace_back(os->obstacles());
+    }
 
     //  2  |  E T ← ∅         # Tree edges
     // ------------------------------------------------------------------
