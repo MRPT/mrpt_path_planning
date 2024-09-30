@@ -5,6 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <mpp/algos/render_tree.h>
+#include <mpp/algos/trajectories.h>
 #include <mpp/algos/viz.h>
 #include <mrpt/gui/CDisplayWindow3D.h>
 #include <mrpt/opengl/CCylinder.h>
@@ -105,9 +106,6 @@ void mpp::viz_nav_plan_animation(
     glVeh->insert(glRobotShape);
 
     glVehFrame->insert(glVeh);
-
-    // The path is referenced to the path planning "start pose", account for it:
-    glVehFrame->setPose(plan.originalInput.stateStart.pose);
 
     // Build opengl scene:
     {

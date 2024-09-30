@@ -17,12 +17,14 @@ namespace mpp
 void refine_trajectory(
     const MotionPrimitivesTreeSE2::path_t&    inPath,
     MotionPrimitivesTreeSE2::edge_sequence_t& edgesToRefine,
-    const TrajectoriesAndRobotShape&          ptgInfo);
+    const TrajectoriesAndRobotShape&          ptgInfo,
+    const double                              ptg_tolerance_dist = 0.10);
 
 /// \overload taking `std::vector` of nodes and edges, instead of `std::list`
 void refine_trajectory(
     const std::vector<MotionPrimitivesTreeSE2::node_t>& inPath,
     std::vector<MotionPrimitivesTreeSE2::edge_t>&       edgesToRefine,
-    const TrajectoriesAndRobotShape&                    ptgInfo);
+    const TrajectoriesAndRobotShape&                    ptgInfo,
+    const double ptg_tolerance_dist = 0.10);
 
 }  // namespace mpp
