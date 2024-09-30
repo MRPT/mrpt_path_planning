@@ -50,6 +50,11 @@ TCLAP::ValueArg<float> argObstaclesGridResolution(
     "pixel in meters.",
     false, 0.05, "0.05", cmd);
 
+TCLAP::ValueArg<float> arg_interpolation_period(
+    "", "interpolarion-period",
+    "Interpolation (and animation) time step between keyframes [s].", false,
+    0.25, "0.25", cmd);
+
 TCLAP::ValueArg<std::string> arg_ptgs_file(
     "c", "ptg-config", "Input .ini file with PTG definitions.", true, "",
     "ptgs.ini", cmd);
@@ -384,7 +389,17 @@ static void do_plan_path()
         {
             const auto t0 = mrpt::Clock::nowDouble();
 
-            traj = mpp::plan_to_trajectory(pathEdges, pi.ptgs);
+            const double interpPeriod = arg_interpolation_period.getValue();
+
+            traj = mpp::plan_to_trajectory(pathEdges, pi.ptgs, interpPeriod);
+
+            // Note: trajectory is in local frame of reference
+            // of plan.originalInput.stateStart.pose
+            // so, correct that relative pose so we keep everything in global
+            // frame:
+            const auto& startPose = plan.originalInput.stateStart.pose;
+            for (auto& kv : *traj)
+                kv.second.state.pose = startPose + kv.second.state.pose;
 
             const auto dt = mrpt::Clock::nowDouble() - t0;
 

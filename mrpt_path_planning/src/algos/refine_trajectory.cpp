@@ -14,7 +14,7 @@
 void mpp::refine_trajectory(
     const mpp::MotionPrimitivesTreeSE2::path_t& inPath,
     MotionPrimitivesTreeSE2::edge_sequence_t&   edgesToRefine,
-    const TrajectoriesAndRobotShape&            ptgInfo)
+    const TrajectoriesAndRobotShape& ptgInfo, const double ptg_tolerance_dist)
 {
     const size_t nEdges = edgesToRefine.size();
     ASSERT_EQUAL_(inPath.size(), nEdges + 1);
@@ -53,7 +53,7 @@ void mpp::refine_trajectory(
         normalized_distance_t newNormDist = 0;
 
         const bool ok = ptg->inverseMap_WS2TP(
-            deltaNodes.x, deltaNodes.y, newK, newNormDist);
+            deltaNodes.x, deltaNodes.y, newK, newNormDist, ptg_tolerance_dist);
         if (!ok)
         {
             std::stringstream ss;
@@ -92,7 +92,7 @@ void mpp::refine_trajectory(
 void mpp::refine_trajectory(
     const std::vector<mpp::MotionPrimitivesTreeSE2::node_t>& inPath,
     std::vector<mpp::MotionPrimitivesTreeSE2::edge_t>&       edgesToRefine,
-    const TrajectoriesAndRobotShape&                         ptgInfo)
+    const TrajectoriesAndRobotShape& ptgInfo, const double ptg_tolerance_dist)
 {
     mpp::MotionPrimitivesTreeSE2::path_t     newPath;
     MotionPrimitivesTreeSE2::edge_sequence_t newEdges;
@@ -102,5 +102,5 @@ void mpp::refine_trajectory(
 
     // this will store the output directly in "edgesToRefine" since we use
     // pointers above:
-    refine_trajectory(newPath, newEdges, ptgInfo);
+    refine_trajectory(newPath, newEdges, ptgInfo, ptg_tolerance_dist);
 }
