@@ -104,6 +104,8 @@ void mpp::viz_nav_plan_animation(
         *glRobotShape);
     glRobotShape->setColor_u8(0xff, 0x00, 0x00, 0xff);  // RGB+A
     glVeh->insert(glRobotShape);
+    auto glVehCorner = mrpt::opengl::stock_objects::CornerXYZ(0.3);
+    glVeh->insert(glVehCorner);
 
     glVehFrame->insert(glVeh);
 
