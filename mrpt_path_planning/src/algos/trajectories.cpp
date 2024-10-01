@@ -38,7 +38,7 @@ trajectory_t mpp::plan_to_trajectory(
 
         uint32_t ptgFinalStep = 0;
         bool     ok           = ptg->getPathStepForDist(
-            edge->ptgPathIndex, edge->ptgDist, ptgFinalStep);
+                          edge->ptgPathIndex, edge->ptgDist, ptgFinalStep);
         ASSERT_(ok);
         uint32_t stepIncr =
             std::max<uint32_t>(1, mrpt::round(samplePeriod / ptg_dt));
@@ -61,7 +61,8 @@ trajectory_t mpp::plan_to_trajectory(
             if (step == ptgFinalStep) break;
         }
         currentEdgeStartTime += ptgFinalStep * ptg_dt;
-        endOfLastEdge = out.rbegin()->second.state.pose;
+        // endOfLastEdge = out.rbegin()->second.state.pose;
+        endOfLastEdge = edge->stateTo.pose - planEdges.front()->stateFrom.pose;
     }
 
     return out;
