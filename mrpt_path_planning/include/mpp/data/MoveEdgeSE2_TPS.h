@@ -10,6 +10,7 @@
 #include <mpp/data/basic_types.h>
 #include <mpp/data/ptg_t.h>
 #include <mrpt/graphs/TNodeID.h>
+#include <mrpt/version.h>
 
 #include <cstdint>
 
@@ -49,6 +50,10 @@ struct MoveEdgeSE2_TPS
     duration_seconds_t estimatedExecTime = .0;
 
     ptg_t::TNavDynamicState getPTGDynState() const;
+
+#if MRPT_VERSION >= 0x20e02  // >=2.14.2
+    mrpt::containers::yaml ptgInternalState;
+#endif
 
     /** Subsampled path, in coordinates relative to "stateFrom", stored here
      *  for rendering purposes, to avoid having to re-seed the PTG
