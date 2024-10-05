@@ -14,6 +14,7 @@
 #include <mpp/ptgs/SpeedTrimmablePTG.h>
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/opengl/COpenGLScene.h>
+#include <mrpt/version.h>
 
 #include <iostream>
 #include <unordered_set>
@@ -327,6 +328,10 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             newEdge.ptgFinalRelativeGoal =
                 in.stateGoal.asSE2KinState().pose - current.state.pose;
 
+#if MRPT_VERSION >= 0x20e02  // >=2.14.2
+            newEdge.ptgInternalState =
+                ptg.getCurrentNavDynamicState().internalState;
+#endif
             newEdge.stateFrom = current.state;
             newEdge.stateTo   = x_i;
 

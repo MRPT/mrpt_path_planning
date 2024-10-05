@@ -5,6 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <mpp/data/MoveEdgeSE2_TPS.h>
+#include <mrpt/version.h>
 
 #include <sstream>
 
@@ -20,6 +21,10 @@ ptg_t::TNavDynamicState MoveEdgeSE2_TPS::getPTGDynState() const
 
     newDyn.relTarget      = ptgFinalRelativeGoal;
     newDyn.targetRelSpeed = ptgFinalGoalRelSpeed;
+
+#if MRPT_VERSION >= 0x20e02  // >=2.14.2
+    newDyn.internalState = ptgInternalState;
+#endif
 
     return newDyn;
 }
@@ -63,6 +68,12 @@ std::string MoveEdgeSE2_TPS::asString() const
           "estimatedExecTime: "
        << estimatedExecTime << "}\n"
        << "  interpolatedPathSize: " << interpolatedPath.size() << "\n";
+
+#if MRPT_VERSION >= 0x20e02  // >=2.14.2
+    ss << ", "
+          "ptgInternalState: "
+       << ptgInternalState << "\n";
+#endif
 
     return ss.str();
 }
