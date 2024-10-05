@@ -2,6 +2,21 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Add support for new PTGs with internalState in MRPT >=2.14.2
+* viz animations: draw vehicle frame for visual reference
+* interpolate(): fix accumulated error along trajectories
+* cli and viz: interpolate trajectory
+* cli: add flags to control obstacles bbox and clipping
+* ObstacleSource virtual API: implement clipping of obstacle sources
+* A* grid reimplemented as unordered_map for maximum efficiency
+* smoother obstacle cost function
+* Add more profiler and debug traces
+* remove -Wabi warnings
+* viz: start with camera pointing to the path origin
+* Contributors: Jose Luis Blanco-Claraco
+
 0.1.5 (2024-09-16)
 ------------------
 * Update RTTI macros for upcoming MRPT 2.14.0
