@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.2.0 (2024-10-05)
+------------------
 * Add support for new PTGs with internalState in MRPT >=2.14.2
 * viz animations: draw vehicle frame for visual reference
 * interpolate(): fix accumulated error along trajectories
