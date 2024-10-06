@@ -60,6 +60,10 @@ class CostEvaluatorCostMap : public CostEvaluator
 
     mrpt::opengl::CSetOfObjects::Ptr get_visualization() const override;
 
+    // Used for ROS visualization interface
+    std::shared_ptr<mrpt::maps::COccupancyGridMap2D> get_visualization_as_grid()
+        const override;
+
     using cost_gridmap_t = mrpt::containers::CDynamicGrid<double>;
 
     const cost_gridmap_t cost_gridmap() const { return costmap_; }
