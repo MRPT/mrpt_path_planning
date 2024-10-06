@@ -5,6 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <mpp/algos/CostEvaluator.h>
+#include <mrpt/maps/COccupancyGridMap2D.h>
 
 using namespace mpp;
 
@@ -18,4 +19,11 @@ mrpt::opengl::CSetOfObjects::Ptr CostEvaluator::get_visualization() const
     auto glObj = mrpt::opengl::CSetOfObjects::Create();
     glObj->setName("CostEvaluator.default");
     return glObj;
+}
+
+std::shared_ptr<mrpt::maps::COccupancyGridMap2D>
+    mpp::CostEvaluator::get_visualization_as_grid() const
+{
+    auto grid = mrpt::maps::COccupancyGridMap2D::Create();
+    return grid;
 }

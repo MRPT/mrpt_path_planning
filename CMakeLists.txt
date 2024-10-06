@@ -43,6 +43,7 @@ find_package(mrpt-containers REQUIRED)
 find_package(mrpt-graphs REQUIRED)
 find_package(mrpt-gui REQUIRED)
 find_package(mrpt-nav REQUIRED)
+find_package(mrpt-maps REQUIRED)
 
 # Targets:
 add_subdirectory(mrpt_path_planning)

@@ -6,6 +6,7 @@
 
 #include <mpp/algos/CostEvaluatorCostMap.h>
 #include <mrpt/img/color_maps.h>
+#include <mrpt/maps/COccupancyGridMap2D.h>
 #include <mrpt/opengl/CTexturedPlane.h>
 
 using namespace mpp;
@@ -213,4 +214,63 @@ mrpt::opengl::CSetOfObjects::Ptr CostEvaluatorCostMap::get_visualization() const
     glPlane->assignImage(gridRGB, gridALPHA);
 
     return glObjs;
+}
+
+mrpt::maps::COccupancyGridMap2D::Ptr
+    CostEvaluatorCostMap::get_visualization_as_grid() const
+{
+    auto grid = mrpt::maps::COccupancyGridMap2D::Create();
+
+    grid->setSize(
+        costmap_.getXMin(), costmap_.getXMax(), costmap_.getYMin(),
+        costmap_.getYMax(), costmap_.getResolution());
+
+    ASSERT_EQUAL_(grid->getSizeX(), costmap_.getSizeX());
+    ASSERT_EQUAL_(grid->getSizeY(), costmap_.getSizeY());
+
+    /* From: https://github.com/ros2/rviz/blob/rolling/docs/FEATURES.md
+     *
+     * Costmap: Paint valid points between 1 and 98 from blue to red. Paint
+     * points with value 0 in black, points with value 99 in cyan (obstacle
+     * value) and points with value 100 in purple (lethal obstacle). The valid
+     * value -1 is painted in a blueish, greenish, grayish color. Invalid points
+     * between 101 and 127 are painted in green, while invalid negative numbers
+     * are painted in shades from red to yellow.
+     *
+     * So we will use:
+     * -1=free space
+     * 1-98: obstacles.
+     */
+
+    const double MIN_COST_TO_TRANSPARENT = 0.02;
+
+    const auto nCols = costmap_.getSizeX(), nRows = costmap_.getSizeY();
+
+    mrpt::img::CImage gridRGB(nCols, nRows, mrpt::img::CH_RGB);
+    mrpt::img::CImage gridALPHA(nCols, nRows, mrpt::img::CH_GRAY);
+
+    for (size_t icy = 0; icy < nRows; icy++)
+    {
+        auto* row = reinterpret_cast<int8_t*>(grid->getRow(icy));
+        ASSERT_(row);
+
+        for (size_t icx = 0; icx < nCols; icx++)
+        {
+            const double* c = costmap_.cellByIndex(icx, icy);
+            if (!c) continue;  // should not happen?
+            const double val = *c;
+            if (val < MIN_COST_TO_TRANSPARENT)
+            {
+                row[icx] = -1;  // transparent, free space
+            }
+            else
+            {
+                const double f = val / params_.maxCost;
+                row[icx]       = std::min<int8_t>(
+                    98, std::max<int8_t>(1, static_cast<int8_t>(1 + 97 * f)));
+            }
+        }
+    }
+
+    return grid;
 }

@@ -11,6 +11,12 @@
 #include <mrpt/rtti/CObject.h>
 #include <mrpt/version.h>
 
+// fwd decl:
+namespace mrpt::maps
+{
+class COccupancyGridMap2D;
+}
+
 namespace mpp
 {
 class CostEvaluator : public mrpt::rtti::CObject
@@ -30,6 +36,10 @@ class CostEvaluator : public mrpt::rtti::CObject
 
     // Default: empty viz
     virtual mrpt::opengl::CSetOfObjects::Ptr get_visualization() const;
+
+    // Default: empty grid. Used mostly for ROS visualization interface
+    virtual std::shared_ptr<mrpt::maps::COccupancyGridMap2D>
+        get_visualization_as_grid() const;
 };
 
 }  // namespace mpp
