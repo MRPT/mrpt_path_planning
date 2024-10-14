@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.2.1 (2024-10-14)
+------------------
 * costmaps for rviz API
 * Contributors: Jose Luis Blanco-Claraco
 
