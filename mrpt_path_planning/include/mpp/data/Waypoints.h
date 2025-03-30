@@ -15,7 +15,6 @@
 #include <mrpt/opengl/opengl_frwds.h>
 #include <mrpt/system/datetime.h>
 
-#include <any>
 #include <optional>
 #include <string>
 #include <vector>
@@ -55,7 +54,7 @@ struct Waypoint
     /** Returns the target as a SE(2) pose, with its correct heading if
      * targetHeading is defined, or heading=0 otherwise.
      */
-    mrpt::math::TPose2D targetAsPose() const;
+    [[nodiscard]] mrpt::math::TPose2D targetAsPose() const;
 
     /** (Default="map") Frame ID in which target is given. Optional, use
      * only for submapping applications. */
@@ -111,13 +110,13 @@ struct Waypoint
 
     /** Check whether all the minimum mandatory fields have been filled by the
      * user. */
-    bool isValid() const;
+    [[nodiscard]] bool isValid() const;
 
     /** get in human-readable format */
-    std::string getAsText() const;
+    [[nodiscard]] std::string getAsText() const;
 
     /** Save waypoint as YAML */
-    mrpt::containers::yaml asYAML() const;
+    [[nodiscard]] mrpt::containers::yaml asYAML() const;
 
     /** Load waypoint from YAML  */
     static Waypoint FromYAML(const mrpt::containers::yaml& d);
@@ -153,7 +152,7 @@ struct WaypointSequence
     void clear() { waypoints.clear(); }
 
     /** Gets navigation params as a human-readable format */
-    std::string getAsText() const;
+    [[nodiscard]] std::string getAsText() const;
 
     /** Renders the sequence of waypoints (previous contents of `obj` are
      * cleared) */
@@ -162,7 +161,7 @@ struct WaypointSequence
         const WaypointsRenderingParams& params = {}) const;
 
     /** Save waypoints as YAML */
-    mrpt::containers::yaml asYAML() const;
+    [[nodiscard]] mrpt::containers::yaml asYAML() const;
 
     /** Load waypoints from YAML  */
     static WaypointSequence FromYAML(const mrpt::containers::yaml& d);
@@ -191,7 +190,7 @@ struct WaypointStatus : public Waypoint
     int counter_seen_reachable{0};
 
     /** Gets navigation params as a human-readable format */
-    std::string getAsText() const;
+    [[nodiscard]] std::string getAsText() const;
 };
 
 /** The struct for querying the status of waypoints navigation.
@@ -204,7 +203,7 @@ struct WaypointStatusSequence
     std::vector<WaypointStatus> waypoints;
 
     /** Extracts a copy of the waypoints, without status information. */
-    WaypointSequence withoutStatus() const
+    [[nodiscard]] WaypointSequence withoutStatus() const
     {
         WaypointSequence seq;
         for (const auto& w : waypoints) seq.waypoints.emplace_back(w);
@@ -228,7 +227,7 @@ struct WaypointStatusSequence
 
     /** Ctor with default values */
     /** Gets navigation params as a human-readable format */
-    std::string getAsText() const;
+    [[nodiscard]] std::string getAsText() const;
 
     /** Renders the sequence of waypoints (previous contents of `obj` are
      * cleared) */
