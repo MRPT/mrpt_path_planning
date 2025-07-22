@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.2.2 (2025-07-22)
+------------------
 * README: update badges for active ROS distributions
 * modernize C++, add [[nodiscard]]
 * Update README.md ROS badges
