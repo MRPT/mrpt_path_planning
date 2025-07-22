@@ -2,6 +2,13 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* README: update badges for active ROS distributions
+* modernize C++, add [[nodiscard]]
+* Update README.md ROS badges
+* Contributors: Jose Luis Blanco-Claraco
+
 0.2.1 (2024-10-14)
 ------------------
 * costmaps for rviz API
