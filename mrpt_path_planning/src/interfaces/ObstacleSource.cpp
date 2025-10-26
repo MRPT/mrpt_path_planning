@@ -5,6 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <mpp/interfaces/ObstacleSource.h>
+#include <mrpt/version.h>
 
 using namespace mpp;
 
@@ -32,12 +33,21 @@ void ObstacleSourceStaticPointcloud::apply_clipping_box(
     const auto& xs = static_obs_->getPointsBufferRef_x();
     const auto& ys = static_obs_->getPointsBufferRef_y();
 
+#if MRPT_VERSION >= 0x020f00  // 2.15.0
+    mrpt::maps::CPointsMap::InsertCtx ctx =
+        clipped_obs_->prepareForInsertPointsFrom(*static_obs_);
+#endif
+
     for (size_t i = 0; i < xs.size(); i++)
     {
         if (xs[i] < bb.min.x || xs[i] > bb.max.x ||  //
             ys[i] < bb.min.y || ys[i] > bb.max.y)
             continue;
+#if MRPT_VERSION >= 0x020f00  // 2.15.0
+        clipped_obs_->insertPointFrom(*static_obs_, i, ctx);
+#else
         clipped_obs_->insertPointFrom(*static_obs_, i);
+#endif
     }
 }
 
@@ -69,12 +79,23 @@ mrpt::maps::CPointsMap::Ptr ObstacleSourceGenericSensor::obstacles(
         const auto& xs = raw_obs_->getPointsBufferRef_x();
         const auto& ys = raw_obs_->getPointsBufferRef_y();
 
+#if MRPT_VERSION >= 0x020f00  // 2.15.0
+        mrpt::maps::CPointsMap::InsertCtx ctx =
+            clipped_obs_->prepareForInsertPointsFrom(*raw_obs_);
+#endif
+
         for (size_t i = 0; i < xs.size(); i++)
         {
             if (xs[i] < bb.min.x || xs[i] > bb.max.x ||  //
                 ys[i] < bb.min.y || ys[i] > bb.max.y)
+            {
                 continue;
+            }
+#if MRPT_VERSION >= 0x020f00  // 2.15.0
+            clipped_obs_->insertPointFrom(*raw_obs_, i, ctx);
+#else
             clipped_obs_->insertPointFrom(*raw_obs_, i);
+#endif
         }
     }
 
