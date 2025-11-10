@@ -2,6 +2,11 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* Fix usage of new mrpt 2.15.0 API
+* Contributors: Jose Luis Blanco-Claraco
+
 0.2.2 (2025-07-22)
 ------------------
 * README: update badges for active ROS distributions
