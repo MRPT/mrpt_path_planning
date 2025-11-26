@@ -43,7 +43,9 @@ void ObstacleSourceStaticPointcloud::apply_clipping_box(
         if (xs[i] < bb.min.x || xs[i] > bb.max.x ||  //
             ys[i] < bb.min.y || ys[i] > bb.max.y)
             continue;
-#if MRPT_VERSION >= 0x020f00  // 2.15.0
+#if MRPT_VERSION >= 0x020f03  // 2.15.3
+        clipped_obs_->insertPointFrom(i, ctx);
+#elif MRPT_VERSION >= 0x020f00  // 2.15.0
         clipped_obs_->insertPointFrom(*static_obs_, i, ctx);
 #else
         clipped_obs_->insertPointFrom(*static_obs_, i);
@@ -91,7 +93,9 @@ mrpt::maps::CPointsMap::Ptr ObstacleSourceGenericSensor::obstacles(
             {
                 continue;
             }
-#if MRPT_VERSION >= 0x020f00  // 2.15.0
+#if MRPT_VERSION >= 0x020f03  // 2.15.3
+            clipped_obs_->insertPointFrom(i, ctx);
+#elif MRPT_VERSION >= 0x020f00  // 2.15.0
             clipped_obs_->insertPointFrom(*raw_obs_, i, ctx);
 #else
             clipped_obs_->insertPointFrom(*raw_obs_, i);
