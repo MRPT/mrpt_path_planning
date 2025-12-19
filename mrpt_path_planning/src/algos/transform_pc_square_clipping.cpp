@@ -11,11 +11,11 @@ void mpp::transform_pc_square_clipping(
     const double MAX_DIST_XY, mrpt::maps::CPointsMap& outMap,
     bool appendToOutMap)
 {
-    size_t       nObs;
-    const float *obs_xs, *obs_ys, *obs_zs;
-    inMap.getPointsBuffer(nObs, obs_xs, obs_ys, obs_zs);
+    const auto   obs_xs = inMap.getPointsBufferRef_x();
+    const auto   obs_ys = inMap.getPointsBufferRef_y();
+    const size_t nObs   = inMap.size();
 
-    if (!appendToOutMap) outMap.clear();
+    if (!appendToOutMap) { outMap.clear(); }
     // Prealloc mem for speed-up
     outMap.reserve(nObs);
 
