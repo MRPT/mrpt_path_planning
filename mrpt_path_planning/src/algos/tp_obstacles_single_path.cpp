@@ -15,9 +15,9 @@ mpp::distance_t mpp::tp_obstacles_single_path(
     // obstacles
     // in the "grid" of the given PT
     // --------------------------------------------------------------------
-    size_t       nObs;
-    const float *obs_xs, *obs_ys, *obs_zs;
-    localObstacles.getPointsBuffer(nObs, obs_xs, obs_ys, obs_zs);
+    const auto&  obs_xs = localObstacles.getPointsBufferRef_x();
+    const auto&  obs_ys = localObstacles.getPointsBufferRef_y();
+    const size_t nObs   = localObstacles.size();
 
     // Init obs ranges:
     distance_t out_TPObstacle_k = 0;
