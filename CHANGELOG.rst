@@ -2,6 +2,11 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* fix build against newer mvsim API
+* Contributors: Jose Luis Blanco-Claraco
+
 0.2.4 (2025-12-19)
 ------------------
 * Fix build for mrpt >=2.15.3
