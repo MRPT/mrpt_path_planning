@@ -94,15 +94,18 @@ build/bin/path-planner-cli \
 ```
 
 Plan a path for an **Ackermann (car-like) vehicle**, show the full explored search
-tree, and animate the result:
+tree, and animate the result. Note the goal is given as a position `[x y]` (R²,
+heading-agnostic): with arc-based PTGs, arriving at a precise heading AND position
+simultaneously is very constrained, so position-only goals are the natural choice
+for non-holonomic vehicles:
 
 ```bash
 build/bin/path-planner-cli \
   -s "[0.5 0 0]" \
-  -g "[4 2.5 0]" \
+  -g "[4 2.5]" \
   -c share/ptgs_ackermann_vehicle.ini \
   --obstacles share/obstacles_01.txt \
-  --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
+  --planner-parameters share/mvsim-demo-astar-planner-params-ackermann.yaml \
   --show-tree \
   --play-animation
 ```
