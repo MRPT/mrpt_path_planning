@@ -57,9 +57,27 @@ struct TPS_Astar_Parameters
 };
 
 /**
- * Uses a SE(2) lattice to run an A* algorithm to find a kinematicaly feasible
+ * Uses a SE(2) lattice to run an A* algorithm to find a kinematically feasible
  * path from "A" to "B" using a set of trajectories in the form of PTGs.
  *
+ * ## Cost model and optimality
+ *
+ * This planner optimizes **SE(2) path cost**, not R(2) path length. The base
+ * edge cost is `estimatedExecTime` (travel time), and the default heuristic
+ * combines a Lie-group distance with a heading-alignment penalty:
+ *
+ *   h = dist_SE2(from, goal) + w * |angDistance(atan2(dy,dx), phi)|
+ *
+ * The heading term is intentional and physically meaningful: for any vehicle
+ * capable of rotation (holonomic, differential-drive, Ackermann), the true
+ * cost-to-go in SE(2) includes the effort to reorient. A path that arrives at
+ * the goal position facing the wrong direction is genuinely more expensive than
+ * one that arrives correctly aligned. The planner therefore finds paths that
+ * are optimal in SE(2), which are not necessarily the shortest in R(2).
+ *
+ * To minimize only R(2) path length (ignoring final heading cost), set:
+ *   - `SE2_metricAngleWeight = 0`
+ *   - `heuristic_heading_weight = 0`
  */
 class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 {

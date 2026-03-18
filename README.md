@@ -2,9 +2,14 @@
 
 # mrpt_path_planning
 
-Path planning and navigation algorithms for robots/vehicles moving on planar environments. 
+Path planning and navigation algorithms for robots/vehicles moving on planar environments.
 This library builds upon mrpt-nav and the theory behind PTGs to generate libraries of "motion primitives"
 for vehicles with arbitrary shape and realistic kinematics and dynamics.
+
+The planner optimizes **SE(2) path cost** (position + heading), not R(2) path length.
+For vehicles that rotate, arriving at a goal with the correct heading is part of the
+optimal solution — paths that are longer in Euclidean distance but better-aligned
+may genuinely have lower cost. See `TPS_Astar.h` for details on the cost model.
 
 ## Status on ROS build farm
 
