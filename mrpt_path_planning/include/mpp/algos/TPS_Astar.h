@@ -1,6 +1,6 @@
 /* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -241,13 +241,11 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 
     int32_t x2idx(float x) const
     {
-        return static_cast<int32_t>(
-            std::round(x / params_.grid_resolution_xy));
+        return static_cast<int32_t>(std::round(x / params_.grid_resolution_xy));
     }
     int32_t y2idx(float y) const
     {
-        return static_cast<int32_t>(
-            std::round(y / params_.grid_resolution_xy));
+        return static_cast<int32_t>(std::round(y / params_.grid_resolution_xy));
     }
     int32_t phi2idx(float yaw) const
     {

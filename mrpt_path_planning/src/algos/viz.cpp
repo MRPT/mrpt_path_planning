@@ -1,6 +1,6 @@
 /* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -64,7 +64,10 @@ void mpp::viz_nav_plan(
         // Wait:
         win->waitForKey();
     }
-    else { nonmodal_wins.push_back(win); }
+    else
+    {
+        nonmodal_wins.push_back(win);
+    }
 
     MRPT_END
 }

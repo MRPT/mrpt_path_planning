@@ -1,6 +1,6 @@
 /* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -364,8 +364,9 @@ void prepare_selfdriving(mvsim::World& world)
 
     if (arg_nav_engine_yaml_file.isSet())
     {
-        sd->navigator.config_.loadFrom(mrpt::containers::yaml::FromFile(
-            arg_nav_engine_yaml_file.getValue()));
+        sd->navigator.config_.loadFrom(
+            mrpt::containers::yaml::FromFile(
+                arg_nav_engine_yaml_file.getValue()));
     }
 
     // all mandaroty fields filled in now:
@@ -378,8 +379,8 @@ void prepare_selfdriving(mvsim::World& world)
     // --------------------------------------------------------
     if (arg_waypoints_yaml_file.isSet())
     {
-        sd->waypts =
-            mpp::WaypointSequence::FromYAML(mrpt::containers::yaml::FromFile(
+        sd->waypts = mpp::WaypointSequence::FromYAML(
+            mrpt::containers::yaml::FromFile(
                 arg_waypoints_yaml_file.getValue()));
     }
 }
@@ -641,9 +642,10 @@ void prepare_selfdriving_window(
         auto pnNav        = wrappers.at(0);
         auto lbWaypsCount = pnNav->add<nanogui::Label>("");
 
-        lbWaypsCount->setCaption(mrpt::format(
-            "Number of wps: %u",
-            static_cast<unsigned int>(sd->waypts.waypoints.size())));
+        lbWaypsCount->setCaption(
+            mrpt::format(
+                "Number of wps: %u",
+                static_cast<unsigned int>(sd->waypts.waypoints.size())));
 
         // custom 3D objects
         auto glWaypoints = mrpt::opengl::CSetOfObjects::Create();
@@ -685,10 +687,11 @@ void prepare_selfdriving_window(
     const auto lambdaUpdateNavStatus = [lbNavStatus]()
     {
         const auto state = sd->navigator.current_status();
-        lbNavStatus->setCaption(mrpt::format(
-            "Nav status: %s",
-            mrpt::typemeta::TEnumType<mpp::NavStatus>::value2name(state)
-                .c_str()));
+        lbNavStatus->setCaption(
+            mrpt::format(
+                "Nav status: %s",
+                mrpt::typemeta::TEnumType<mpp::NavStatus>::value2name(state)
+                    .c_str()));
     };
 
     // -------------------------------
@@ -895,7 +898,8 @@ void mvsim_server_thread_update_GUI(GUI_ThreadParams& tp)
         if (firstTime && tp.world->gui_window())
         {
             tp.world->enqueue_task_to_run_in_gui_thread(
-                [&]() {
+                [&]()
+                {
                     prepare_selfdriving_window(
                         tp.world->gui_window(), tp.world);
                 });
@@ -963,7 +967,7 @@ void on_do_single_path_planning(
     {
         const auto bboxMargin = mrpt::math::TPoint3Df(1.0, 1.0, .0);
         const auto ptStart    = mrpt::math::TPoint3Df(
-               pi.stateStart.pose.x, pi.stateStart.pose.y, 0);
+            pi.stateStart.pose.x, pi.stateStart.pose.y, 0);
         const auto ptGoal = mrpt::math::TPoint3Df(
             pi.stateGoal.asSE2KinState().pose.x,
             pi.stateGoal.asSE2KinState().pose.y, 0);

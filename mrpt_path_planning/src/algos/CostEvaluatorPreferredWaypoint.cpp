@@ -1,6 +1,6 @@
 /* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -62,7 +62,8 @@ double CostEvaluatorPreferredWaypoint::operator()(
     double cost = .0;
     size_t n    = 0;
 
-    auto lambdaAddPose = [this, &cost, &n](const mrpt::math::TPose2D& p) {
+    auto lambdaAddPose = [this, &cost, &n](const mrpt::math::TPose2D& p)
+    {
         const auto c = eval_single_pose(p);
         ASSERT_GE_(c, .0);
 

@@ -1,6 +1,6 @@
 ﻿/* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -349,8 +349,9 @@ struct PoseDistanceMetric_TPS<SE2_KinState>
             const auto   reconsRelPose = ptg_.getPathPose(k, ptg_step);
             const double headingError =
                 ignoreDstHeading ? .0
-                                 : std::abs(mrpt::math::angDistance(
-                                       reconsRelPose.phi, relPose.phi));
+                                 : std::abs(
+                                       mrpt::math::angDistance(
+                                           reconsRelPose.phi, relPose.phi));
 
             if (headingError > headingTolerance_) tp_point_is_exact = false;
         }
