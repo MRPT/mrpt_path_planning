@@ -199,6 +199,14 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         // node with the lowest fScore:
         Node& current = *openSet.begin()->second.ptr;
 
+        // Skip stale entries: this node was already expanded via a
+        // earlier (better) open-set entry.
+        if (current.visited)
+        {
+            openSet.erase(openSet.begin());
+            continue;
+        }
+
         // current==goal?
         // we must check the state to be on the same lattice cell to check
         // for a match of the current SE(2) pose against the goal state,
@@ -363,11 +371,11 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
                 heuristic(neighborNode.state, in.stateGoal);
             neighborNode.fScore = tentative_gScore + costToGoal;
 
-            if (!neighborNode.pendingInOpenSet)
-            {
-                neighborNode.pendingInOpenSet = true;
-                openSet.insert({neighborNode.fScore, &neighborNode});
-            }
+            // Always (re-)insert into the open set with the updated
+            // fScore. If an older entry with a higher fScore remains,
+            // it will be skipped when popped via the visited check.
+            neighborNode.pendingInOpenSet = true;
+            openSet.insert({neighborNode.fScore, &neighborNode});
 
             // Overwrite state with new one:
             neighborNode.state = x_i;
