@@ -38,6 +38,7 @@ endif()
 
 # Dependencies:
 find_package(mvsim-simulator QUIET)
+find_package(mvsim-comms QUIET)
 find_package(mrpt-tclap REQUIRED)
 find_package(mrpt-containers REQUIRED)
 find_package(mrpt-graphs REQUIRED)

@@ -481,8 +481,14 @@ int launchSimulation()
 
                 // Get speed: ground truth
                 {
+#if MVSIM_MAJOR_VERSION > 1 || \
+    (MVSIM_MAJOR_VERSION == 1 && MVSIM_MINOR_VERSION >= 2)
+                    const mrpt::math::TTwist2D& vel =
+                        it_veh->second->getRefVelocityLocal();
+#else
                     const mrpt::math::TTwist2D& vel =
                         it_veh->second->getVelocityLocal();
+#endif
                     txt2gui_tmp += mrpt::format(
                         "gt. vel: lx=%7.03f, ly=%7.03f, w= %7.03fdeg/s\n",
                         vel.vx, vel.vy, mrpt::RAD2DEG(vel.omega));
@@ -886,7 +892,7 @@ void mvsim_server_thread_update_GUI(GUI_ThreadParams& tp)
         tp.world->update_GUI(&guiparams);
 
         static bool firstTime = true;
-        if (firstTime)
+        if (firstTime && tp.world->gui_window())
         {
             tp.world->enqueue_task_to_run_in_gui_thread(
                 [&]() {
