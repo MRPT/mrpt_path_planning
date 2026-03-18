@@ -1,0 +1,50 @@
+{
+    "C_Cpp.autoAddFileAssociations": false,
+    "C_Cpp.doxygen.generateOnType": false,
+    "C_Cpp.files.exclude": {
+        "**/.git": true,
+        "**/.vscode": true,
+        "**/docs": true,
+        "**/install": true,
+        "**/log": true
+    },
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "clangd.arguments": [
+        "--background-index",
+        "--compile-commands-dir=${workspaceFolder}/build",
+        "--completion-style=detailed",
+        "--header-insertion=never",
+        "--pretty"
+    ],
+    // Ensure format-on-save uses clang-format
+    "editor.formatOnSave": true,
+    "C_Cpp.formatting": "clangFormat",
+    "C_Cpp.clang_format_path": "/usr/bin/clang-format-14",
+    // Optional: enforce a specific style
+    "C_Cpp.clang_format_style": "file",
+    "[cpp]": {
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+    },
+    "cSpell.allowCompoundWords": true,
+    "cSpell.ignorePaths": [
+        "**/.git/objects/**",
+        "**/.vscode",
+        "**/build/",
+        "**/install/",
+        "**/log/",
+        ".clang-tidy"
+    ],
+    "search.exclude": {
+        "**/build": true,
+        "**/install": true,
+        "**/log": true
+    },
+    "ros.distro": "humble",
+    "cSpell.words": [
+        "CPose3DPDFGaussian",
+        "eigen",
+    ],
+    "cSpell.ignoreWords": [
+        "JLBC",
+    ]
+}
