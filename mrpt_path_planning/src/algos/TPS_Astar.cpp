@@ -507,19 +507,8 @@ cost_t TPS_Astar::default_heuristic_SE2(
 cost_t TPS_Astar::default_heuristic_R2(
     const SE2_KinState& from, const mrpt::math::TPoint2D& goal) const
 {
-    // Distance in R^2:
-    const double distR2 = (from.pose.translation() - goal).norm();
-
-    // Favor heading towards the target, if we are far away:
-    const auto   relPose = goal - from.pose;
-    const double distHeading =
-        (relPose.norm() < 0.1)
-            ? 0.0
-            : std::abs(
-                  mrpt::math::angDistance(
-                      std::atan2(relPose.y, relPose.x), from.pose.phi));
-
-    return distR2 + params_.heuristic_heading_weight * distHeading;
+    // Distance in R^2 only — heading is irrelevant for R(2) goals.
+    return (from.pose.translation() - goal).norm();
 }
 
 TPS_Astar::Node& TPS_Astar::getOrCreateNodeByPose(
