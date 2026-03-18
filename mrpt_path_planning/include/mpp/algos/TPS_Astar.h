@@ -239,12 +239,21 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 
     SE2_Lattice grid_;
 
-    int32_t x2idx(float x) const { return x / params_.grid_resolution_xy; }
-    int32_t y2idx(float y) const { return y / params_.grid_resolution_xy; }
+    int32_t x2idx(float x) const
+    {
+        return static_cast<int32_t>(
+            std::round(x / params_.grid_resolution_xy));
+    }
+    int32_t y2idx(float y) const
+    {
+        return static_cast<int32_t>(
+            std::round(y / params_.grid_resolution_xy));
+    }
     int32_t phi2idx(float yaw) const
     {
-        auto phi = mrpt::math::wrapToPi(yaw);
-        return phi / params_.grid_resolution_yaw;
+        const auto phi = mrpt::math::wrapToPi(yaw);
+        return static_cast<int32_t>(
+            std::round(phi / params_.grid_resolution_yaw));
     }
 
     /// throws on out of grid limits.

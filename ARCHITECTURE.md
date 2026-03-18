@@ -172,13 +172,6 @@ The function has a `MRPT_TODO("Impl actual cache")` and recomputes local obstacl
 
 **Fix**: Implement a spatial cache (e.g., grid-indexed or KD-tree-based) that avoids re-transforming the same obstacles when consecutive queries are spatially close. Or use a spatial index on the global obstacles (MRPT's built-in KD-tree) with range queries.
 
-#### P4. `phi2idx` Truncation Instead of Rounding
-**Severity**: Low-Medium — discretization bias.
-
-`phi2idx(float yaw)` uses `phi / grid_resolution_yaw` which truncates toward zero via integer conversion, creating a bias. Similarly, `x2idx` and `y2idx` truncate rather than round. This means a point at x=0.29 with resolution 0.20 maps to cell 1, but x=-0.29 maps to cell -1 (not -2). The grid cells are not symmetric around zero.
-
-**Fix**: Use `std::floor(x / resolution)` for consistent discretization, or `std::round()` if cell centers at multiples of resolution are desired.
-
 #### P5. Uniform Trajectory Sampling Misses Important Directions
 **Severity**: Medium — suboptimal path quality.
 
@@ -300,8 +293,7 @@ The project has zero unit tests. For a planning library where correctness is saf
 
 ### Phase 1: Critical Correctness Fixes
 1. **Fix P7**: Make heuristic units consistent with cost model (time vs distance)
-2. **Fix P4**: Use `std::floor()` for grid discretization
-3. **Fix I1**: Store `ptgTrimmableSpeed` in best-path selection
+2. **Fix I1**: Store `ptgTrimmableSpeed` in best-path selection
 
 ### Phase 2: Unit Test Infrastructure
 4. **T1**: Set up test framework (e.g., Google Test via CMake)
