@@ -165,63 +165,56 @@ Obstacles are first transformed to the robot's local frame and square-clipped to
 
 ### 6.1 Algorithmic / Theoretical Issues
 
-#### P1. Heuristic Admissibility Not Guaranteed
-**Severity**: High — can cause A* to find suboptimal paths.
-
-The default heuristic adds a heading-alignment penalty term on top of the geometric distance. While this improves practical path quality, it may **overestimate** the true cost-to-go, violating A* admissibility. The Lie metric `norm() + w*|phi|` is also not a lower bound of the actual PTG-based travel time, since time depends on the specific PTG trajectories available.
-
-**Fix**: Either (a) prove/verify admissibility for the specific PTG set, (b) scale the heuristic with a factor < 1 to make it admissible (at the cost of more exploration), or (c) document that TPS_Astar is a weighted/inadmissible A* and users should expect near-optimal (not optimal) paths.
-
-#### P2. Bounding Box Check on Phi Uses Linear Comparison
+#### P1. Bounding Box Check on Phi Uses Linear Comparison
 **Severity**: Medium — silently rejects valid poses near ±π.
 
 Lines `TPS_Astar.cpp:303-308` check `q_i.phi < worldBboxMin.phi` and `q_i.phi > worldBboxMax.phi`. Since `phi` wraps around at ±π, this linear comparison is incorrect for angles. A pose with `phi = -3.14` and a bound of `phi_min = -3.14159` could fail due to wrapping. The `worldBboxMin/Max` uses `TPose2D` where phi bounds are typically set to `±π`, but wrapping issues could cause valid poses to be rejected at the boundary.
 
 **Fix**: Use `mrpt::math::wrapToPi()` before comparison, or better yet, define phi bounds as a wrapping-aware range. Consider whether phi bounds are even necessary (if the full circle should always be allowed).
 
-#### P3. Costmap Cost Function Has Singularity at d=0
+#### P2. Costmap Cost Function Has Singularity at d=0
 **Severity**: Medium — infinite cost at obstacle locations.
 
 In `CostEvaluatorCostMap.cpp:101`: `cost = maxCost * pow(-0.99999 + 1/(d/D), 0.4)`. As `d → 0`, the cost → ∞. While obstacles at d=0 should indeed be avoided, an infinite cost can cause numerical issues in the A* algorithm. Moreover, the formula has a subtle behavior: at `d = D * (1/1.99999) ≈ 0.5*D`, cost = `maxCost * pow(0.00001, 0.4)` which is very small, meaning the penalty is negligible for most of the clearance zone and only spikes very close to obstacles.
 
 **Fix**: Clamp cost to `maxCost` and consider a smoother cost profile (e.g., `maxCost * (1 - d/D)^p`) that provides better gradient throughout the clearance zone.
 
-#### P4. `cached_local_obstacles()` Has No Actual Cache
+#### P3. `cached_local_obstacles()` Has No Actual Cache
 **Severity**: Medium — performance.
 
 The function has a `MRPT_TODO("Impl actual cache")` and recomputes local obstacles from scratch for every node expansion. For dense obstacle maps, this `O(N_obstacles)` transform-and-clip operation per node is a major bottleneck.
 
 **Fix**: Implement a spatial cache (e.g., grid-indexed or KD-tree-based) that avoids re-transforming the same obstacles when consecutive queries are spatially close. Or use a spatial index on the global obstacles (MRPT's built-in KD-tree) with range queries.
 
-#### P5. `phi2idx` Truncation Instead of Rounding
+#### P4. `phi2idx` Truncation Instead of Rounding
 **Severity**: Low-Medium — discretization bias.
 
 `phi2idx(float yaw)` uses `phi / grid_resolution_yaw` which truncates toward zero via integer conversion, creating a bias. Similarly, `x2idx` and `y2idx` truncate rather than round. This means a point at x=0.29 with resolution 0.20 maps to cell 1, but x=-0.29 maps to cell -1 (not -2). The grid cells are not symmetric around zero.
 
 **Fix**: Use `std::floor(x / resolution)` for consistent discretization, or `std::round()` if cell centers at multiples of resolution are desired.
 
-#### P6. Uniform Trajectory Sampling Misses Important Directions
+#### P5. Uniform Trajectory Sampling Misses Important Directions
 **Severity**: Medium — suboptimal path quality.
 
 Trajectory indices are sampled uniformly (`i * (pathCount-1) / (N-1)`), plus the direct-to-goal direction. This misses trajectories that might navigate around obstacles effectively. In cluttered environments, the planner may fail to find paths that require specific maneuvers between obstacles.
 
 **Fix**: Consider adaptive sampling strategies: (a) bias sampling toward the goal direction with some spread, (b) add obstacle-aware sampling that picks trajectories tangent to nearby obstacles, (c) use the PTG's inverse map to find trajectories passing through promising intermediate points.
 
-#### P7. No Path Smoothing / Post-Processing
+#### P6. No Path Smoothing / Post-Processing
 **Severity**: Low-Medium — path quality.
 
 The A* output is a sequence of PTG segments snapped to lattice cells. The path can have unnecessary zig-zag or sharp transitions between PTG types. There is a `refine_trajectory` utility, but it only re-parameterizes PTG params for exact poses — it doesn't optimize the path globally.
 
 **Fix**: Add a post-processing step: (a) shortcutting — try to connect non-adjacent nodes directly with PTG segments, (b) elastic band / trajectory optimization to smooth the path while maintaining kinematic feasibility and collision-free status.
 
-#### P8. Edge Cost Uses `estimatedExecTime` But Heuristic Uses Distance
+#### P7. Edge Cost Uses `estimatedExecTime` But Heuristic Uses Distance
 **Severity**: Medium — inconsistent cost model.
 
 `Planner::cost_path_segment()` uses `edge.estimatedExecTime` as base cost (time-optimal objective), but the heuristic (`default_heuristic_SE2/R2`) returns a geometric distance (Lie metric / Euclidean). These are in different units. This inconsistency means the heuristic can over- or under-estimate depending on the robot's speed, compounding the admissibility issue from P1.
 
 **Fix**: Make the heuristic consistent with the cost model. For time-optimal planning, the heuristic should be `distance / max_speed`. For distance-optimal planning, the edge cost should use `ptgDist` instead of `estimatedExecTime`.
 
-#### P9. No Reverse Motion Support
+#### P8. No Reverse Motion Support
 **Severity**: Low — limits applicability.
 
 The planner only explores forward PTG trajectories. For Ackermann or differential-drive robots in tight spaces (parking, U-turns), reverse motion is essential.
@@ -320,8 +313,8 @@ The project has zero unit tests. For a planning library where correctness is saf
 ## 7. Prioritized Implementation Plan
 
 ### Phase 1: Critical Correctness Fixes
-1. **Fix P8**: Make heuristic units consistent with cost model (time vs distance)
-2. **Fix P5**: Use `std::floor()` for grid discretization
+1. **Fix P7**: Make heuristic units consistent with cost model (time vs distance)
+2. **Fix P4**: Use `std::floor()` for grid discretization
 3. **Fix I1**: Store `ptgTrimmableSpeed` in best-path selection
 
 ### Phase 2: Unit Test Infrastructure
@@ -329,16 +322,15 @@ The project has zero unit tests. For a planning library where correctness is saf
 5. Write tests for lattice discretization, collision checking, simple planning scenarios, tree operations
 
 ### Phase 3: Performance
-6. **Fix P4**: Implement obstacle cache (spatial index)
+6. **Fix P3**: Implement obstacle cache (spatial index)
 7. **Fix I3**: Fix copy-by-value in `transform_pc_square_clipping`
 
 ### Phase 4: Path Quality
-8. **Fix P1**: Document or fix heuristic admissibility; consider weighted A* with epsilon
-9. **Fix P3**: Clamp and smooth costmap function
-10. **Fix P6**: Adaptive trajectory sampling
-11. **Fix P7**: Add path post-processing (shortcutting)
+8. **Fix P2**: Clamp and smooth costmap function
+9. **Fix P5**: Adaptive trajectory sampling
+10. **Fix P6**: Add path post-processing (shortcutting)
 
 ### Phase 5: Features
-12. **Fix P2**: Proper angle wrapping in bbox checks
-13. **Fix P9**: Reverse motion support
-14. **F1-F4**: Address in-code TODOs (dynamic obstacles, goal speed, speed zones)
+11. **Fix P1**: Proper angle wrapping in bbox checks
+12. **Fix P8**: Reverse motion support
+13. **F1-F4**: Address in-code TODOs (dynamic obstacles, goal speed, speed zones)
