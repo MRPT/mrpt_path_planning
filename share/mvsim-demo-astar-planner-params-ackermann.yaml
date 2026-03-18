@@ -1,0 +1,21 @@
+%YAML 1.2
+---
+# Planner parameters tuned for non-holonomic (Ackermann/diff-drive) vehicles.
+#
+# A finer grid is required compared to holonomic robots: circular-arc PTGs
+# (CPTG_DiffDrive_C) produce trajectories that fan out much more slowly in the
+# transverse direction, so a coarse lattice collapses most of them into the
+# same cell, leaving the search tree with almost no branching.
+grid_resolution_xy: 0.20    # [meters] — finer than holonomic default (0.40)
+grid_resolution_yaw: 15.0   # [deg]    — finer to distinguish arc headings
+
+# find_feasible_paths_to_neighbors() params:
+max_ptg_trajectories_to_explore: 25
+max_ptg_speeds_to_explore: 1   # no speed trimming for diff-drive C PTGs
+ptg_sample_timestamps: [0.5, 1.0, 2.0, 4.0]  # seconds
+
+heuristic_heading_weight: 0.1
+SE2_metricAngleWeight: 0.1
+pathInterpolatedSegments: 5
+
+maximumComputationTime: 20.0  # [seconds] — more budget for finer grid
