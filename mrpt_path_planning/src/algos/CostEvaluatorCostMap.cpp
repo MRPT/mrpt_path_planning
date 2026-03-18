@@ -111,6 +111,19 @@ CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
         }
     }
 
+    // Ensure cells containing obstacle points have exactly maxCost.
+    // The loop above computes cost from cell centers, which may be slightly
+    // offset from the obstacle, yielding cost < maxCost at the obstacle cell.
+    {
+        const auto& xs = obsPts.getPointsBufferRef_x();
+        const auto& ys = obsPts.getPointsBufferRef_y();
+        for (size_t i = 0; i < xs.size(); i++)
+        {
+            double* cell = g.cellByPos(xs[i], ys[i]);
+            if (cell) *cell = p.maxCost;
+        }
+    }
+
 #if 0
     {
         mrpt::math::CMatrixDouble CM;

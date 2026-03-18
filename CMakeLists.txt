@@ -56,6 +56,7 @@ endif()
 
 option(MRPT_PATH_PLANNING_BUILD_TESTS "Build mrpt_path_planning unit tests" ON)
 if (MRPT_PATH_PLANNING_BUILD_TESTS)
+	enable_testing()
 	add_subdirectory(tests)
 endif()
 
