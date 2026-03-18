@@ -165,14 +165,7 @@ Obstacles are first transformed to the robot's local frame and square-clipped to
 
 ### 6.1 Algorithmic / Theoretical Issues
 
-#### P1. Bounding Box Check on Phi Uses Linear Comparison
-**Severity**: Medium — silently rejects valid poses near ±π.
-
-Lines `TPS_Astar.cpp:303-308` check `q_i.phi < worldBboxMin.phi` and `q_i.phi > worldBboxMax.phi`. Since `phi` wraps around at ±π, this linear comparison is incorrect for angles. A pose with `phi = -3.14` and a bound of `phi_min = -3.14159` could fail due to wrapping. The `worldBboxMin/Max` uses `TPose2D` where phi bounds are typically set to `±π`, but wrapping issues could cause valid poses to be rejected at the boundary.
-
-**Fix**: Use `mrpt::math::wrapToPi()` before comparison, or better yet, define phi bounds as a wrapping-aware range. Consider whether phi bounds are even necessary (if the full circle should always be allowed).
-
-#### P2. Costmap Cost Function Has Singularity at d=0
+#### P1. Costmap Cost Function Has Singularity at d=0
 **Severity**: Medium — infinite cost at obstacle locations.
 
 In `CostEvaluatorCostMap.cpp:101`: `cost = maxCost * pow(-0.99999 + 1/(d/D), 0.4)`. As `d → 0`, the cost → ∞. While obstacles at d=0 should indeed be avoided, an infinite cost can cause numerical issues in the A* algorithm. Moreover, the formula has a subtle behavior: at `d = D * (1/1.99999) ≈ 0.5*D`, cost = `maxCost * pow(0.00001, 0.4)` which is very small, meaning the penalty is negligible for most of the clearance zone and only spikes very close to obstacles.
