@@ -97,8 +97,11 @@ CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
             const auto d = std::sqrt(obsPts.kdTreeClosestPoint2DsqrError(x, y));
             if (d < D)
             {
-                const auto cost =
-                    p.maxCost * std::pow(-0.99999 + 1. / (d / D), 0.4);
+                // Smooth quadratic decay: maxCost at d=0, zero at d=D.
+                // No singularity and good gradient across the full
+                // clearance zone.
+                const double nd   = 1.0 - d / D;  // in [0,1]
+                const auto   cost = p.maxCost * nd * nd;
                 ASSERT_GE_(cost, .0);
 
                 double* cell = g.cellByIndex(cx, cy);
