@@ -1,6 +1,6 @@
 /* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -15,15 +15,15 @@ namespace mpp
 {
 struct PlannerInput
 {
-    SE2_KinState        stateStart;
-    SE2orR2_KinState    stateGoal;
-    
+    SE2_KinState     stateStart;
+    SE2orR2_KinState stateGoal;
+
     /** World bounds, with two purposes:
      *  1) Clip obstacles outside of these coordinates,
      *  2) Limit the trajectory search space to these limits.
      */
     mrpt::math::TPose2D worldBboxMin, worldBboxMax;
-    
+
     std::vector<ObstacleSource::Ptr> obstacles;
     TrajectoriesAndRobotShape        ptgs;
 };

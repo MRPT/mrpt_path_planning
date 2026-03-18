@@ -1,6 +1,6 @@
 /* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -38,7 +38,7 @@ trajectory_t mpp::plan_to_trajectory(
 
         uint32_t ptgFinalStep = 0;
         bool     ok           = ptg->getPathStepForDist(
-                          edge->ptgPathIndex, edge->ptgDist, ptgFinalStep);
+            edge->ptgPathIndex, edge->ptgDist, ptgFinalStep);
         ASSERT_(ok);
         uint32_t stepIncr =
             std::max<uint32_t>(1, mrpt::round(samplePeriod / ptg_dt));

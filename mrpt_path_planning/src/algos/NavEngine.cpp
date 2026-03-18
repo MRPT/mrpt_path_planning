@@ -1,6 +1,6 @@
 /* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -86,13 +86,14 @@ void NavEngine::initialize()
                 std::string_view                                    msg,
                 [[maybe_unused]] const mrpt::system::VerbosityLevel level,
                 [[maybe_unused]] std::string_view                   loggerName,
-                [[maybe_unused]] const mrpt::Clock::time_point      timestamp) {
-                using namespace std::string_literals;
+                [[maybe_unused]] const mrpt::Clock::time_point      timestamp)
+        {
+            using namespace std::string_literals;
 
-                innerState_.navlogDebugMessages.push_back(
-                    "["s + mrpt::typemeta::enum2str(level) + "] "s +
-                    std::string(msg));
-            };
+            innerState_.navlogDebugMessages.push_back(
+                "["s + mrpt::typemeta::enum2str(level) + "] "s +
+                std::string(msg));
+        };
         mrpt::system::COutputLogger::logRegisterCallback(loggerToNavlog_);
     }
     // Copy absolute speed limit from the first PTG:
@@ -183,10 +184,13 @@ void NavEngine::navigation_step()
             if (lastNavigationState_ == NavStatus::NAVIGATING &&
                 navigationStatus_ == NavStatus::NAV_ERROR)
             {
-                pendingEvents_.emplace_back([this]() {
-                    ASSERT_(config_.vehicleMotionInterface);
-                    config_.vehicleMotionInterface->on_nav_end_due_to_error();
-                });
+                pendingEvents_.emplace_back(
+                    [this]()
+                    {
+                        ASSERT_(config_.vehicleMotionInterface);
+                        config_.vehicleMotionInterface
+                            ->on_nav_end_due_to_error();
+                    });
             }
 
             // If we just arrived at this state, stop the robot:
@@ -353,7 +357,7 @@ void NavEngine::update_robot_kinematic_state()
             navErrorReason_.error_code = NavError::EMERGENCY_STOP;
             navErrorReason_.error_msg  = std::string(
                 "ERROR: get_localization() failed, stopping robot "
-                "and finishing navigation");
+                 "and finishing navigation");
             try
             {
                 config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
@@ -468,10 +472,12 @@ void NavEngine::internal_on_start_new_navigation()
     // Have we just started the navigation?
     if (lastNavigationState_ == NavStatus::IDLE)
     {
-        pendingEvents_.emplace_back([this]() {
-            ASSERT_(config_.vehicleMotionInterface);
-            config_.vehicleMotionInterface->on_nav_start();
-        });
+        pendingEvents_.emplace_back(
+            [this]()
+            {
+                ASSERT_(config_.vehicleMotionInterface);
+                config_.vehicleMotionInterface->on_nav_start();
+            });
 
         // Start a new navlog file?
         internal_start_navlog_file();
@@ -544,9 +550,9 @@ void NavEngine::check_immediate_collision()
         _.active_plan_reset(true);
 
         // user callbacks:
-        pendingEvents_.emplace_back([this]() {
-            config_.vehicleMotionInterface->on_apparent_collision();
-        });
+        pendingEvents_.emplace_back(
+            [this]()
+            { config_.vehicleMotionInterface->on_apparent_collision(); });
     }
 }
 
@@ -779,7 +785,8 @@ NavEngine::PathPlannerOutput NavEngine::path_planner_function(
     ppi.pi.ptgs = config_.ptgs;
 
     // Insert custom progress callback for the GUI, if enabled:
-    planner.progressCallback_ = [this](const ProgressCallbackData& pcd) {
+    planner.progressCallback_ = [this](const ProgressCallbackData& pcd)
+    {
         MRPT_LOG_DEBUG_STREAM(
             "[progressCallback] bestCostFromStart: "
             << pcd.bestCostFromStart
@@ -1774,9 +1781,9 @@ bool NavEngine::approach_target_controller()
                 "goal could not get shorter than %f for %f seconds.",
                 _.lastDistanceToGoal.value(), age);
 
-            pendingEvents_.emplace_back([this]() {
-                config_.vehicleMotionInterface->on_path_seems_blocked();
-            });
+            pendingEvents_.emplace_back(
+                [this]()
+                { config_.vehicleMotionInterface->on_path_seems_blocked(); });
         }
     }
 
@@ -2029,10 +2036,12 @@ void NavEngine::internal_mark_current_wp_as_reached()
             _.waypointNavStatus.waypoints.at(i).skipped = true;
 
             // user callbacks:
-            pendingEvents_.emplace_back([this, i]() {
-                config_.vehicleMotionInterface->on_waypoint_reached(
-                    i, false /* =skipped */);
-            });
+            pendingEvents_.emplace_back(
+                [this, i]()
+                {
+                    config_.vehicleMotionInterface->on_waypoint_reached(
+                        i, false /* =skipped */);
+                });
         }
     }
 
@@ -2040,10 +2049,12 @@ void NavEngine::internal_mark_current_wp_as_reached()
     _.waypointNavStatus.waypoints.at(reachedIdx).reached = true;
 
     // user callbacks:
-    pendingEvents_.emplace_back([this, reachedIdx]() {
-        config_.vehicleMotionInterface->on_waypoint_reached(
-            reachedIdx, true /* =reached */);
-    });
+    pendingEvents_.emplace_back(
+        [this, reachedIdx]()
+        {
+            config_.vehicleMotionInterface->on_waypoint_reached(
+                reachedIdx, true /* =reached */);
+        });
 
     // clear statuses so we can launch a new plan in the next iteration:
     _.active_plan_reset(true);

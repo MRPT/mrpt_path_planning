@@ -1,6 +1,6 @@
 /* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -40,7 +40,10 @@ static double costAt(const mpp::CostEvaluatorCostMap& cm, double x, double y)
 {
     const auto&   grid = cm.cost_gridmap();
     const double* cell = grid.cellByPos(x, y);
-    if (!cell) return 0.0;  // outside grid -> no cost
+    if (!cell)
+    {
+        return 0.0;  // outside grid -> no cost
+    }
     return *cell;
 }
 

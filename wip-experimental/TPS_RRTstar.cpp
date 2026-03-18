@@ -1,6 +1,6 @@
 ﻿/* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -495,9 +495,10 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
             ro.highlight_path_to_node_id = newNodeId;
             mrpt::opengl::COpenGLScene scene;
             scene.insert(render_tree(tree, in, ro));
-            scene.saveToFile(mrpt::format(
-                "debug_rrtstar_%05u.3Dscene",
-                static_cast<unsigned int>(rrtIter)));
+            scene.saveToFile(
+                mrpt::format(
+                    "debug_rrtstar_%05u.3Dscene",
+                    static_cast<unsigned int>(rrtIter)));
         }
 
     }  // for each rrtIter

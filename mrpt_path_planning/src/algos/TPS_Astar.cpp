@@ -1,6 +1,6 @@
 ﻿/* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -128,9 +128,10 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
         // apply clipping for efficiency:
         // (z is arbitrary and ignored inside)
-        os->apply_clipping_box(mrpt::math::TBoundingBox(
-            {in.worldBboxMin.x, in.worldBboxMin.y, -1.0},
-            {in.worldBboxMax.x, in.worldBboxMax.y, 1.0}));
+        os->apply_clipping_box(
+            mrpt::math::TBoundingBox(
+                {in.worldBboxMin.x, in.worldBboxMin.y, -1.0},
+                {in.worldBboxMax.x, in.worldBboxMax.y, 1.0}));
 
         // Get obstacles:
         obstaclePoints.emplace_back(os->obstacles());
@@ -496,8 +497,9 @@ cost_t TPS_Astar::default_heuristic_SE2(
     const double distHeading =
         (relPose.norm() < 0.1)
             ? 0.0
-            : std::abs(mrpt::math::angDistance(
-                  std::atan2(relPose.y, relPose.x), from.pose.phi));
+            : std::abs(
+                  mrpt::math::angDistance(
+                      std::atan2(relPose.y, relPose.x), from.pose.phi));
 
     return distSE2 + params_.heuristic_heading_weight * distHeading;
 }
@@ -513,8 +515,9 @@ cost_t TPS_Astar::default_heuristic_R2(
     const double distHeading =
         (relPose.norm() < 0.1)
             ? 0.0
-            : std::abs(mrpt::math::angDistance(
-                  std::atan2(relPose.y, relPose.x), from.pose.phi));
+            : std::abs(
+                  mrpt::math::angDistance(
+                      std::atan2(relPose.y, relPose.x), from.pose.phi));
 
     return distR2 + params_.heuristic_heading_weight * distHeading;
 }

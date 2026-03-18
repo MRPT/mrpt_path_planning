@@ -1,6 +1,6 @@
 ﻿/* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -297,11 +297,12 @@ auto mpp::render_tree(
 
                 objLb->setPose(obj->getPose() + relPose);
                 objLb->setScale(ro.edgeCostLabelSize);
-                objLb->setString(mrpt::format(
-                    "c=%.02f d=%.02f", etp->cost,
-                    etp->ptgDist != std::numeric_limits<double>::max()
-                        ? etp->ptgDist
-                        : .0));
+                objLb->setString(
+                    mrpt::format(
+                        "c=%.02f d=%.02f", etp->cost,
+                        etp->ptgDist != std::numeric_limits<double>::max()
+                            ? etp->ptgDist
+                            : .0));
                 scene.insert(objLb);
             }
 
@@ -382,7 +383,10 @@ auto mpp::render_tree(
         obj->setLocation(mrpt::math::TPoint3D(pi.stateGoal.state.point()));
         scene.insert(obj);
     }
-    else { THROW_EXCEPTION("Unknown type for goal.state"); }
+    else
+    {
+        THROW_EXCEPTION("Unknown type for goal.state");
+    }
 
     // Log msg:
     if (!ro.log_msg.empty())

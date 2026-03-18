@@ -1,6 +1,6 @@
 /* -------------------------------------------------------------------------
  *   SelfDriving C++ library based on PTGs and mrpt-nav
- * Copyright (C) 2019-2022 Jose Luis Blanco, University of Almeria
+ * Copyright (C) 2019-2026 Jose Luis Blanco, University of Almeria
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
@@ -44,7 +44,7 @@ Number of steps "d" for each PTG path "k":
 */
 
 // Uncomment only for benchmarking during development
-//#define DO_PERFORMANCE_BENCHMARK
+// #define DO_PERFORMANCE_BENCHMARK
 
 #ifdef DO_PERFORMANCE_BENCHMARK
 mrpt::system::CTimeLogger tl_holo("HolonomicBlend");
@@ -339,7 +339,8 @@ bool HolonomicBlend::inverseMap_WS2TP_with_Tramp(
         const double vxf = q[1], vyf = q[2];
         const double alpha = atan2(vyf, vxf);
 
-        const auto lambda_vel = [this](double dir) {
+        const auto lambda_vel = [this](double dir)
+        {
             auto lck                        = mrpt::lockHelper(m_expr_mtx);
             const_cast<double&>(m_expr_dir) = dir;
             return std::abs(m_expr_v.eval());
