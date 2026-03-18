@@ -54,6 +54,11 @@ if (MRPT_PATH_PLANNING_BUILD_APPS)
 	add_subdirectory(apps)
 endif()
 
+option(MRPT_PATH_PLANNING_BUILD_TESTS "Build mrpt_path_planning unit tests" ON)
+if (MRPT_PATH_PLANNING_BUILD_TESTS)
+	add_subdirectory(tests)
+endif()
+
 # Summary:
 message(STATUS "")
 message(STATUS "${PROJECT_NAME} version ${MRPT_PATH_PLANNING_VERSION}")
