@@ -165,13 +165,6 @@ Obstacles are first transformed to the robot's local frame and square-clipped to
 
 ### 6.1 Algorithmic / Theoretical Issues
 
-#### P1. Costmap Cost Function Has Singularity at d=0
-**Severity**: Medium — infinite cost at obstacle locations.
-
-In `CostEvaluatorCostMap.cpp:101`: `cost = maxCost * pow(-0.99999 + 1/(d/D), 0.4)`. As `d → 0`, the cost → ∞. While obstacles at d=0 should indeed be avoided, an infinite cost can cause numerical issues in the A* algorithm. Moreover, the formula has a subtle behavior: at `d = D * (1/1.99999) ≈ 0.5*D`, cost = `maxCost * pow(0.00001, 0.4)` which is very small, meaning the penalty is negligible for most of the clearance zone and only spikes very close to obstacles.
-
-**Fix**: Clamp cost to `maxCost` and consider a smoother cost profile (e.g., `maxCost * (1 - d/D)^p`) that provides better gradient throughout the clearance zone.
-
 #### P3. `cached_local_obstacles()` Has No Actual Cache
 **Severity**: Medium — performance.
 
