@@ -308,11 +308,11 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // rounding differences between the checks in
             // find_feasible_paths_to_neighbors() and the actual PTG path
             // segments.
-            if (q_i.x < in.worldBboxMin.x || q_i.y < in.worldBboxMin.y ||
-                q_i.phi < in.worldBboxMin.phi)
+            // Note: phi is NOT checked here since it lives on S^1 (wraps
+            // at ±π) and cannot meaningfully be bounded linearly.
+            if (q_i.x < in.worldBboxMin.x || q_i.y < in.worldBboxMin.y)
                 continue;
-            if (q_i.x > in.worldBboxMax.x || q_i.y > in.worldBboxMax.y ||
-                q_i.phi > in.worldBboxMax.phi)
+            if (q_i.x > in.worldBboxMax.x || q_i.y > in.worldBboxMax.y)
                 continue;
 
             // Get or create node:
@@ -735,12 +735,12 @@ TPS_Astar::list_paths_to_neighbors_t
             const auto absPose         = from.state.pose + relReconstrPose;
 
             // out of lattice limits?
-            if (absPose.x < worldBboxMin.x || absPose.y < worldBboxMin.y ||
-                absPose.phi < worldBboxMin.phi)
+            // Note: phi is NOT checked since it lives on S^1 and cannot
+            // be meaningfully bounded with a linear comparison.
+            if (absPose.x < worldBboxMin.x || absPose.y < worldBboxMin.y)
                 continue;
             if (absPose.x > worldBboxMax.x - halfCell ||
-                absPose.y > worldBboxMax.y - halfCell ||
-                absPose.phi > worldBboxMax.phi)
+                absPose.y > worldBboxMax.y - halfCell)
                 continue;
 
             const NodeCoords nc = nodeGridCoords(absPose);
