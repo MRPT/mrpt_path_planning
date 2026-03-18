@@ -53,39 +53,102 @@ target_link_libraries(YOUR_TARGET mpp::mrpt_path_planning)
 
 ## Demo runs
 
-```
-# bin/path-planner-cli --write-planner-parameters tps-rrtstar.yaml
+### path-planner-cli
+
+Dump default planner parameters to a YAML file for inspection or customization:
+
+```bash
+build/bin/path-planner-cli --write-planner-parameters my-planner-params.yaml
 ```
 
-Command-line app to test the A* planner:
+Plan a path for a **holonomic robot** with an SE(2) goal pose (x y heading_deg),
+using a pre-built obstacle point cloud and an obstacle-proximity cost map:
 
-```
-build-Release/bin/path-planner-cli -g "[4 2.5 45]" -s "[0.5 0 0]" \
-    --planner "mpp::TPS_Astar"  \
-    -c share/ptgs_holonomic_robot.ini  \
-    --obstacles share/obstacles_01.txt  \
-    --planner-parameters share/mvsim-demo-astar-planner-params.yaml  \
-    --costmap-obstacles share/costmap-obstacles.yaml
-```
-
-```
-build-Release/bin/path-planner-cli --write-planner-parameters tps-rrtstar.yaml
-# Edit tps-rrtstar.yaml as desired
-build-Release/bin/path-planner-cli \
-  -g "[4 2.5 45]" -s "[0.5 0 0]" \
-  -p share/ptgs_holonomic_robot.ini \
+```bash
+build/bin/path-planner-cli \
+  -s "[0.5 0 0]" \
+  -g "[4 2.5 45]" \
+  -c share/ptgs_holonomic_robot.ini \
   --obstacles share/obstacles_01.txt \
-  --planner-parameters tps-rrtstar.yaml \
-  --max-iterations 1000 \
+  --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
+  --costmap-obstacles share/costmap-obstacles.yaml
+```
+
+Plan a path with an **R(2) goal** (position only, heading-agnostic), printing the
+edge details of the found path and saving the interpolated trajectory to a CSV:
+
+```bash
+build/bin/path-planner-cli \
+  -s "[0.5 0 0]" \
+  -g "[4 2.5]" \
+  -c share/ptgs_holonomic_robot.ini \
+  --obstacles share/obstacles_01.txt \
+  --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
+  --print-path-edges \
+  --save-interpolated-path path.csv
+```
+
+Plan a path for an **Ackermann (car-like) vehicle**, show the full explored search
+tree, and animate the result:
+
+```bash
+build/bin/path-planner-cli \
+  -s "[0.5 0 0]" \
+  -g "[4 2.5 0]" \
+  -c share/ptgs_ackermann_vehicle.ini \
+  --obstacles share/obstacles_01.txt \
+  --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
+  --show-tree \
+  --play-animation
+```
+
+Plan from an **occupancy grid image** (each pixel = `--obstacles-gridimage-resolution` meters):
+
+```bash
+build/bin/path-planner-cli \
+  -s "[1.0 1.0 0]" \
+  -g "[8.0 6.0 90]" \
+  -c share/ptgs_holonomic_robot.ini \
+  --obstacles share/map01.png \
+  --obstacles-gridimage-resolution 0.05 \
+  --planner-parameters share/mvsim-demo-astar-planner-params.yaml
+```
+
+Plan with a **preferred-waypoints cost layer** to attract the path through
+intermediate via-points, plus a proximity cost map:
+
+```bash
+build/bin/path-planner-cli \
+  -s "[0.5 0 0]" \
+  -g "[4 2.5 45]" \
+  -c share/ptgs_holonomic_robot.ini \
+  --obstacles share/obstacles_01.txt \
+  --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
   --costmap-obstacles share/costmap-obstacles.yaml \
-  --random-seed 3
+  --waypoints share/mvsim-demo-waypoints01.yaml \
+  --waypoints-parameters share/costmap-prefer-waypoints.yaml
 ```
 
-GUI with live navigation simulator:
+Enable **verbose debug output** and skip the post-plan refinement stage:
 
+```bash
+build/bin/path-planner-cli \
+  -s "[0.5 0 0]" \
+  -g "[4 2.5 45]" \
+  -c share/ptgs_holonomic_robot.ini \
+  --obstacles share/obstacles_01.txt \
+  --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
+  --no-refine \
+  -v DEBUG
 ```
+
+### selfdriving-simulator-gui (requires mvsim)
+
+GUI with live navigation simulator and A* replanning:
+
+```bash
 # Holonomic robot:
-build-Release/bin/selfdriving-simulator-gui \
+build/bin/selfdriving-simulator-gui \
   --waypoints share/mvsim-demo-waypoints01.yaml \
   -s share/mvsim-demo.xml \
   -p share/ptgs_holonomic_robot.ini \
@@ -93,11 +156,10 @@ build-Release/bin/selfdriving-simulator-gui \
   --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
   --prefer-waypoints-parameters share/costmap-prefer-waypoints.yaml \
   --global-costmap-parameters share/costmap-obstacles.yaml \
-  --local-costmap-parameters share/costmap-obstacles.yaml \
-  -v DEBUG
+  --local-costmap-parameters share/costmap-obstacles.yaml
 
 # Ackermann vehicle:
-build-Release/bin/selfdriving-simulator-gui \
+build/bin/selfdriving-simulator-gui \
   --waypoints share/mvsim-demo-waypoints01.yaml \
   -s share/mvsim-demo.xml \
   -p share/ptgs_ackermann_vehicle.ini \
@@ -105,6 +167,5 @@ build-Release/bin/selfdriving-simulator-gui \
   --planner-parameters share/mvsim-demo-astar-planner-params.yaml \
   --prefer-waypoints-parameters share/costmap-prefer-waypoints.yaml \
   --global-costmap-parameters share/costmap-obstacles.yaml \
-  --local-costmap-parameters share/costmap-obstacles.yaml \
-  -v DEBUG
+  --local-costmap-parameters share/costmap-obstacles.yaml
 ```
