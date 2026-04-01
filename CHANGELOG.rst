@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.3.0 (2026-04-02)
+------------------
 * copyright year bump
 * Integrate vscode config to build with colcon
 * Add basic unit tests
