@@ -2,6 +2,22 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* copyright year bump
+* Integrate vscode config to build with colcon
+* Add basic unit tests
+* add params for ackermann
+* Fix potential wrong lattice coordinates due to bad rounding
+* Fix: use smooth quadratic cost
+* Fix potential phi angle comparison wraps
+* Docs: explain optimality criterion
+* tune params and add more examples in readme
+* fix potential non-optimal path search
+* fix build against modern mvsim
+* Add ARQUITECTURE.md
+* Contributors: Jose Luis Blanco-Claraco
+
 0.2.5 (2026-01-21)
 ------------------
 * fix build against newer mvsim API
