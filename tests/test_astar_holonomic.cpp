@@ -45,15 +45,37 @@ PTG0_expr_T_ramp = T_ramp_max
 RobotModel_circular_shape_radius = 0.15
 )cfg";
 
+// PTG config with v_max = 2.0 m/s — used for the normalisation regression test.
+static const char* kHolonomicPtgCfg2mps = R"cfg(
+[SelfDriving]
+min_obstacles_height  = 0.0
+max_obstacles_height  = 2.0
+
+PTG_COUNT = 1
+
+PTG0_Type        = mpp::ptg::HolonomicBlend
+PTG0_refDistance = 5.0
+PTG0_num_paths   = 61
+PTG0_T_ramp_max  = 1.0
+PTG0_v_max_mps   = 2.0
+PTG0_w_max_dps   = 60.0
+PTG0_expr_V      = V_MAX * trimmable_speed
+PTG0_expr_W      = W_MAX * trimmable_speed * min(1.0, 0.1+abs(dir)/(10*3.14159265/180))
+PTG0_expr_T_ramp = T_ramp_max
+
+RobotModel_circular_shape_radius = 0.15
+)cfg";
+
 // ---------------------------------------------------------------------------
 // Helper: build a PlannerInput for a holonomic robot
 // ---------------------------------------------------------------------------
 static mpp::PlannerInput buildInput(
     double gx, double gy, bool goalIsSE2 = false, double goalPhi_deg = 0.0,
-    const mrpt::maps::CSimplePointsMap::Ptr& obsPts = nullptr)
+    const mrpt::maps::CSimplePointsMap::Ptr& obsPts = nullptr,
+    const char* ptgCfg = kHolonomicPtgCfg)
 {
     // Load PTGs
-    mrpt::config::CConfigFileMemory cfg(kHolonomicPtgCfg);
+    mrpt::config::CConfigFileMemory cfg(ptgCfg);
     mpp::PlannerInput               in;
     in.ptgs.initFromConfigFile(cfg, "SelfDriving");
 
@@ -166,4 +188,75 @@ TEST(AstarHolonomic, PathCostIsPositive)
     ASSERT_TRUE(out.success);
     EXPECT_GT(out.pathCost, 0.0)
         << "Path cost must be positive for a non-trivial path";
+}
+
+TEST(AstarHolonomic, NonZeroGoalSpeedPreserved)
+{
+    // When stateGoal.vel carries a non-zero exit velocity, the final planned
+    // edge must reflect a non-zero ptgFinalGoalRelSpeed so the robot does not
+    // decelerate to a full stop when chaining waypoints.
+    auto planner = buildPlanner();
+    auto in      = buildInput(/*gx=*/3.0, /*gy=*/0.0);
+
+    in.stateGoal.vel = mrpt::math::TTwist2D{0.5, 0.0, 0.0};  // 0.5 m/s fwd
+
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success);
+    ASSERT_TRUE(out.goalNodeId.has_value());
+
+    const auto& last_edge =
+        out.motionTree.edge_to_parent(out.goalNodeId.value());
+    EXPECT_GT(last_edge.ptgFinalGoalRelSpeed, 0.01)
+        << "Final edge must carry non-zero goal speed when stateGoal.vel is set";
+}
+
+TEST(AstarHolonomic, ZeroGoalSpeedDefault)
+{
+    // When stateGoal.vel is unset (zero), the planner must preserve the
+    // original stop-at-goal behaviour.
+    auto planner = buildPlanner();
+    auto in      = buildInput(/*gx=*/2.0, /*gy=*/0.0);
+    // stateGoal.vel intentionally left at default TTwist2D{0,0,0}.
+
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success);
+    ASSERT_TRUE(out.goalNodeId.has_value());
+
+    const auto& last_edge =
+        out.motionTree.edge_to_parent(out.goalNodeId.value());
+    EXPECT_NEAR(last_edge.ptgFinalGoalRelSpeed, 0.0, 0.05)
+        << "Robot should stop at goal when stateGoal.vel is unset";
+}
+
+TEST(AstarHolonomic, GoalSpeedNormalisedAgainstPtgVmax)
+{
+    // Use a PTG with v_max = 2.0 m/s.  Request an exit speed of 1.0 m/s
+    // (= 50 % of v_max).  The stored normalised speed must be ≈ 0.5, NOT 1.0.
+    // This guards against the regression where hypot(vx,vy) was used directly
+    // without dividing by the PTG's own maximum linear velocity.
+    auto planner = buildPlanner();
+    auto in      = buildInput(
+        /*gx=*/3.0, /*gy=*/0.0,
+        /*goalIsSE2=*/false, /*goalPhi_deg=*/0.0,
+        /*obsPts=*/nullptr, kHolonomicPtgCfg2mps);
+
+    // Request 1.0 m/s exit speed; PTG v_max = 2.0 m/s → expected relSpeed ≈ 0.5
+    in.stateGoal.vel = mrpt::math::TTwist2D{1.0, 0.0, 0.0};
+
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success);
+    ASSERT_TRUE(out.goalNodeId.has_value());
+
+    const auto& last_edge =
+        out.motionTree.edge_to_parent(out.goalNodeId.value());
+
+    // Must be non-zero (goal speed wired in).
+    EXPECT_GT(last_edge.ptgFinalGoalRelSpeed, 0.01)
+        << "Goal speed must be propagated when stateGoal.vel is set";
+
+    // Must be well below 1.0 — if normalisation was missing the value would
+    // have been clamped to 1.0 (full speed), not ≈ 0.5.
+    EXPECT_LT(last_edge.ptgFinalGoalRelSpeed, 0.9)
+        << "Normalised goal speed must account for PTG v_max (2 m/s), "
+           "so 1 m/s requested should give ~0.5, not 1.0";
 }
