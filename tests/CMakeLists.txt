@@ -25,3 +25,9 @@ selfdriving_add_test(
     SOURCES test_astar_holonomic.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
 )
+
+selfdriving_add_test(
+    TARGET  test_edge_interpolation
+    SOURCES test_edge_interpolation.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
