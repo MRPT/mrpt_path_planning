@@ -53,9 +53,10 @@ jobs:
           cmake -DCMAKE_VERBOSE_MAKEFILE=ON \
                 -H. -Bbuild
 
-      - name: Unit tests
-        run: |
-
       - name: Build all
         run: |
           make -C build
+
+      - name: Unit tests
+        run: |
+          cd build && ctest --output-on-failure -j1
