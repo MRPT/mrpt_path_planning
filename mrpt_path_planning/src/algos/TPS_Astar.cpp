@@ -188,10 +188,14 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             ? nodeGridCoords(in.stateGoal.state.point())
             : nodeGridCoords(in.stateGoal.state.pose());
 
-    // goal speed=0
-    MRPT_TODO("Actually check user input on desired speed at goal");
+    // Desired speed at goal, stored as **absolute linear speed in m/s**.
+    // Each PTG normalises this against its own v_max when it reads the map
+    // (see find_feasible_paths_to_neighbors).  Only the XY linear component
+    // is used; a purely-angular exit velocity maps to 0 (stop) because
+    // PTG targetRelSpeed is a linear-speed modifier.
     nodes_with_desired_speed_t nodesWithDesiredSpeed;
-    nodesWithDesiredSpeed[goalCellIndices] = 0;
+    nodesWithDesiredSpeed[goalCellIndices] =
+        std::hypot(in.stateGoal.vel.vx, in.stateGoal.vel.vy);
 
     unsigned int nIter = 0;
 
@@ -339,7 +343,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             newEdge.ptgPathIndex = edge.ptgTrajIndex.value();
 
             newEdge.ptgTrimmableSpeed    = edge.ptgTrimmableSpeed;
-            newEdge.ptgFinalGoalRelSpeed = 0;
+            newEdge.ptgFinalGoalRelSpeed = edge.ptgDynState.value().targetRelSpeed;
             newEdge.ptgFinalRelativeGoal =
                 in.stateGoal.asSE2KinState().pose - current.state.pose;
 
@@ -600,12 +604,16 @@ TPS_Astar::list_paths_to_neighbors_t
             if (const auto it = nodesWithSpeed.find(iGoalCoords);
                 it != nodesWithSpeed.end())
             {
-                MRPT_TODO("Speed zone filter here too?");
-                ds.targetRelSpeed = it->second;
+                // it->second is an absolute speed (m/s); normalise against
+                // this PTG's own maximum linear velocity so that the result
+                // is in [0, 1] regardless of the robot's top speed.
+                const double ptgVmax =
+                    std::max(ptg->getMaxLinVel(), 1e-6);
+                ds.targetRelSpeed =
+                    std::min(1.0, it->second / ptgVmax);
             }
             else
             {
-                MRPT_TODO("Support case of final goal speed!=0 ?");
                 ds.targetRelSpeed = 0;
             }
 
