@@ -330,6 +330,13 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         const mrpt::math::TPose2D&                      queryPose,
         const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
         double                                          MAX_PTG_XY_DIST);
+
+    /** Maximum linear speed across all active PTGs, cached at the start of
+     *  each plan() call. Used to convert geometric distances (meters) to
+     *  time estimates (seconds) in the heuristic, ensuring admissibility when
+     *  edge costs are in seconds (estimatedExecTime). Defaults to 1.0 so
+     *  that heuristic calls outside plan() return geometric distances. */
+    double maxLinSpeed_ = 1.0;
 };
 
 }  // namespace mpp
