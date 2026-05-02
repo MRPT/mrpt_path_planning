@@ -8,8 +8,8 @@
 
 void mpp::edge_interpolated_path(
     MoveEdgeSE2_TPS& edge, const TrajectoriesAndRobotShape& trs,
-    const std::optional<mrpt::math::TPose2D>& reconstrRelPoseOpt,
-    const std::optional<size_t>&              ptg_stepOpt,
+    const mrpt::math::TPose2D& reconstrRelPose,
+    size_t                     ptg_step,
     const std::optional<size_t>&              numSegments)
 {
     size_t nSeg = 0;
@@ -25,28 +25,6 @@ void mpp::edge_interpolated_path(
     auto& ptg = trs.ptgs.at(edge.ptgIndex);
 
     const duration_seconds_t dt = ptg->getPathStepDuration();
-
-    mrpt::math::TPose2D reconstrRelPose;
-    if (reconstrRelPoseOpt.has_value())
-        reconstrRelPose = reconstrRelPoseOpt.value();
-    else
-    {
-        MRPT_TODO("continue...");
-        THROW_EXCEPTION("To do");
-
-        // ptg->inverseMap_WS2TP(edgePoseIncr.x, edgePoseIncr.y)
-    }
-
-    size_t ptg_step = 0;
-    if (ptg_stepOpt)
-    {  //
-        ptg_step = *ptg_stepOpt;
-    }
-    else
-    {
-        MRPT_TODO("continue...");
-        THROW_EXCEPTION("To do");
-    }
 
     auto& ip = edge.interpolatedPath;
     ip.clear();
