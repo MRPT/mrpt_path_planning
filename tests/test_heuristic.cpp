@@ -16,7 +16,11 @@
 
 #include <gtest/gtest.h>
 #include <mpp/algos/TPS_Astar.h>
+#include <mpp/data/PlannerInput.h>
+#include <mpp/interfaces/ObstacleSource.h>
+#include <mrpt/config/CConfigFileMemory.h>
 #include <mrpt/core/bits_math.h>  // _deg
+#include <mrpt/maps/CSimplePointsMap.h>
 
 using namespace mrpt::literals;  // for _deg
 
@@ -131,4 +135,105 @@ TEST(Heuristic, SE2IncludesHeadingCost)
         planner.default_heuristic(makeState(0, 0, 180), goal);
 
     EXPECT_GT(hOpposite, hAligned);
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for integration-level heuristic tests (require a PTG set).
+// ---------------------------------------------------------------------------
+static const char* kPtgCfg = R"cfg(
+[SelfDriving]
+min_obstacles_height  = 0.0
+max_obstacles_height  = 2.0
+
+PTG_COUNT = 1
+
+PTG0_Type        = mpp::ptg::HolonomicBlend
+PTG0_refDistance = 5.0
+PTG0_num_paths   = 61
+PTG0_T_ramp_max  = 1.0
+PTG0_v_max_mps   = 1.0
+PTG0_w_max_dps   = 60.0
+PTG0_expr_V      = V_MAX * trimmable_speed
+PTG0_expr_W      = W_MAX * trimmable_speed * min(1.0, 0.1+abs(dir)/(10*3.14159265/180))
+PTG0_expr_T_ramp = T_ramp_max
+
+RobotModel_circular_shape_radius = 0.15
+)cfg";
+
+static mpp::PlannerInput buildInput(double gx, double gy)
+{
+    mrpt::config::CConfigFileMemory cfg(kPtgCfg);
+    mpp::PlannerInput               in;
+    in.ptgs.initFromConfigFile(cfg, "SelfDriving");
+    in.stateStart.pose  = {0, 0, 0};
+    in.stateGoal.state  = mrpt::math::TPoint2D{gx, gy};
+    in.worldBboxMin     = {-6, -6, -M_PI};
+    in.worldBboxMax     = {6, 6, M_PI};
+    return in;
+}
+
+static mpp::TPS_Astar buildPlanner()
+{
+    mpp::TPS_Astar planner;
+    planner.setMinLoggingLevel(mrpt::system::LVL_ERROR);
+    planner.params_.grid_resolution_xy              = 0.20;
+    planner.params_.grid_resolution_yaw             = 10.0 * M_PI / 180.0;
+    planner.params_.max_ptg_trajectories_to_explore = 15;
+    planner.params_.ptg_sample_timestamps           = {0.5, 1.5, 3.0};
+    planner.params_.max_ptg_speeds_to_explore       = 1;
+    planner.params_.maximumComputationTime          = 30.0;
+    planner.params_.SE2_metricAngleWeight           = 0.1;
+    planner.params_.heuristic_heading_weight        = 0.1;
+    return planner;
+}
+
+// ---------------------------------------------------------------------------
+
+TEST(Heuristic, ZeroAtGoalAfterPlan)
+{
+    // After plan() initialises maxLinSpeed_, h(goal, goal) must still be 0.
+    auto planner = buildPlanner();
+    auto in      = buildInput(/*gx=*/2.0, /*gy=*/0.0);
+
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success);
+
+    const auto goalState = makeState(2.0, 0.0, 0.0);
+    const auto goalR2    = mrpt::math::TPoint2D{2.0, 0.0};
+    EXPECT_NEAR(planner.default_heuristic_R2(goalState, goalR2), 0.0, 1e-9);
+}
+
+TEST(Heuristic, ConsistencyAlongPlanEdges)
+{
+    // For every edge u→v in the output motion tree:
+    //   h(u) <= cost(u,v) + h(v)   (A* consistency / monotonicity)
+    auto planner = buildPlanner();
+    auto in      = buildInput(/*gx=*/3.0, /*gy=*/2.0);
+
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success);
+
+    const mrpt::math::TPoint2D goalPt{3.0, 2.0};
+    int                        edgeCount = 0;
+
+    for (const auto& kv : out.motionTree.edges_to_children)
+    {
+        for (const auto& edgeEntry : kv.second)
+        {
+            const auto& e = edgeEntry.data;
+
+            const double h_from =
+                planner.default_heuristic_R2(e.stateFrom, goalPt);
+            const double h_to =
+                planner.default_heuristic_R2(e.stateTo, goalPt);
+            const double edge_cost = planner.cost_path_segment(e);
+
+            EXPECT_LE(h_from, edge_cost + h_to + 1e-6)
+                << "Heuristic violates consistency: h(u)=" << h_from
+                << " > cost(u,v)+h(v)=" << edge_cost + h_to;
+            ++edgeCount;
+        }
+    }
+
+    EXPECT_GT(edgeCount, 0) << "No edges found in motion tree";
 }
