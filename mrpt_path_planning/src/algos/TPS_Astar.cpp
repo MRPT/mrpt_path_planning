@@ -120,6 +120,12 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         mrpt::keep_max(MAX_XY_DIST, ptg->getRefDistance());
     ASSERT_(MAX_XY_DIST > 0);
 
+    // Cache max linear speed for heuristic unit conversion (distance→time).
+    maxLinSpeed_ = 0.0;
+    for (const auto& ptg : in.ptgs.ptgs)
+        mrpt::keep_max(maxLinSpeed_, ptg->getMaxLinVel());
+    if (maxLinSpeed_ <= 0) maxLinSpeed_ = 1.0;  // fallback: units = distance
+
     // obstacles (TODO: dynamic over future time?):
     std::vector<mrpt::maps::CPointsMap::Ptr> obstaclePoints;
     for (const auto& os : in.obstacles)
@@ -505,14 +511,15 @@ cost_t TPS_Astar::default_heuristic_SE2(
                   mrpt::math::angDistance(
                       std::atan2(relPose.y, relPose.x), from.pose.phi));
 
-    return distSE2 + params_.heuristic_heading_weight * distHeading;
+    return (distSE2 + params_.heuristic_heading_weight * distHeading) /
+           maxLinSpeed_;
 }
 
 cost_t TPS_Astar::default_heuristic_R2(
     const SE2_KinState& from, const mrpt::math::TPoint2D& goal) const
 {
     // Distance in R^2 only — heading is irrelevant for R(2) goals.
-    return (from.pose.translation() - goal).norm();
+    return (from.pose.translation() - goal).norm() / maxLinSpeed_;
 }
 
 TPS_Astar::Node& TPS_Astar::getOrCreateNodeByPose(
@@ -801,6 +808,11 @@ TPS_Astar::list_paths_to_neighbors_t
                 path.relTrgStep         = tpsPt.step;
                 path.neighborNodeCoords = nc;
                 path.ptgDynState        = ptg->getCurrentNavDynamicState();
+                // Must store the speed that was active during collision
+                // evaluation (applied via ptgTrimmable->trimmableSpeed_ above);
+                // without this, ptgTrimmableSpeed keeps its default of 1.0 and
+                // the trimmed speed used to win this best-path slot is lost.
+                path.ptgTrimmableSpeed  = tpsPt.speed;
             }
         }
 

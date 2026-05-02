@@ -260,3 +260,31 @@ TEST(AstarHolonomic, GoalSpeedNormalisedAgainstPtgVmax)
         << "Normalised goal speed must account for PTG v_max (2 m/s), "
            "so 1 m/s requested should give ~0.5, not 1.0";
 }
+
+TEST(AstarHolonomic, TrimSpeedPreservedInBestPath)
+{
+    // Use max_ptg_speeds_to_explore >= 2 so the planner evaluates a reduced
+    // speed level. If a lower-speed path wins, ptgTrimmableSpeed must reflect
+    // that speed rather than the default 1.0.
+    auto planner                              = buildPlanner();
+    planner.params_.max_ptg_speeds_to_explore = 3;
+
+    auto in  = buildInput(/*gx=*/3.0, /*gy=*/0.0);
+    auto out = planner.plan(in);
+
+    ASSERT_TRUE(out.success);
+
+    // Walk all edges in the motion tree; at least one must have a trimmed
+    // speed < 1.0 (the planner explored non-maximum speeds).
+    bool found_trimmed = false;
+    for (const auto& kv : out.motionTree.edges_to_children)
+    {
+        for (const auto& edge : kv.second)
+        {
+            if (edge.data.ptgTrimmableSpeed < 0.999) found_trimmed = true;
+        }
+    }
+
+    EXPECT_TRUE(found_trimmed)
+        << "No edge has ptgTrimmableSpeed < 1.0; speed is being lost";
+}
