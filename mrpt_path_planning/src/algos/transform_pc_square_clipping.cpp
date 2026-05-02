@@ -11,8 +11,9 @@ void mpp::transform_pc_square_clipping(
     const double MAX_DIST_XY, mrpt::maps::CPointsMap& outMap,
     bool appendToOutMap)
 {
-    const auto   obs_xs = inMap.getPointsBufferRef_x();
-    const auto   obs_ys = inMap.getPointsBufferRef_y();
+    ASSERT_(&inMap != &outMap);  // inMap and outMap must be distinct objects
+    const auto&  obs_xs = inMap.getPointsBufferRef_x();
+    const auto&  obs_ys = inMap.getPointsBufferRef_y();
     const size_t nObs   = inMap.size();
 
     if (!appendToOutMap) { outMap.clear(); }
