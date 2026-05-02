@@ -793,6 +793,11 @@ TPS_Astar::list_paths_to_neighbors_t
                 path.relTrgStep         = tpsPt.step;
                 path.neighborNodeCoords = nc;
                 path.ptgDynState        = ptg->getCurrentNavDynamicState();
+                // Must store the speed that was active during collision
+                // evaluation (applied via ptgTrimmable->trimmableSpeed_ above);
+                // without this, ptgTrimmableSpeed keeps its default of 1.0 and
+                // the trimmed speed used to win this best-path slot is lost.
+                path.ptgTrimmableSpeed  = tpsPt.speed;
             }
         }
 
