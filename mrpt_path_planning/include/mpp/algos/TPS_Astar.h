@@ -178,13 +178,20 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 
     struct NodeCoordsHash
     {
+        // boost::hash_combine pattern: avalanches bits so that adjacent
+        // integer grid coordinates map to well-separated hash buckets.
+        static void hash_combine(size_t& seed, size_t v)
+        {
+            seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+
         size_t operator()(const NodeCoords& x) const
         {
-            size_t res = 17;
-            res        = res * 31 + std::hash<int32_t>()(x.idxX);
-            res        = res * 31 + std::hash<int32_t>()(x.idxY);
+            size_t res = 0;
+            hash_combine(res, std::hash<int32_t>()(x.idxX));
+            hash_combine(res, std::hash<int32_t>()(x.idxY));
             if (x.idxYaw)
-                res = res * 31 + std::hash<int32_t>()(x.idxYaw.value());
+                hash_combine(res, std::hash<int32_t>()(x.idxYaw.value()));
             return res;
         }
     };
