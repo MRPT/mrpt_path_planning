@@ -178,13 +178,20 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 
     struct NodeCoordsHash
     {
+        // boost::hash_combine pattern: avalanches bits so that adjacent
+        // integer grid coordinates map to well-separated hash buckets.
+        static void hash_combine(size_t& seed, size_t v)
+        {
+            seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+
         size_t operator()(const NodeCoords& x) const
         {
-            size_t res = 17;
-            res        = res * 31 + std::hash<int32_t>()(x.idxX);
-            res        = res * 31 + std::hash<int32_t>()(x.idxY);
+            size_t res = 0;
+            hash_combine(res, std::hash<int32_t>()(x.idxX));
+            hash_combine(res, std::hash<int32_t>()(x.idxY));
             if (x.idxYaw)
-                res = res * 31 + std::hash<int32_t>()(x.idxYaw.value());
+                hash_combine(res, std::hash<int32_t>()(x.idxYaw.value()));
             return res;
         }
     };
@@ -337,6 +344,13 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
      *  edge costs are in seconds (estimatedExecTime). Defaults to 1.0 so
      *  that heuristic calls outside plan() return geometric distances. */
     double maxLinSpeed_ = 1.0;
+
+    /** Cache of local obstacle maps, keyed by (ix, iy) grid cell (no yaw,
+     *  since obstacle clipping only depends on xy position). Cleared at the
+     *  start of each plan() call. Nodes in the same cell share the same
+     *  transformed obstacle cloud, avoiding redundant O(N_obs) transforms. */
+    std::unordered_map<NodeCoords, mrpt::maps::CPointsMap::Ptr, NodeCoordsHash>
+        localObstaclesCache_;
 };
 
 }  // namespace mpp
