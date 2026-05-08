@@ -148,6 +148,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     tree.edges_to_children.clear();
 
     grid_.clear();
+    localObstaclesCache_.clear();
 
     // ----------------------------------------
     //
@@ -852,7 +853,12 @@ mrpt::maps::CPointsMap::Ptr TPS_Astar::cached_local_obstacles(
 {
     mrpt::system::CTimeLoggerEntry tle(profiler_(), "cached_local_obstacles");
 
-    MRPT_TODO("Impl actual cache");
+    // Cache key: xy grid cell only (heading does not affect obstacle clipping).
+    const NodeCoords key(x2idx(queryPose.x), y2idx(queryPose.y));
+
+    if (auto it = localObstaclesCache_.find(key);
+        it != localObstaclesCache_.end())
+        return it->second;
 
     auto outObs = mrpt::maps::CSimplePointsMap::Create();
 
@@ -863,5 +869,6 @@ mrpt::maps::CPointsMap::Ptr TPS_Astar::cached_local_obstacles(
             *obs, mrpt::poses::CPose2D(queryPose), MAX_PTG_XY_DIST, *outObs);
     }
 
+    localObstaclesCache_.emplace(key, outObs);
     return outObs;
 }

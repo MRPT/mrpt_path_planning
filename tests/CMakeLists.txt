@@ -31,3 +31,9 @@ selfdriving_add_test(
     SOURCES test_edge_interpolation.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
 )
+
+selfdriving_add_test(
+    TARGET  test_obstacle_cache
+    SOURCES test_obstacle_cache.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
