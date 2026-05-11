@@ -37,3 +37,9 @@ selfdriving_add_test(
     SOURCES test_obstacle_cache.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
 )
+
+selfdriving_add_test(
+    TARGET  test_motion_tree
+    SOURCES test_motion_tree.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
