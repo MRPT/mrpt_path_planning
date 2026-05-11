@@ -21,6 +21,8 @@
 #include <mrpt/config/CConfigFileMemory.h>
 #include <mrpt/maps/CSimplePointsMap.h>
 
+#include <chrono>
+
 // ---------------------------------------------------------------------------
 // Inline PTG config for a holonomic (HolonomicBlend) vehicle.
 // Deliberately minimal: 1 PTG, few paths, short reference distance.
@@ -41,6 +43,37 @@ PTG0_w_max_dps   = 60.0
 PTG0_expr_V      = V_MAX * trimmable_speed
 PTG0_expr_W      = W_MAX * trimmable_speed * min(1.0, 0.1+abs(dir)/(10*3.14159265/180))
 PTG0_expr_T_ramp = T_ramp_max
+
+RobotModel_circular_shape_radius = 0.15
+)cfg";
+
+// PTG config with two HolonomicBlend entries — used for the multi-PTG test.
+static const char* kTwoPtgCfg = R"cfg(
+[SelfDriving]
+min_obstacles_height  = 0.0
+max_obstacles_height  = 2.0
+
+PTG_COUNT = 2
+
+PTG0_Type        = mpp::ptg::HolonomicBlend
+PTG0_refDistance = 5.0
+PTG0_num_paths   = 61
+PTG0_T_ramp_max  = 1.0
+PTG0_v_max_mps   = 1.0
+PTG0_w_max_dps   = 60.0
+PTG0_expr_V      = V_MAX * trimmable_speed
+PTG0_expr_W      = W_MAX * trimmable_speed * min(1.0, 0.1+abs(dir)/(10*3.14159265/180))
+PTG0_expr_T_ramp = T_ramp_max
+
+PTG1_Type        = mpp::ptg::HolonomicBlend
+PTG1_refDistance = 5.0
+PTG1_num_paths   = 31
+PTG1_T_ramp_max  = 0.5
+PTG1_v_max_mps   = 1.5
+PTG1_w_max_dps   = 90.0
+PTG1_expr_V      = V_MAX * trimmable_speed
+PTG1_expr_W      = W_MAX * trimmable_speed * min(1.0, 0.1+abs(dir)/(10*3.14159265/180))
+PTG1_expr_T_ramp = T_ramp_max
 
 RobotModel_circular_shape_radius = 0.15
 )cfg";
@@ -287,4 +320,71 @@ TEST(AstarHolonomic, TrimSpeedPreservedInBestPath)
 
     EXPECT_TRUE(found_trimmed)
         << "No edge has ptgTrimmableSpeed < 1.0; speed is being lost";
+}
+
+TEST(AstarHolonomic, UnreachableGoal)
+{
+    // Goal at (2,0) completely enclosed by a ring of obstacles.
+    // Arc spacing ~0.03 m < robot radius 0.15 m — no gap to pass through.
+    auto obsPts = mrpt::maps::CSimplePointsMap::Create();
+    for (double a = 0; a < 2 * M_PI; a += 0.1)
+        obsPts->insertPoint(
+            2.0 + 0.3 * std::cos(a), 0.0 + 0.3 * std::sin(a), 0.0);
+
+    auto planner                           = buildPlanner();
+    planner.params_.maximumComputationTime = 5.0;
+
+    auto       in  = buildInput(2.0, 0.0, false, 0.0, obsPts);
+    const auto out = planner.plan(in);
+
+    EXPECT_FALSE(out.success)
+        << "Goal enclosed by obstacles must be reported as unreachable";
+}
+
+TEST(AstarHolonomic, TimeoutRespected)
+{
+    // Same enclosed-goal scenario with a 50 ms budget.
+    // The planner must return within 1 s wall-clock time.
+    auto obsPts = mrpt::maps::CSimplePointsMap::Create();
+    for (double a = 0; a < 2 * M_PI; a += 0.1)
+        obsPts->insertPoint(
+            2.0 + 0.3 * std::cos(a), 0.0 + 0.3 * std::sin(a), 0.0);
+
+    auto planner                           = buildPlanner();
+    planner.params_.maximumComputationTime = 0.05;
+
+    auto in = buildInput(2.0, 0.0, false, 0.0, obsPts);
+
+    const auto t0  = std::chrono::steady_clock::now();
+    const auto out = planner.plan(in);
+    const auto t1  = std::chrono::steady_clock::now();
+
+    const double elapsed = std::chrono::duration<double>(t1 - t0).count();
+
+    EXPECT_FALSE(out.success);
+    EXPECT_LT(elapsed, 1.0)
+        << "Planner exceeded 1 s wall-clock limit (maximumComputationTime=0.05);"
+        << " elapsed=" << elapsed << " s";
+}
+
+TEST(AstarHolonomic, MultiPTG)
+{
+    // Plan with two PTG entries. Planner must succeed and every edge in the
+    // motion tree must reference a valid PTG index (0 or 1).
+    auto planner = buildPlanner();
+    auto in = buildInput(/*gx=*/2.0, /*gy=*/1.0, false, 0.0, nullptr, kTwoPtgCfg);
+
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success) << "Planner must find a path with 2 PTGs";
+
+    for (const auto& kv : out.motionTree.edges_to_children)
+    {
+        for (const auto& edgeEntry : kv.second)
+        {
+            EXPECT_GE(edgeEntry.data.ptgIndex, 0)
+                << "Edge has negative ptgIndex";
+            EXPECT_LT(edgeEntry.data.ptgIndex, 2)
+                << "Edge ptgIndex out of range for a 2-PTG plan";
+        }
+    }
 }
