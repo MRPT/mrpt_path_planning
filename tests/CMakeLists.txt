@@ -43,3 +43,27 @@ selfdriving_add_test(
     SOURCES test_motion_tree.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
 )
+
+selfdriving_add_test(
+    TARGET  test_cost_evaluator_waypoint
+    SOURCES test_cost_evaluator_waypoint.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
+
+selfdriving_add_test(
+    TARGET  test_best_trajectory
+    SOURCES test_best_trajectory.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
+
+selfdriving_add_test(
+    TARGET  test_refine_trajectory
+    SOURCES test_refine_trajectory.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
+
+selfdriving_add_test(
+    TARGET  test_trajectories
+    SOURCES test_trajectories.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
