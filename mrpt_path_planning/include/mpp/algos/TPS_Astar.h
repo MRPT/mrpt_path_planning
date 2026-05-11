@@ -345,10 +345,10 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
      *  that heuristic calls outside plan() return geometric distances. */
     double maxLinSpeed_ = 1.0;
 
-    /** Cache of local obstacle maps, keyed by (ix, iy) grid cell (no yaw,
-     *  since obstacle clipping only depends on xy position). Cleared at the
-     *  start of each plan() call. Nodes in the same cell share the same
-     *  transformed obstacle cloud, avoiding redundant O(N_obs) transforms. */
+    /** Cache of local obstacle maps, keyed by (ix, iy, iyaw) grid cell.
+     *  transform_pc_square_clipping rotates obstacles into the robot-local
+     *  frame, so yaw must be part of the key. Cleared at the start of each
+     *  plan() call. */
     std::unordered_map<NodeCoords, mrpt::maps::CPointsMap::Ptr, NodeCoordsHash>
         localObstaclesCache_;
 };

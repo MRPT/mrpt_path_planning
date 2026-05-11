@@ -853,8 +853,10 @@ mrpt::maps::CPointsMap::Ptr TPS_Astar::cached_local_obstacles(
 {
     mrpt::system::CTimeLoggerEntry tle(profiler_(), "cached_local_obstacles");
 
-    // Cache key: xy grid cell only (heading does not affect obstacle clipping).
-    const NodeCoords key(x2idx(queryPose.x), y2idx(queryPose.y));
+    // Cache key includes yaw: transform_pc_square_clipping rotates obstacles
+    // into the robot-local frame, so the output depends on heading.
+    const NodeCoords key(
+        x2idx(queryPose.x), y2idx(queryPose.y), phi2idx(queryPose.phi));
 
     if (auto it = localObstaclesCache_.find(key);
         it != localObstaclesCache_.end())
