@@ -10,6 +10,7 @@
 #include <mpp/algos/refine_trajectory.h>
 #include <mpp/algos/trajectories.h>
 #include <mpp/algos/viz.h>
+#include <mpp/algos/viz_svg.h>
 #include <mpp/data/Waypoints.h>
 #include <mrpt/3rdparty/tclap/CmdLine.h>
 #include <mrpt/config/CConfigFile.h>
@@ -141,6 +142,12 @@ TCLAP::ValueArg<std::string> arg_InterpolatePath(
     "", "save-interpolated-path",
     "Interpolates the path and saves it into a .csv file", false, "path.csv",
     "path.csv", cmd);
+
+TCLAP::ValueArg<std::string> arg_save_svg(
+    "", "save-svg",
+    "Saves a 2D SVG plot of the plan (obstacles, tree, path, robot shapes) for "
+    "debugging / paper figures",
+    false, "", "plan.svg", cmd);
 
 TCLAP::SwitchArg arg_playAnimation(
     "", "play-animation",
@@ -345,6 +352,15 @@ static void do_plan_path()
     std::cout << "Plan has " << plan.motionTree.edges_to_children.size()
               << " overall edges, " << plan.motionTree.nodes().size()
               << " nodes\n";
+
+    if (arg_save_svg.isSet())
+    {
+        if (mpp::save_plan_to_svg(plan, arg_save_svg.getValue()))
+            std::cout << "Saved SVG plot: " << arg_save_svg.getValue() << "\n";
+        else
+            std::cerr << "Could not write SVG: " << arg_save_svg.getValue()
+                      << "\n";
+    }
 
     if (!plan.bestNodeId.has_value())
     {
