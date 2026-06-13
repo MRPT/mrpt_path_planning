@@ -16,6 +16,7 @@
 #include <mrpt/opengl/COpenGLScene.h>
 #include <mrpt/version.h>
 
+#include <cmath>
 #include <iostream>
 #include <queue>
 #include <unordered_set>
@@ -1137,22 +1138,62 @@ mrpt::maps::CPointsMap::Ptr TPS_Astar::cached_local_obstacles(
 {
     mrpt::system::CTimeLoggerEntry tle(profiler_(), "cached_local_obstacles");
 
-    // Cache key: xy grid cell only (heading does not affect obstacle clipping).
+    // Only the *clipping* of the global obstacle set to a local window depends
+    // solely on the xy cell, so that (expensive, O(N_global)) step is cached
+    // per (ix,iy). The subsequent rigid transform into the robot-local frame
+    // DEPENDS ON HEADING and must NOT be cached across headings: doing so
+    // (former behavior, keyed by xy only) reused obstacles rotated for a
+    // different heading, yielding collision FALSE NEGATIVES (the planner could
+    // tunnel through walls). So we transform the small clipped subset per call.
     const NodeCoords key(x2idx(queryPose.x), y2idx(queryPose.y));
 
+    mrpt::maps::CPointsMap::Ptr clippedGlobal;
     if (auto it = localObstaclesCache_.find(key);
         it != localObstaclesCache_.end())
-        return it->second;
-
-    auto outObs = mrpt::maps::CSimplePointsMap::Create();
-
-    for (const auto& obs : globalObstacles)
     {
-        ASSERT_(obs);
-        transform_pc_square_clipping(
-            *obs, mrpt::poses::CPose2D(queryPose), MAX_PTG_XY_DIST, *outObs);
+        clippedGlobal = it->second;
+    }
+    else
+    {
+        // Clip (keeping GLOBAL coordinates) to a square around the cell center,
+        // enlarged by half a cell so the cached subset is a valid superset for
+        // any exact pose falling in this cell.
+        const double res = params_.grid_resolution_xy;
+        const double cx  = key.idxX * res;
+        const double cy  = key.idxY * res;
+        const double win = MAX_PTG_XY_DIST + 0.5 * res;
+
+        clippedGlobal = mrpt::maps::CSimplePointsMap::Create();
+        for (const auto& obs : globalObstacles)
+        {
+            ASSERT_(obs);
+            const auto&  xs = obs->getPointsBufferRef_x();
+            const auto&  ys = obs->getPointsBufferRef_y();
+            const size_t n  = obs->size();
+            for (size_t i = 0; i < n; i++)
+            {
+                if (std::abs(xs[i] - cx) <= win && std::abs(ys[i] - cy) <= win)
+                {
+                    clippedGlobal->insertPointFast(xs[i], ys[i], 0);
+                }
+            }
+        }
+        localObstaclesCache_.emplace(key, clippedGlobal);
     }
 
-    localObstaclesCache_.emplace(key, outObs);
-    return outObs;
+    // Per-call: rigid-transform the small clipped subset into the robot-local
+    // frame of `queryPose` (translation + rotation by heading).
+    auto         local = mrpt::maps::CSimplePointsMap::Create();
+    const auto   inv   = -mrpt::poses::CPose2D(queryPose);
+    const auto&  xs    = clippedGlobal->getPointsBufferRef_x();
+    const auto&  ys    = clippedGlobal->getPointsBufferRef_y();
+    const size_t n     = clippedGlobal->size();
+    local->reserve(n);
+    for (size_t i = 0; i < n; i++)
+    {
+        double ox = 0, oy = 0;
+        inv.composePoint(xs[i], ys[i], ox, oy);
+        local->insertPointFast(ox, oy, 0);
+    }
+    return local;
 }
