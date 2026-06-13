@@ -228,6 +228,16 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     double tLastCallback = planInitTime;
 
+    // Defer building per-edge interpolated paths during the search: it is a
+    // major cost (a std::map per edge) and is only needed for (a) cost
+    // evaluators that score edges, (b) debug visualization, or (c) progress
+    // callbacks that inspect the partial path. When none of these apply, we
+    // store only estimatedExecTime during the search and interpolate just the
+    // final solution edges at the end.
+    const bool deferInterpolation =
+        costEvaluators_.empty() &&
+        params_.saveDebugVisualizationDecimation == 0 && !progressCallback_;
+
     while (!openSet.empty())
     {
         mrpt::system::CTimeLoggerEntry tle(profiler_(), "plan.iter");
@@ -384,13 +394,24 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             newEdge.ptgInternalState =
                 ptg.getCurrentNavDynamicState().internalState;
 #endif
-            newEdge.stateFrom = current.state;
-            newEdge.stateTo   = x_i;
+            newEdge.stateFrom    = current.state;
+            newEdge.stateTo      = x_i;
+            newEdge.ptgStepIndex = ptg_step;
 
-            // interpolated path:
-            edge_interpolated_path(
-                newEdge, in.ptgs, reconstrRelPose, ptg_step,
-                params_.pathInterpolatedSegments);
+            // interpolated path (deferred to the final solution when possible,
+            // see `deferInterpolation`): otherwise set the cheap exec-time
+            // only.
+            if (deferInterpolation)
+            {
+                newEdge.estimatedExecTime =
+                    ptg_step * ptg.getPathStepDuration();
+            }
+            else
+            {
+                edge_interpolated_path(
+                    newEdge, in.ptgs, reconstrRelPose, ptg_step,
+                    params_.pathInterpolatedSegments);
+            }
 
             // Let's compute its cost:
             newEdge.cost = cost_path_segment(newEdge);
@@ -537,6 +558,25 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         }
 
     }  // end while openSet!=empty
+
+    // If interpolation was deferred during the search, build it now for just
+    // the final solution-path edges (needed for output / refinement / exec).
+    if (deferInterpolation && po.bestNodeId.has_value() &&
+        po.goalNodeId == po.bestNodeId)
+    {
+        const auto [solNodes, solEdges] =
+            tree.backtrack_path(po.bestNodeId.value());
+        for (auto* e : solEdges)
+        {
+            if (e == nullptr) { continue; }
+            // Recover the relative reconstruction pose (stateTo in the frame
+            // of stateFrom); identical to what was used during the search.
+            const auto reconstrRelPose = e->stateTo.pose - e->stateFrom.pose;
+            edge_interpolated_path(
+                *e, in.ptgs, reconstrRelPose, e->ptgStepIndex,
+                params_.pathInterpolatedSegments);
+        }
+    }
 
     // A* ended, now collect the result:
     // ----------------------------------------
