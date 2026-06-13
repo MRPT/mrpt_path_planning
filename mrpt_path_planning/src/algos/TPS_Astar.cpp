@@ -943,6 +943,31 @@ TPS_Astar::list_paths_to_neighbors_t
 
         std::unordered_set<NodeCoords, NodeCoordsHash> goalNodeCoords;
 
+        // Build the full TP-obstacle free-distance array ONCE for this PTG at
+        // this node, in a single pass over the local obstacle cloud:
+        // updateTPObstacle() fills the collision-free distance for ALL
+        // trajectory directions `k` per obstacle point (one collision-grid
+        // lookup yields all k). This replaces the former pattern of re-scanning
+        // the whole cloud once per candidate trajectory, which was the dominant
+        // planner cost (O(candidates x N_points) -> O(N_points)). The collision
+        // grid is purely geometric, so the result is independent of the
+        // trimmable speed and of the timestamp, and can be shared by all
+        // candidates of this PTG.
+        std::vector<double> tpObstacles;
+        {
+            mrpt::system::CTimeLoggerEntry tleObsAll(
+                profiler_(), "find_feasible.tp_obstacles_all");
+
+            ptg->initTPObstacles(tpObstacles);
+            const auto&  ox   = localObstacles->getPointsBufferRef_x();
+            const auto&  oy   = localObstacles->getPointsBufferRef_y();
+            const size_t nObs = localObstacles->size();
+            for (size_t i = 0; i < nObs; i++)
+            {
+                ptg->updateTPObstacle(ox[i], oy[i], tpObstacles);
+            }
+        }
+
         // now, check which ones of those paths are not blocked by
         // obstacles:
         for (size_t tpsPtIdx = 0; tpsPtIdx < tpsPointsToConsider.size();
@@ -977,14 +1002,9 @@ TPS_Astar::list_paths_to_neighbors_t
 
             const NodeCoords nc = nodeGridCoords(absPose);
 
-            mrpt::system::CTimeLoggerEntry tleObs(
-                profiler_(), "find_feasible.tp_obstacles_single");
-
-            // check for collisions:
-            const distance_t freeDistance =
-                tp_obstacles_single_path(tpsPt.k, *localObstacles, *ptg);
-
-            tleObs.stop();
+            // check for collisions: read the precomputed free distance for
+            // this trajectory direction (built once above for all candidates).
+            const distance_t freeDistance = tpObstacles[tpsPt.k];
 
             if (relTrgDist >= freeDistance)
             {
