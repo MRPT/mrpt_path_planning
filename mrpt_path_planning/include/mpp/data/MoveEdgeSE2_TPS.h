@@ -42,6 +42,11 @@ struct MoveEdgeSE2_TPS
      * motion segment (NOT normalized distances) */
     distance_t ptgDist = std::numeric_limits<distance_t>::max();
 
+    /** Trajectory step index at the end of this segment. Stored so the
+     * interpolated path can be (re)built lazily, e.g. only for the final
+     * solution edges when interpolation is deferred during the A* search. */
+    uint32_t ptgStepIndex = 0;
+
     normalized_speed_t ptgTrimmableSpeed = 1.0;
 
     mrpt::math::TPose2D ptgFinalRelativeGoal;
