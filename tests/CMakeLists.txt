@@ -33,6 +33,12 @@ selfdriving_add_test(
 )
 
 selfdriving_add_test(
+    TARGET  test_viz_svg
+    SOURCES test_viz_svg.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
+
+selfdriving_add_test(
     TARGET  test_edge_interpolation
     SOURCES test_edge_interpolation.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
