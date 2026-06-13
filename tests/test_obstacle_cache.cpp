@@ -230,12 +230,17 @@ TEST(ObstacleCache, WallClockSpeedup)
     rawTimer.getStats(rawStats);
     const double rawTotalTime = rawStats.at("raw").total_t;
 
-    // The total time spent inside cached_local_obstacles during the plan
-    // should be much less than the cost of doing all transforms from scratch.
-    EXPECT_LT(cachedTotalTime, rawTotalTime)
-        << "Total cached_local_obstacles time (" << cachedTotalTime * 1e3
-        << " ms) should be less than " << nCacheCalls
-        << " uncached transforms (" << rawTotalTime * 1e3 << " ms)";
+    // The cache stores the (heading-independent) CLIPPED GLOBAL subset; the
+    // heading-dependent rigid transform is correctly done per call (caching it
+    // across headings was a collision-soundness bug, see
+    // cached_local_obstacles). So the cache no longer eliminates the transform
+    // cost; it only avoids re-scanning the full global cloud per call. Assert
+    // it is not pathologically slower than recomputing from scratch (a generous
+    // bound, since this is a noise-prone micro-measurement).
+    EXPECT_LT(cachedTotalTime, rawTotalTime * 2.0)
+        << "cached_local_obstacles total (" << cachedTotalTime * 1e3
+        << " ms) vs " << nCacheCalls << " full transforms ("
+        << rawTotalTime * 1e3 << " ms)";
 
     std::cout << "[ObstacleCache] cached_total=" << cachedTotalTime * 1e3
               << " ms  " << nCacheCalls << " uncached transforms would cost "
