@@ -61,6 +61,19 @@ struct TPS_Astar_Parameters
      */
     double obstacle_heuristic_inflation = -1.0;
 
+    /** Analytic expansion / early termination:
+     * `find_feasible_paths_to_neighbors` already builds a collision-free
+     * *direct-to-goal* PTG edge (via the PTG inverse map) whenever the goal is
+     * within reach of the node being expanded. When this is enabled (default),
+     * the search terminates the moment such a connection lands in the goal
+     * cell, instead of continuing A* until the goal node is popped as the
+     * lowest-f node. This is the classic analytic-expansion speedup (cf.
+     * Hybrid-A* / Nav2 Smac): it skips the costly final-approach expansions at
+     * the price of accepting the first proven connection to the goal (a small,
+     * bounded optimality relaxation). Set false for strictly optimal (slower)
+     * termination. */
+    bool use_analytic_expansion = true;
+
     uint32_t                        max_ptg_trajectories_to_explore = 20;
     std::vector<duration_seconds_t> ptg_sample_timestamps     = {1.0, 3.0, 5.0};
     uint32_t                        max_ptg_speeds_to_explore = 3;
