@@ -17,6 +17,7 @@
 #include <mrpt/version.h>
 
 #include <iostream>
+#include <queue>
 #include <unordered_set>
 
 IMPLEMENTS_MRPT_OBJECT(TPS_Astar, Planner, mpp)
@@ -34,6 +35,9 @@ mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
     MCP_SAVE(c, debugVisualizationShowEdgeCosts);
     MCP_SAVE(c, grid_resolution_xy);
     MCP_SAVE(c, heuristic_heading_weight);
+    MCP_SAVE(c, use_obstacle_heuristic);
+    MCP_SAVE(c, obstacle_heuristic_resolution);
+    MCP_SAVE(c, obstacle_heuristic_inflation);
     MCP_SAVE(c, max_ptg_trajectories_to_explore);
     MCP_SAVE(c, max_ptg_speeds_to_explore);
     MCP_SAVE_DEG(c, grid_resolution_yaw);
@@ -66,6 +70,9 @@ void TPS_Astar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_OPT(c, saveDebugVisualizationDecimation);
     MCP_LOAD_OPT(c, debugVisualizationShowEdgeCosts);
     MCP_LOAD_OPT(c, heuristic_heading_weight);
+    MCP_LOAD_OPT(c, use_obstacle_heuristic);
+    MCP_LOAD_OPT(c, obstacle_heuristic_resolution);
+    MCP_LOAD_OPT(c, obstacle_heuristic_inflation);
 
     MCP_LOAD_OPT(c, maximumComputationTime);
 }
@@ -134,10 +141,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
         // apply clipping for efficiency:
         // (z is arbitrary and ignored inside)
-        os->apply_clipping_box(
-            mrpt::math::TBoundingBox(
-                {in.worldBboxMin.x, in.worldBboxMin.y, -1.0},
-                {in.worldBboxMax.x, in.worldBboxMax.y, 1.0}));
+        os->apply_clipping_box(mrpt::math::TBoundingBox(
+            {in.worldBboxMin.x, in.worldBboxMin.y, -1.0},
+            {in.worldBboxMax.x, in.worldBboxMax.y, 1.0}));
 
         // Get obstacles:
         obstaclePoints.emplace_back(os->obstacles());
@@ -149,6 +155,24 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     grid_.clear();
     localObstaclesCache_.clear();
+
+    // Obstacle-aware heuristic: precompute a 2D cost-to-go field from the goal
+    // (Dijkstra over a grid of rasterized obstacles). Used by default_heuristic
+    // to guide the kinodynamic A* around obstacles.
+    {
+        const auto&                gs = in.stateGoal.state;
+        const mrpt::math::TPoint2D goalPt =
+            gs.isPoint() ? gs.point()
+                         : mrpt::math::TPoint2D(gs.pose().x, gs.pose().y);
+        double robotRadius = 0.0;
+        for (const auto& ptg : in.ptgs.ptgs)
+        {
+            mrpt::keep_max(robotRadius, ptg->getMaxRobotRadius());
+        }
+        build_obstacle_heuristic(
+            goalPt, obstaclePoints, in.worldBboxMin, in.worldBboxMax,
+            robotRadius);
+    }
 
     // ----------------------------------------
     //
@@ -343,8 +367,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             newEdge.ptgIndex     = edge.ptgIndex.value();
             newEdge.ptgPathIndex = edge.ptgTrajIndex.value();
 
-            newEdge.ptgTrimmableSpeed    = edge.ptgTrimmableSpeed;
-            newEdge.ptgFinalGoalRelSpeed = edge.ptgDynState.value().targetRelSpeed;
+            newEdge.ptgTrimmableSpeed = edge.ptgTrimmableSpeed;
+            newEdge.ptgFinalGoalRelSpeed =
+                edge.ptgDynState.value().targetRelSpeed;
             newEdge.ptgFinalRelativeGoal =
                 in.stateGoal.asSE2KinState().pose - current.state.pose;
 
@@ -508,19 +533,36 @@ cost_t TPS_Astar::default_heuristic_SE2(
     const double distHeading =
         (relPose.norm() < 0.1)
             ? 0.0
-            : std::abs(
-                  mrpt::math::angDistance(
-                      std::atan2(relPose.y, relPose.x), from.pose.phi));
+            : std::abs(mrpt::math::angDistance(
+                  std::atan2(relPose.y, relPose.x), from.pose.phi));
 
-    return (distSE2 + params_.heuristic_heading_weight * distHeading) /
-           maxLinSpeed_;
+    cost_t h = (distSE2 + params_.heuristic_heading_weight * distHeading) /
+               maxLinSpeed_;
+
+    // Obstacle-aware term: cost-to-go around obstacles is a (more informed)
+    // lower bound on travel time. max() of two lower bounds stays valid.
+    if (const auto od = obstacle_heuristic_distance(from.pose.x, from.pose.y);
+        od.has_value())
+    {
+        mrpt::keep_max(h, *od / maxLinSpeed_);
+    }
+
+    return h;
 }
 
 cost_t TPS_Astar::default_heuristic_R2(
     const SE2_KinState& from, const mrpt::math::TPoint2D& goal) const
 {
     // Distance in R^2 only — heading is irrelevant for R(2) goals.
-    return (from.pose.translation() - goal).norm() / maxLinSpeed_;
+    cost_t h = (from.pose.translation() - goal).norm() / maxLinSpeed_;
+
+    if (const auto od = obstacle_heuristic_distance(from.pose.x, from.pose.y);
+        od.has_value())
+    {
+        mrpt::keep_max(h, *od / maxLinSpeed_);
+    }
+
+    return h;
 }
 
 TPS_Astar::Node& TPS_Astar::getOrCreateNodeByPose(
@@ -545,6 +587,152 @@ cost_t TPS_Astar::default_heuristic(
         return default_heuristic_SE2(from, goal.state.pose());
     else
         THROW_EXCEPTION("Goal of unknown type?");
+}
+
+void TPS_Astar::build_obstacle_heuristic(
+    const mrpt::math::TPoint2D&                     goal,
+    const std::vector<mrpt::maps::CPointsMap::Ptr>& obstacles,
+    const mrpt::math::TPose2D&                      worldBboxMin,
+    const mrpt::math::TPose2D& worldBboxMax, double robotRadius)
+{
+    obstacleHeuristicValid_ = false;
+    if (!params_.use_obstacle_heuristic) { return; }
+
+    mrpt::system::CTimeLoggerEntry tle(
+        profiler_(), "plan.build_obstacle_heuristic");
+
+    // Auto-select a coarse resolution (merges sparse obstacle points into
+    // walls and smooths the field) when not explicitly given.
+    const double res = params_.obstacle_heuristic_resolution > 0
+                           ? params_.obstacle_heuristic_resolution
+                           : std::max(0.20, 2.0 * params_.grid_resolution_xy);
+    ASSERT_GT_(res, 0.0);
+
+    // Auto inflation = robot circumscribed radius (smooths near-obstacle noise
+    // that would otherwise mis-guide the search). Negative => auto.
+    const double inflationMeters = params_.obstacle_heuristic_inflation >= 0
+                                       ? params_.obstacle_heuristic_inflation
+                                       : robotRadius;
+
+    obstacleHeuristicGrid_.setSize(
+        worldBboxMin.x, worldBboxMax.x, worldBboxMin.y, worldBboxMax.y, res);
+
+    const int nx = static_cast<int>(obstacleHeuristicGrid_.getSizeX());
+    const int ny = static_cast<int>(obstacleHeuristicGrid_.getSizeY());
+    if (nx <= 0 || ny <= 0) { return; }
+
+    constexpr float INF = std::numeric_limits<float>::max();
+
+    // Init all cost-to-go cells to INF.
+    for (int cy = 0; cy < ny; cy++)
+    {
+        for (int cx = 0; cx < nx; cx++)
+        {
+            *obstacleHeuristicGrid_.cellByIndex(cx, cy) = INF;
+        }
+    }
+
+    // Rasterize obstacles into a blocked mask (optionally inflated).
+    std::vector<char> blocked(static_cast<size_t>(nx) * ny, 0);
+    const int         infl =
+        static_cast<int>(std::ceil(std::max(0.0, inflationMeters) / res));
+    for (const auto& om : obstacles)
+    {
+        if (!om) { continue; }
+        const auto& xs = om->getPointsBufferRef_x();
+        const auto& ys = om->getPointsBufferRef_y();
+        for (size_t i = 0; i < om->size(); i++)
+        {
+            const int ox = obstacleHeuristicGrid_.x2idx(xs[i]);
+            const int oy = obstacleHeuristicGrid_.y2idx(ys[i]);
+            for (int dy = -infl; dy <= infl; dy++)
+            {
+                for (int dx = -infl; dx <= infl; dx++)
+                {
+                    const int cx = ox + dx;
+                    const int cy = oy + dy;
+                    if (cx < 0 || cy < 0 || cx >= nx || cy >= ny) { continue; }
+                    blocked[static_cast<size_t>(cy) * nx + cx] = 1;
+                }
+            }
+        }
+    }
+
+    // Dijkstra from the goal cell (a valid source even if on an obstacle cell).
+    const int gx = obstacleHeuristicGrid_.x2idx(goal.x);
+    const int gy = obstacleHeuristicGrid_.y2idx(goal.y);
+    if (gx < 0 || gy < 0 || gx >= nx || gy >= ny) { return; }
+
+    using QItem = std::pair<float, std::pair<int, int>>;  // (cost,(cx,cy))
+    std::priority_queue<QItem, std::vector<QItem>, std::greater<QItem>> pq;
+
+    *obstacleHeuristicGrid_.cellByIndex(gx, gy) = 0.f;
+    pq.push({0.f, {gx, gy}});
+
+    const float orth = static_cast<float>(res);
+    const float diag = static_cast<float>(res * std::sqrt(2.0));
+
+    while (!pq.empty())
+    {
+        const float cost = pq.top().first;
+        const int   cx   = pq.top().second.first;
+        const int   cy   = pq.top().second.second;
+        pq.pop();
+
+        if (cost > *obstacleHeuristicGrid_.cellByIndex(cx, cy))
+        {
+            continue;  // stale queue entry
+        }
+
+        for (int dy = -1; dy <= 1; dy++)
+        {
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                if (dx == 0 && dy == 0) { continue; }
+                const int ncx = cx + dx;
+                const int ncy = cy + dy;
+                if (ncx < 0 || ncy < 0 || ncx >= nx || ncy >= ny) { continue; }
+                if (blocked[static_cast<size_t>(ncy) * nx + ncx]) { continue; }
+                const float step    = (dx != 0 && dy != 0) ? diag : orth;
+                const float newCost = cost + step;
+                float&      neighborCost =
+                    *obstacleHeuristicGrid_.cellByIndex(ncx, ncy);
+                if (newCost < neighborCost)
+                {
+                    neighborCost = newCost;
+                    pq.push({newCost, {ncx, ncy}});
+                }
+            }
+        }
+    }
+
+    obstacleHeuristicValid_ = true;
+}
+
+std::optional<double> TPS_Astar::obstacle_heuristic_distance(
+    double x, double y) const
+{
+    if (!obstacleHeuristicValid_) { return std::nullopt; }
+    const int cx = obstacleHeuristicGrid_.x2idx(x);
+    const int cy = obstacleHeuristicGrid_.y2idx(y);
+    if (cx < 0 || cy < 0 ||
+        cx >= static_cast<int>(obstacleHeuristicGrid_.getSizeX()) ||
+        cy >= static_cast<int>(obstacleHeuristicGrid_.getSizeY()))
+    {
+        return std::nullopt;
+    }
+    const float v = *obstacleHeuristicGrid_.cellByIndex(cx, cy);
+    if (v >= std::numeric_limits<float>::max())
+    {
+        return std::nullopt;  // unreachable in 2D: fall back to geometric h
+    }
+    // 8-connected (octile) grid distance overestimates the straight-line
+    // distance by up to a factor of 1.08239 (worst case at 22.5 deg). Scale by
+    // its inverse so the returned value stays a lower bound on the true
+    // Euclidean cost-to-go (admissible), keeping the obstacle term only when a
+    // detour genuinely makes it exceed the straight-line heuristic.
+    constexpr double kOctileToEuclid = 1.0 / 1.0823922;
+    return static_cast<double>(v) * kOctileToEuclid;
 }
 
 TPS_Astar::list_paths_to_neighbors_t
@@ -608,15 +796,10 @@ TPS_Astar::list_paths_to_neighbors_t
                 // it->second is an absolute speed (m/s); normalise against
                 // this PTG's own maximum linear velocity so that the result
                 // is in [0, 1] regardless of the robot's top speed.
-                const double ptgVmax =
-                    std::max(ptg->getMaxLinVel(), 1e-6);
-                ds.targetRelSpeed =
-                    std::min(1.0, it->second / ptgVmax);
+                const double ptgVmax = std::max(ptg->getMaxLinVel(), 1e-6);
+                ds.targetRelSpeed    = std::min(1.0, it->second / ptgVmax);
             }
-            else
-            {
-                ds.targetRelSpeed = 0;
-            }
+            else { ds.targetRelSpeed = 0; }
 
             mrpt::system::CTimeLoggerEntry tle3(
                 profiler_(), "find_feasible.ptgUpdateDyn");
@@ -813,7 +996,7 @@ TPS_Astar::list_paths_to_neighbors_t
                 // evaluation (applied via ptgTrimmable->trimmableSpeed_ above);
                 // without this, ptgTrimmableSpeed keeps its default of 1.0 and
                 // the trimmed speed used to win this best-path slot is lost.
-                path.ptgTrimmableSpeed  = tpsPt.speed;
+                path.ptgTrimmableSpeed = tpsPt.speed;
             }
         }
 
