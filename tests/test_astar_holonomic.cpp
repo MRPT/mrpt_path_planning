@@ -105,7 +105,7 @@ RobotModel_circular_shape_radius = 0.15
 static mpp::PlannerInput buildInput(
     double gx, double gy, bool goalIsSE2 = false, double goalPhi_deg = 0.0,
     const mrpt::maps::CSimplePointsMap::Ptr& obsPts = nullptr,
-    const char* ptgCfg = kHolonomicPtgCfg)
+    const char*                              ptgCfg = kHolonomicPtgCfg)
 {
     // Load PTGs
     mrpt::config::CConfigFileMemory cfg(ptgCfg);
@@ -240,7 +240,8 @@ TEST(AstarHolonomic, NonZeroGoalSpeedPreserved)
     const auto& last_edge =
         out.motionTree.edge_to_parent(out.goalNodeId.value());
     EXPECT_GT(last_edge.ptgFinalGoalRelSpeed, 0.01)
-        << "Final edge must carry non-zero goal speed when stateGoal.vel is set";
+        << "Final edge must carry non-zero goal speed when stateGoal.vel is "
+           "set";
 }
 
 TEST(AstarHolonomic, ZeroGoalSpeedDefault)
@@ -269,7 +270,7 @@ TEST(AstarHolonomic, GoalSpeedNormalisedAgainstPtgVmax)
     // without dividing by the PTG's own maximum linear velocity.
     auto planner = buildPlanner();
     auto in      = buildInput(
-        /*gx=*/3.0, /*gy=*/0.0,
+             /*gx=*/3.0, /*gy=*/0.0,
         /*goalIsSE2=*/false, /*goalPhi_deg=*/0.0,
         /*obsPts=*/nullptr, kHolonomicPtgCfg2mps);
 
@@ -362,12 +363,38 @@ TEST(AstarHolonomic, TimeoutRespected)
         << "Planner exceeded 1 s wall-clock; elapsed=" << elapsed << " s";
 }
 
+TEST(AstarHolonomic, AnalyticExpansionEarlyTermination)
+{
+    // Analytic expansion (default on) terminates as soon as a collision-free
+    // connection into the goal cell is found. It must still reach the goal and
+    // must not expand MORE nodes than the strictly-optimal (analytic off) mode.
+    auto plannerOff                           = buildPlanner();
+    plannerOff.params_.use_analytic_expansion = false;
+    auto       inOff  = buildInput(/*gx=*/3.0, /*gy=*/0.0);
+    const auto outOff = plannerOff.plan(inOff);
+    ASSERT_TRUE(outOff.success);
+
+    auto plannerOn                           = buildPlanner();
+    plannerOn.params_.use_analytic_expansion = true;
+    auto       inOn  = buildInput(/*gx=*/3.0, /*gy=*/0.0);
+    const auto outOn = plannerOn.plan(inOn);
+    ASSERT_TRUE(outOn.success)
+        << "Analytic expansion must still reach the goal";
+
+    EXPECT_LE(outOn.motionTree.nodes().size(), outOff.motionTree.nodes().size())
+        << "Analytic expansion should not expand more nodes than optimal mode "
+           "(on="
+        << outOn.motionTree.nodes().size()
+        << ", off=" << outOff.motionTree.nodes().size() << ")";
+}
+
 TEST(AstarHolonomic, MultiPTG)
 {
     // Plan with two PTG entries. Planner must succeed and every edge in the
     // motion tree must reference a valid PTG index (0 or 1).
     auto planner = buildPlanner();
-    auto in = buildInput(/*gx=*/2.0, /*gy=*/1.0, false, 0.0, nullptr, kTwoPtgCfg);
+    auto in =
+        buildInput(/*gx=*/2.0, /*gy=*/1.0, false, 0.0, nullptr, kTwoPtgCfg);
 
     const auto out = planner.plan(in);
     ASSERT_TRUE(out.success) << "Planner must find a path with 2 PTGs";

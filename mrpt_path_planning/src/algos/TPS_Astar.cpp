@@ -35,6 +35,7 @@ mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
     MCP_SAVE(c, debugVisualizationShowEdgeCosts);
     MCP_SAVE(c, grid_resolution_xy);
     MCP_SAVE(c, heuristic_heading_weight);
+    MCP_SAVE(c, use_analytic_expansion);
     MCP_SAVE(c, use_obstacle_heuristic);
     MCP_SAVE(c, obstacle_heuristic_resolution);
     MCP_SAVE(c, obstacle_heuristic_inflation);
@@ -70,6 +71,7 @@ void TPS_Astar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_OPT(c, saveDebugVisualizationDecimation);
     MCP_LOAD_OPT(c, debugVisualizationShowEdgeCosts);
     MCP_LOAD_OPT(c, heuristic_heading_weight);
+    MCP_LOAD_OPT(c, use_analytic_expansion);
     MCP_LOAD_OPT(c, use_obstacle_heuristic);
     MCP_LOAD_OPT(c, obstacle_heuristic_resolution);
     MCP_LOAD_OPT(c, obstacle_heuristic_inflation);
@@ -310,6 +312,11 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
                   << "\n";
 #endif
 
+        // Analytic expansion / early termination: if one of the feasible edges
+        // is a collision-free connection that lands in the goal cell, accept it
+        // and stop, instead of continuing A* until the goal node is popped.
+        Node* analyticGoalNode = nullptr;
+
         for (const auto& edge : neighbors)
         {
             // d(current,neighbor) is the weight of the edge from current to
@@ -442,7 +449,41 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
                 po.bestNodeId           = neighborNode.id.value();
             }
 
+            // Analytic expansion: this accepted edge connects (collision-free)
+            // into the goal cell. Stop here and finish.
+            if (params_.use_analytic_expansion &&
+                edge.neighborNodeCoords.sameLocation(goalCellIndices))
+            {
+                analyticGoalNode = &neighborNode;
+                break;
+            }
+
         }  // end for each edge to neighbor
+
+        // Early termination via analytic expansion (see above): splice the
+        // goal node exactly like the goal-cell pop below, and finish.
+        if (analyticGoalNode != nullptr)
+        {
+            Node& gn = *analyticGoalNode;
+            if (in.stateGoal.state.isPoint())
+            {
+                const auto& goalPt = in.stateGoal.state.point();
+                gn.state.pose.x    = goalPt.x;
+                gn.state.pose.y    = goalPt.y;
+            }
+            else { gn.state.pose = in.stateGoal.state.pose(); }
+            tree.node_state(*gn.id).pose = gn.state.pose;
+
+            nodeGoal                = &gn;
+            po.goalNodeId           = gn.id.value();
+            po.bestNodeId           = po.goalNodeId;
+            po.bestNodeIdCostToGoal = 0;
+
+            MRPT_LOG_DEBUG_STREAM(
+                "Analytic expansion: early termination, goal reached at "
+                << gn.state.asString());
+            break;  // out of the A* while loop
+        }
 
         MRPT_LOG_DEBUG_FMT(
             "iter: %4u %65s neighbors=%3u fS=%.02f gS=%.02f |openSet|=%u",
