@@ -27,6 +27,12 @@ selfdriving_add_test(
 )
 
 selfdriving_add_test(
+    TARGET  test_astar_diffdrive
+    SOURCES test_astar_diffdrive.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
+
+selfdriving_add_test(
     TARGET  test_edge_interpolation
     SOURCES test_edge_interpolation.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
