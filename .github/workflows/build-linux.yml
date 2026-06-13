@@ -46,7 +46,10 @@ jobs:
           sudo apt-get update -qq
 
           sudo apt-get -y upgrade
-          sudo apt install -qq -y cmake build-essential libmrpt-dev
+          # libgtest-dev is required for the unit tests to be built and run;
+          # without it tests/CMakeLists.txt skips the whole suite (ctest then
+          # reports "No tests were found").
+          sudo apt install -qq -y cmake build-essential libmrpt-dev libgtest-dev
 
       - name: CMake configure
         run: |
