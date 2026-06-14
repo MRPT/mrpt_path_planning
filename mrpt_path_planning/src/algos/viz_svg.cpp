@@ -99,20 +99,31 @@ void polyline(
     os << "\"/>\n";
 }
 
+// drawHeading=false marks a R(2)-only pose (heading unconstrained, "ANY"):
+// instead of a directional tick, draw a dashed ring around the dot.
 void marker(
     std::ostream& os, const mrpt::math::TPose2D& p, const Frame& fr,
-    const std::string& color)
+    const std::string& color, bool drawHeading = true)
 {
     const double cx = fr.tx(p.x);
     const double cy = fr.ty(p.y);
     os << "<circle cx=\"" << fmt(cx) << "\" cy=\"" << fmt(cy)
        << "\" r=\"5\" fill=\"" << color << "\"/>\n";
-    // heading tick (note: image y is flipped, so use -sin for screen):
-    const double hx = cx + 12.0 * std::cos(p.phi);
-    const double hy = cy - 12.0 * std::sin(p.phi);
-    os << "<line x1=\"" << fmt(cx) << "\" y1=\"" << fmt(cy) << "\" x2=\""
-       << fmt(hx) << "\" y2=\"" << fmt(hy) << "\" stroke=\"" << color
-       << "\" stroke-width=\"2\"/>\n";
+    if (drawHeading)
+    {
+        // heading tick (note: image y is flipped, so use -sin for screen):
+        const double hx = cx + 12.0 * std::cos(p.phi);
+        const double hy = cy - 12.0 * std::sin(p.phi);
+        os << "<line x1=\"" << fmt(cx) << "\" y1=\"" << fmt(cy) << "\" x2=\""
+           << fmt(hx) << "\" y2=\"" << fmt(hy) << "\" stroke=\"" << color
+           << "\" stroke-width=\"2\"/>\n";
+    }
+    else
+    {
+        os << "<circle cx=\"" << fmt(cx) << "\" cy=\"" << fmt(cy)
+           << "\" r=\"10\" fill=\"none\" stroke=\"" << color
+           << "\" stroke-width=\"1.5\" stroke-dasharray=\"3,2\"/>\n";
+    }
 }
 }  // namespace
 
@@ -256,7 +267,12 @@ std::string mpp::plan_to_svg(
     if (o.draw_start_goal)
     {
         marker(os, pi.stateStart.pose, fr, o.color_start);
-        marker(os, pi.stateGoal.asSE2KinState().pose, fr, o.color_goal);
+        // R(2) goals (point only) have an unconstrained ("ANY") heading: do
+        // not draw a fake heading tick for them, draw a dashed ring instead.
+        const bool goalHasHeading = !pi.stateGoal.state.isPoint();
+        marker(
+            os, pi.stateGoal.asSE2KinState().pose, fr, o.color_goal,
+            goalHasHeading);
     }
 
     // Scale bar (1 m) + status text:
