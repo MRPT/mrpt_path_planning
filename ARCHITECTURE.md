@@ -189,12 +189,7 @@ The A* output is a sequence of PTG segments snapped to lattice cells. The path c
 
 **Implemented**: Heuristic now divides by `maxLinSpeed_` (cached from PTGs at the start of each `plan()` call), returning time units consistent with `estimatedExecTime`. Defaults to 1.0 m/s when called outside `plan()`.
 
-#### P8. No Reverse Motion Support
-**Severity**: Low — limits applicability.
-
-The planner only explores forward PTG trajectories. For Ackermann or differential-drive robots in tight spaces (parking, U-turns), reverse motion is essential.
-
-**Fix**: Add reverse-motion PTGs or a separate reverse-driving PTG set. The A* framework already supports multiple PTGs, so reverse PTGs can be added as additional entries in the PTG vector.
+#### ~~P8. No Reverse Motion Support~~  WRONG (reverse is implemented by C-PTG with K=-1)
 
 ### 6.2 Implementation Issues
 
