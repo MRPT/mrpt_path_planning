@@ -17,10 +17,8 @@
 #include <gtest/gtest.h>
 #include <mpp/algos/TPS_Astar.h>
 #include <mpp/data/PlannerInput.h>
-#include <mpp/interfaces/ObstacleSource.h>
 #include <mrpt/config/CConfigFileMemory.h>
 #include <mrpt/core/bits_math.h>  // _deg
-#include <mrpt/maps/CSimplePointsMap.h>
 
 using namespace mrpt::literals;  // for _deg
 
@@ -208,15 +206,9 @@ TEST(Heuristic, ConsistencyAlongPlanEdges)
     // For every edge u→v in the output motion tree:
     //   h(u) <= cost(u,v) + h(v)   (A* consistency / monotonicity)
     //
-    // This is a property of the *geometric* (Euclidean + heading) heuristic.
-    // The optional 2D obstacle heuristic is a deliberately-approximate focusing
-    // heuristic (a piecewise-constant grid cost-to-go field, octile-scaled to
-    // an admissible lower bound) and is NOT guaranteed consistent at sub-cell
-    // granularity, by design (cf. Nav2). Disable it here; its behavior is
-    // covered by ObstacleHeuristicKeepsPlansValid.
-    auto planner                           = buildPlanner();
-    planner.params_.use_obstacle_heuristic = false;
-    auto in                                = buildInput(/*gx=*/3.0, /*gy=*/2.0);
+    // This is a property of the geometric (Euclidean + heading) heuristic.
+    auto planner = buildPlanner();
+    auto in      = buildInput(/*gx=*/3.0, /*gy=*/2.0);
 
     const auto out = planner.plan(in);
     ASSERT_TRUE(out.success);
@@ -243,41 +235,4 @@ TEST(Heuristic, ConsistencyAlongPlanEdges)
     }
 
     EXPECT_GT(edgeCount, 0) << "No edges found in motion tree";
-}
-
-TEST(Heuristic, ObstacleHeuristicKeepsPlansValid)
-{
-    // A wall at x=2 with a gap only near the top forces a detour. The 2D
-    // obstacle heuristic should guide the kinodynamic A* around it, expanding
-    // no more nodes than the plain geometric heuristic (which pulls straight
-    // into the wall). Both must still find a valid path.
-    auto obs = mrpt::maps::CSimplePointsMap::Create();
-    for (double y = -3.0; y <= 0.4; y += 0.1) { obs->insertPoint(2.0, y, 0.0); }
-
-    auto makeInput = [&]()
-    {
-        auto in = buildInput(/*gx=*/4.0, /*gy=*/0.0);
-        in.obstacles.push_back(mpp::ObstacleSource::FromStaticPointcloud(obs));
-        return in;
-    };
-
-    auto plannerOff                           = buildPlanner();
-    plannerOff.params_.use_obstacle_heuristic = false;
-    auto       inOff                          = makeInput();
-    const auto outOff                         = plannerOff.plan(inOff);
-    ASSERT_TRUE(outOff.success) << "Baseline (geometric h) must find a path";
-
-    auto plannerOn                           = buildPlanner();
-    plannerOn.params_.use_obstacle_heuristic = true;
-    auto       inOn                          = makeInput();
-    const auto outOn                         = plannerOn.plan(inOn);
-    ASSERT_TRUE(outOn.success) << "Obstacle-heuristic plan must find a path";
-
-    const size_t nOff = outOff.motionTree.nodes().size();
-    const size_t nOn  = outOn.motionTree.nodes().size();
-
-    EXPECT_LE(nOn, nOff)
-        << "Obstacle heuristic should not expand MORE nodes than the geometric "
-           "heuristic on a detour scenario (on="
-        << nOn << ", off=" << nOff << ")";
 }
