@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.0.0 (2026-06-16)
+------------------
 * feat(TPS_Astar): weighted A* via ``heuristic_epsilon`` param (default 1.0 = exact A*); eps in [1.5, 2] cuts median plan time ~4-5x at ~3-8% longer paths
 * feat(TPS_Astar): analytic expansion / early termination to goal (`#25 <https://github.com/MRPT/mrpt_path_planning/issues/25>`_): accept a direct-to-goal PTG edge as soon as it lands in the goal cell, skipping unnecessary expansions
 * feat(TPS_Astar): optional 2D-Dijkstra obstacle-aware heuristic (`#24 <https://github.com/MRPT/mrpt_path_planning/issues/24>`_): opt-in ``use_obstacle_heuristic`` pre-computes a cost-to-go grid; ~5x fewer expansions on hard BARN worlds
