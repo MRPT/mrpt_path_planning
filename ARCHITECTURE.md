@@ -100,6 +100,15 @@ Two heuristics depending on goal type:
 
 The heading term `heuristic_heading_weight * |angDistance(atan2(dy,dx), phi)|` encourages the robot to orient towards the goal during transit, which improves path quality for non-holonomic vehicles.
 
+**Weighted A* (`heuristic_epsilon`, default 1.0)**: the OPEN set is ordered by
+`f = g + eps * h` (ARA*/SBPL-style); `eps > 1` returns a solution within a
+factor `eps` of optimal while expanding fewer nodes. The raw (eps=1)
+`costToGoal` is still used for best-node tracking. Measured on BARN (worlds
+0-59): `eps` in `[1.5, 2]` cuts median plan time ~4-5x at the cost of 3-8%
+longer paths, but does not reduce the worst-case tail (which is
+feasibility/resolution-bound, not heuristic-bound). Default stays 1.0 to
+preserve resolution-optimality.
+
 ### 3.4 Cost Model
 
 Edge cost = `estimatedExecTime` + Σ(cost_evaluators).
