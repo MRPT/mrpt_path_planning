@@ -27,8 +27,16 @@ struct TPS_Astar_Parameters
     TPS_Astar_Parameters() = default;
     static TPS_Astar_Parameters FromYAML(const mrpt::containers::yaml& c);
 
-    double grid_resolution_xy  = 0.20;
-    double grid_resolution_yaw = 5.0_deg;
+    double grid_resolution_xy = 0.20;
+    /** Default 7.5 deg (48 yaw bins). A finer 5 deg was found to over-resolve
+     * the yaw dimension: since the heuristic is essentially positional, finer
+     * yaw multiplies SE(2) expansions ~linearly with no quality gain. Measured
+     * (collision-sound, 300-world BARN + 40-case HouseExpo): 5->7.5 deg cuts
+     * mean plan time ~23-37% and HouseExpo median ~1.5x while *improving*
+     * success (BARN 291->292/300, HouseExpo 39->40/40) at unchanged median path
+     * quality. 10 deg is faster still but drops net BARN success, so 7.5 deg is
+     * the sweet spot. See DESIGN.md sec 12.7. */
+    double grid_resolution_yaw = 7.5_deg;
 
     double SE2_metricAngleWeight = 1.0;
 
