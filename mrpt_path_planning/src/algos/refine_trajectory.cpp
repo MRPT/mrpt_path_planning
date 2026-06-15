@@ -71,8 +71,19 @@ void mpp::refine_trajectory(
         {
             distance_t newDist = newNormDist * ptg->getRefDistance();
 
-            uint32_t newPtgStep = 0;
-            ptg->getPathStepForDist(newK, newDist, newPtgStep);
+            uint32_t   newPtgStep = 0;
+            const bool stepOk = ptg->getPathStepForDist(newK, newDist, newPtgStep);
+            if (!stepOk)
+            {
+                // The distance returned by inverseMap_WS2TP() (normalized
+                // against refDistance) can slightly exceed the actual length
+                // of the simulated trajectory "newK", in which case
+                // getPathStepForDist() returns false and leaves out_step at
+                // the last sample. Committing such an out-of-range ptgDist
+                // makes a later plan_to_trajectory() assert fail. Clamp the
+                // distance to the last representable sample of "newK".
+                newDist = ptg->getPathDist(newK, newPtgStep);
+            }
 
 #if 0
         std::cout << "    Corrections: pathIndex " << edge.ptgPathIndex
