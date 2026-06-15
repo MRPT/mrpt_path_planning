@@ -9,7 +9,6 @@
 #include <mpp/algos/CostEvaluator.h>
 #include <mpp/algos/Planner.h>
 #include <mpp/data/MotionPrimitivesTree.h>
-#include <mrpt/containers/CDynamicGrid.h>
 #include <mrpt/core/bits_math.h>  // 0.0_deg
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
@@ -28,6 +27,7 @@ struct TPS_Astar_Parameters
     static TPS_Astar_Parameters FromYAML(const mrpt::containers::yaml& c);
 
     double grid_resolution_xy = 0.20;
+
     /** Default 7.5 deg (48 yaw bins). A finer 5 deg was found to over-resolve
      * the yaw dimension: since the heuristic is essentially positional, finer
      * yaw multiplies SE(2) expansions ~linearly with no quality gain. Measured
@@ -49,36 +49,9 @@ struct TPS_Astar_Parameters
      * sub-optimality, as in ARA* / SBPL). Since the planner's expensive worlds
      * are dominated by expansion count, `eps` in `[1.5, 2]` is the cheapest
      * lever to cut the worst-case latency tail at a small, bounded path-cost
-     * increase. Kept at 1.0 by default so the planner stays optimal up to the
-     * lattice/sampling resolution unless explicitly relaxed. */
-    double heuristic_epsilon = 1.0;
-
-    /** If enabled, a cheap 2D grid Dijkstra cost-to-go field is precomputed
-     * from the goal at the start of each plan() and used as an obstacle-aware
-     * heuristic, taken as the max with the geometric (Euclidean + heading)
-     * heuristic. This guides the kinodynamic A* around obstacles and can
-     * drastically cut expansions in cluttered maps (measured ~5x speedup on the
-     * hardest BARN worlds; see DESIGN.md Nav2 head-to-head). It is a focusing
-     * heuristic: not strictly consistent, so it can slightly increase
-     * expansions (and yield slightly suboptimal paths) on easy/open maps.
-     * Default OFF to keep the planner's default behavior conservative; enable
-     * it for cluttered environments. */
-    bool use_obstacle_heuristic = false;
-
-    /** Resolution [m] of the 2D obstacle-heuristic grid. If <=0 (default), the
-     * planner auto-selects a coarse value `max(0.20, 2*grid_resolution_xy)`.
-     * Coarser merges sparse obstacle points into solid walls and yields a
-     * smoother (more useful) cost-to-go field, and is faster to precompute. */
-    double obstacle_heuristic_resolution = 0.0;
-
-    /** Obstacle inflation [m] used ONLY when rasterizing obstacles for the 2D
-     * heuristic grid. If <0 (default), it is auto-set to the robot's
-     * circumscribed radius. Inflation smooths out the near-obstacle "noise"
-     * that would otherwise over-penalize traversing close to obstacles and
-     * mis-guide the search; it makes the heuristic far more effective on
-     * cluttered maps (at the cost of strict admissibility). Set 0 to disable.
-     */
-    double obstacle_heuristic_inflation = -1.0;
+     * increase. Found to be 1.5 to be somehow better in runtime than 1.0 in
+     * general cases. */
+    double heuristic_epsilon = 1.5;
 
     /** Analytic expansion / early termination:
      * `find_feasible_paths_to_neighbors` already builds a collision-free
@@ -152,14 +125,10 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     PlannerOutput plan(const PlannerInput& in) override;
 
     mrpt::containers::yaml params_as_yaml() override
-    {
-        return params_.as_yaml();
-    }
+    { return params_.as_yaml(); }
 
     void params_from_yaml(const mrpt::containers::yaml& c) override
-    {
-        params_.load_from_yaml(c);
-    }
+    { params_.load_from_yaml(c); }
 
     cost_t default_heuristic(
         const SE2_KinState& from, const SE2orR2_KinState& goal) const;
@@ -241,9 +210,7 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         // boost::hash_combine pattern: avalanches bits so that adjacent
         // integer grid coordinates map to well-separated hash buckets.
         static void hash_combine(size_t& seed, size_t v)
-        {
-            seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-        }
+        { seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2); }
 
         size_t operator()(const NodeCoords& x) const
         {
@@ -307,13 +274,9 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     SE2_Lattice grid_;
 
     int32_t x2idx(float x) const
-    {
-        return static_cast<int32_t>(std::round(x / params_.grid_resolution_xy));
-    }
+    { return static_cast<int32_t>(std::round(x / params_.grid_resolution_xy)); }
     int32_t y2idx(float y) const
-    {
-        return static_cast<int32_t>(std::round(y / params_.grid_resolution_xy));
-    }
+    { return static_cast<int32_t>(std::round(y / params_.grid_resolution_xy)); }
     int32_t phi2idx(float yaw) const
     {
         const auto phi = mrpt::math::wrapToPi(yaw);
@@ -328,13 +291,9 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 
     /// throws on out of grid limits.
     NodeCoords nodeGridCoords(const mrpt::math::TPose2D& p) const
-    {
-        return NodeCoords(x2idx(p.x), y2idx(p.y), phi2idx(p.phi));
-    }
+    { return NodeCoords(x2idx(p.x), y2idx(p.y), phi2idx(p.phi)); }
     NodeCoords nodeGridCoords(const mrpt::math::TPoint2D& p) const
-    {
-        return NodeCoords(x2idx(p.x), y2idx(p.y));
-    }
+    { return NodeCoords(x2idx(p.x), y2idx(p.y)); }
 
     struct NodePtr
     {
@@ -411,28 +370,6 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
      *  transformed obstacle cloud, avoiding redundant O(N_obs) transforms. */
     std::unordered_map<NodeCoords, mrpt::maps::CPointsMap::Ptr, NodeCoordsHash>
         localObstaclesCache_;
-
-    /** 2D cost-to-go field (meters) from the goal, computed by a grid Dijkstra
-     *  over rasterized obstacles. Cells hold the shortest obstacle-free
-     *  distance to the goal, or +inf if unreachable. Used as the obstacle-aware
-     *  heuristic. Rebuilt at the start of each plan() call. */
-    mrpt::containers::CDynamicGrid<float> obstacleHeuristicGrid_;
-    bool                                  obstacleHeuristicValid_ = false;
-
-    /** Build obstacleHeuristicGrid_ via a grid Dijkstra from the goal point.
-     *  `robotRadius` is used as the auto obstacle inflation when
-     *  params_.obstacle_heuristic_inflation < 0. */
-    void build_obstacle_heuristic(
-        const mrpt::math::TPoint2D&                     goal,
-        const std::vector<mrpt::maps::CPointsMap::Ptr>& obstacles,
-        const mrpt::math::TPose2D&                      worldBboxMin,
-        const mrpt::math::TPose2D& worldBboxMax, double robotRadius);
-
-    /** Obstacle-free cost-to-go distance [m] from (x,y) to the goal, or
-     *  std::nullopt if the heuristic is disabled, the cell is out of grid, or
-     *  the cell is unreachable in the 2D grid (so callers fall back to the
-     *  geometric heuristic and never wrongly prune). */
-    std::optional<double> obstacle_heuristic_distance(double x, double y) const;
 };
 
 }  // namespace mpp
