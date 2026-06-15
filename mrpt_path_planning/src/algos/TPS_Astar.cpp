@@ -36,6 +36,7 @@ mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
     MCP_SAVE(c, debugVisualizationShowEdgeCosts);
     MCP_SAVE(c, grid_resolution_xy);
     MCP_SAVE(c, heuristic_heading_weight);
+    MCP_SAVE(c, heuristic_epsilon);
     MCP_SAVE(c, use_analytic_expansion);
     MCP_SAVE(c, use_obstacle_heuristic);
     MCP_SAVE(c, obstacle_heuristic_resolution);
@@ -72,6 +73,7 @@ void TPS_Astar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_OPT(c, saveDebugVisualizationDecimation);
     MCP_LOAD_OPT(c, debugVisualizationShowEdgeCosts);
     MCP_LOAD_OPT(c, heuristic_heading_weight);
+    MCP_LOAD_OPT(c, heuristic_epsilon);
     MCP_LOAD_OPT(c, use_analytic_expansion);
     MCP_LOAD_OPT(c, use_obstacle_heuristic);
     MCP_LOAD_OPT(c, obstacle_heuristic_resolution);
@@ -197,7 +199,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         tree.insert_root_node(tree.root, n.state);
 
         n.gScore           = 0;
-        n.fScore           = heuristic(n.state, in.stateGoal);
+        n.fScore = params_.heuristic_epsilon * heuristic(n.state, in.stateGoal);
         n.pendingInOpenSet = true;
 
         openSet.insert({n.fScore, &n});
@@ -432,10 +434,14 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             neighborNode.cameFrom = &current;
             neighborNode.gScore   = tentative_gScore;
 
-            // fScore[neighbor] := tentative_gScore + h(neighbor)
+            // fScore[neighbor] := tentative_gScore + eps * h(neighbor).
+            // Weighted A* (eps>=1): inflating only the OPEN ordering, NOT the
+            // raw costToGoal kept below for best-node tracking, yields a
+            // solution within eps of optimal (ARA*/SBPL-style).
             const cost_t costToGoal =
                 heuristic(neighborNode.state, in.stateGoal);
-            neighborNode.fScore = tentative_gScore + costToGoal;
+            neighborNode.fScore =
+                tentative_gScore + params_.heuristic_epsilon * costToGoal;
 
             // Always (re-)insert into the open set with the updated
             // fScore. If an older entry with a higher fScore remains,

@@ -42,6 +42,17 @@ struct TPS_Astar_Parameters
 
     double heuristic_heading_weight = 0.1;  //!< [0,1]
 
+    /** Weighted-A* heuristic inflation factor `eps >= 1` (default 1.0 = exact
+     * A*). The open set is ordered by `f = g + eps * h`. Values `> 1` make the
+     * search greedier: it expands far fewer nodes and returns a solution whose
+     * cost is provably within a factor `eps` of the optimum (bounded
+     * sub-optimality, as in ARA* / SBPL). Since the planner's expensive worlds
+     * are dominated by expansion count, `eps` in `[1.5, 2]` is the cheapest
+     * lever to cut the worst-case latency tail at a small, bounded path-cost
+     * increase. Kept at 1.0 by default so the planner stays optimal up to the
+     * lattice/sampling resolution unless explicitly relaxed. */
+    double heuristic_epsilon = 1.0;
+
     /** If enabled, a cheap 2D grid Dijkstra cost-to-go field is precomputed
      * from the goal at the start of each plan() and used as an obstacle-aware
      * heuristic, taken as the max with the geometric (Euclidean + heading)
