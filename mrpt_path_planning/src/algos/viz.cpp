@@ -8,6 +8,10 @@
 #include <mpp/algos/trajectories.h>
 #include <mpp/algos/viz.h>
 #include <mrpt/gui/CDisplayWindow3D.h>
+#include <mrpt/math/TLine3D.h>
+#include <mrpt/math/TObject3D.h>
+#include <mrpt/math/TPlane.h>
+#include <mrpt/math/geometry.h>
 #include <mrpt/opengl/CCylinder.h>
 #include <mrpt/opengl/CGridPlaneXY.h>
 #include <mrpt/opengl/COpenGLScene.h>
@@ -22,6 +26,56 @@
 using namespace mpp;
 
 static std::vector<mrpt::gui::CDisplayWindow3D::Ptr> nonmodal_wins;
+
+namespace
+{
+// Shows the (X,Y) ground-plane coordinates the mouse is pointing at, as a
+// 2D text message overlaid on the 3D view.
+//
+// get3DRayForPixelCoord() converts the pixel coordinate using the
+// render-matrices cached for the *calling* thread, which are only correctly
+// populated with the actual (and possibly resized) viewport size on the
+// window's GUI/render thread. Hence the whole computation is run there via
+// sendFunctionToRunOnGUIThread().
+void updateMouseCoordinatesTextMessage(mrpt::gui::CDisplayWindow3D& win)
+{
+    win.sendFunctionToRunOnGUIThread(
+        [&win]()
+        {
+            int mouseX = 0;
+            int mouseY = 0;
+            if (!win.getLastMousePosition(mouseX, mouseY)) return;
+
+            mrpt::opengl::COpenGLScene::Ptr scene;
+            mrpt::math::TLine3D             mouseRay;
+            bool                            validRay = false;
+            {
+                mrpt::gui::CDisplayWindow3DLocker dwl(win, scene);
+                if (auto vp = scene->getViewport("main"); vp)
+                {
+                    vp->get3DRayForPixelCoord(mouseX, mouseY, mouseRay);
+                    validRay = true;
+                }
+            }
+            if (!validRay) return;
+
+            // Intersection of the mouse ray with the ground plane Z=0:
+            using mrpt::math::TPoint3D;
+            const mrpt::math::TPlane groundPlane(
+                TPoint3D(0, 0, 0), TPoint3D(1, 0, 0), TPoint3D(0, 1, 0));
+
+            mrpt::math::TObject3D inters;
+            mrpt::math::intersect(mouseRay, groundPlane, inters);
+
+            mrpt::math::TPoint3D pt;
+            if (!inters.getPoint(pt)) return;
+
+            win.addTextMessage(
+                0.01, 0.01, mrpt::format("Mouse: X=%.3f Y=%.3f", pt.x, pt.y),
+                0 /*unique_index*/);
+        });
+}
+}  // namespace
 
 void mpp::viz_nav_plan(
     const mpp::PlannerOutput& plan, const mpp::VisualizationOptions& opts,
@@ -61,8 +115,14 @@ void mpp::viz_nav_plan(
 
     if (opts.gui_modal)
     {
-        // Wait:
-        win->waitForKey();
+        // Wait for the user to close the window or press a key, while
+        // showing the (X,Y) ground coordinates under the mouse cursor:
+        while (win->isOpen() && !win->keyHit())
+        {
+            updateMouseCoordinatesTextMessage(*win);
+            win->updateWindow();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
     }
     else
     {
@@ -156,6 +216,9 @@ void mpp::viz_nav_plan_animation(
         // time wrap:
         if (t > mrpt::Clock::toDouble(trajPath.rbegin()->first))
             stopWatch.Tic();  // reset to t=0
+
+        // Show the (X,Y) ground coordinates under the mouse cursor:
+        updateMouseCoordinatesTextMessage(*win);
 
         // refresh:
         win->updateWindow();
