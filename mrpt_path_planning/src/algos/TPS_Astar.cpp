@@ -206,6 +206,22 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     double tLastCallback = planInitTime;
 
+    // Analytic goal expansion (deferred, optimality-preserving): when a
+    // collision-free edge lands in the goal cell we remember it as a *candidate*
+    // solution instead of terminating immediately. Stopping on the first such
+    // edge is greedy and can produce grossly suboptimal paths: with an SE(2)
+    // goal, a node that arrived at the goal xy but a couple of yaw cells off can
+    // only re-enter the exact goal cell through a near-full-circle PTG arc (with
+    // a tight turning radius), so that first edge is a ~360 deg loop (see
+    // fig:cases in the paper). We instead keep the cheapest goal-landing
+    // candidate and only commit once its actual cost is provably (eps-)optimal,
+    // i.e. <= the minimum fScore still pending in the open set (committed at the
+    // top of the loop). This preserves the early-termination speed-up without
+    // accepting the loop, and is a no-op for R(2) point goals (verified
+    // identical on the 300-world BARN sweep).
+    Node*  bestGoalCandidate = nullptr;
+    cost_t bestGoalCandidateG = std::numeric_limits<cost_t>::max();
+
     // Defer building per-edge interpolated paths during the search: it is a
     // major cost (a std::map per edge) and is only needed for (a) cost
     // evaluators that score edges, (b) debug visualization, or (c) progress
@@ -231,6 +247,34 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         {
             openSet.erase(openSet.begin());
             continue;
+        }
+
+        // Deferred analytic expansion: if we hold a goal candidate whose actual
+        // cost is no worse than the best possible cost still in the open set
+        // (current.fScore is the minimum pending fScore), no remaining path can
+        // beat it, so commit to it now. See the note above.
+        if (params_.use_analytic_expansion && bestGoalCandidate != nullptr &&
+            bestGoalCandidateG <= current.fScore)
+        {
+            Node& gn = *bestGoalCandidate;
+            if (in.stateGoal.state.isPoint())
+            {
+                const auto& goalPt = in.stateGoal.state.point();
+                gn.state.pose.x    = goalPt.x;
+                gn.state.pose.y    = goalPt.y;
+            }
+            else { gn.state.pose = in.stateGoal.state.pose(); }
+            tree.node_state(*gn.id).pose = gn.state.pose;
+
+            nodeGoal                = &gn;
+            po.goalNodeId           = gn.id.value();
+            po.bestNodeId           = po.goalNodeId;
+            po.bestNodeIdCostToGoal = 0;
+
+            MRPT_LOG_DEBUG_STREAM(
+                "Analytic expansion: optimal goal candidate committed at "
+                << gn.state.asString());
+            break;
         }
 
         // current==goal?
@@ -299,11 +343,6 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         std::cout << " goal: " << nodeGridCoords(nodeGoal.state.pose).asString()
                   << "\n";
 #endif
-
-        // Analytic expansion / early termination: if one of the feasible edges
-        // is a collision-free connection that lands in the goal cell, accept it
-        // and stop, instead of continuing A* until the goal node is popped.
-        Node* analyticGoalNode = nullptr;
 
         for (const auto& edge : neighbors)
         {
@@ -453,40 +492,19 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             }
 
             // Analytic expansion: this accepted edge connects (collision-free)
-            // into the goal cell. Stop here and finish.
+            // into the goal cell. Remember it as a candidate solution (keeping
+            // the cheapest); we only commit to it once it is provably optimal,
+            // at the top of the while loop. See the note where bestGoalCandidate
+            // is declared.
             if (params_.use_analytic_expansion &&
-                edge.neighborNodeCoords.sameLocation(goalCellIndices))
+                edge.neighborNodeCoords.sameLocation(goalCellIndices) &&
+                neighborNode.gScore < bestGoalCandidateG)
             {
-                analyticGoalNode = &neighborNode;
-                break;
+                bestGoalCandidate  = &neighborNode;
+                bestGoalCandidateG = neighborNode.gScore;
             }
 
         }  // end for each edge to neighbor
-
-        // Early termination via analytic expansion (see above): splice the
-        // goal node exactly like the goal-cell pop below, and finish.
-        if (analyticGoalNode != nullptr)
-        {
-            Node& gn = *analyticGoalNode;
-            if (in.stateGoal.state.isPoint())
-            {
-                const auto& goalPt = in.stateGoal.state.point();
-                gn.state.pose.x    = goalPt.x;
-                gn.state.pose.y    = goalPt.y;
-            }
-            else { gn.state.pose = in.stateGoal.state.pose(); }
-            tree.node_state(*gn.id).pose = gn.state.pose;
-
-            nodeGoal                = &gn;
-            po.goalNodeId           = gn.id.value();
-            po.bestNodeId           = po.goalNodeId;
-            po.bestNodeIdCostToGoal = 0;
-
-            MRPT_LOG_DEBUG_STREAM(
-                "Analytic expansion: early termination, goal reached at "
-                << gn.state.asString());
-            break;  // out of the A* while loop
-        }
 
         MRPT_LOG_DEBUG_FMT(
             "iter: %4u %65s neighbors=%3u fS=%.02f gS=%.02f |openSet|=%u",
