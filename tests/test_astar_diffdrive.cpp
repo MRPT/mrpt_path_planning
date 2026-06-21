@@ -192,9 +192,129 @@ static std::vector<int> solutionPtgIndices(const mpp::PlannerOutput& out)
     return indices;
 }
 
+// Geometric quality of a solution path, accumulated over the interpolated
+// poses of all solution edges (poses are relative to each edge's stateFrom).
+struct PathQuality
+{
+    double length      = 0;  //!< total travelled XY arc length [m]
+    double totalTurn   = 0;  //!< sum of |heading increments| [rad]
+    size_t numSamples  = 0;
+};
+
+static PathQuality measurePath(const mpp::PlannerOutput& out)
+{
+    PathQuality q;
+    if (!out.success || !out.goalNodeId.has_value()) { return q; }
+
+    const auto [nodes, edges] =
+        out.motionTree.backtrack_path(out.goalNodeId.value());
+
+    mrpt::math::TPose2D prev;
+    bool                first = true;
+    for (const auto* e : edges)
+    {
+        if (e == nullptr) { continue; }
+        for (const auto& [t, rel] : e->interpolatedPath)
+        {
+            const auto abs = e->stateFrom.pose + rel;
+            if (!first)
+            {
+                q.length += std::hypot(abs.x - prev.x, abs.y - prev.y);
+                q.totalTurn +=
+                    std::abs(mrpt::math::wrapToPi(abs.phi - prev.phi));
+            }
+            prev = abs;
+            first = false;
+            q.numSamples++;
+        }
+    }
+    return q;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+// Regression test for the suboptimal "loop near the goal" artifact visible in
+// the paper's fig:cases (left panel): a robot crossing a doorway arrived at the
+// goal position with its heading ~12 deg off and then performed a full ~360 deg
+// in-place loop to re-enter the exact goal SE(2) lattice cell, instead of a
+// gentle approach. Root cause: the analytic goal expansion used to terminate on
+// the *first* collision-free edge landing in the goal cell. With a tight turning
+// radius, a node already at the goal xy but a couple of yaw cells off can only
+// reach the exact goal cell through a near-full-circle PTG arc, so that greedy
+// first edge was a loop. The fix records the goal-landing edge as a candidate
+// and commits only when it is provably (eps-)optimal.
+//
+// This reproduces the geometry in open space (no obstacles) with the same
+// PTG/turning-radius regime, and asserts the easy path is NOT over-complicated.
+TEST(AstarDiffDrive, EasyGoalHasNoExcessiveLoop)
+{
+    // Forward+reverse C-PTG, v_max=0.4 m/s, w_max=90 deg/s -> min turning
+    // radius ~0.25 m, the tight-radius regime that made the loop possible.
+    static const char* kTightTurn = R"cfg(
+[SelfDriving]
+min_obstacles_height = 0.0
+max_obstacles_height = 2.0
+PTG_COUNT = 2
+PTG0_Type        = mpp::ptg::DiffDrive_C
+PTG0_resolution  = 0.05
+PTG0_refDistance = 3.0
+PTG0_num_paths   = 121
+PTG0_v_max_mps   = 0.4
+PTG0_w_max_dps   = 90.0
+PTG0_K           = +1.0
+PTG1_Type        = mpp::ptg::DiffDrive_C
+PTG1_resolution  = 0.05
+PTG1_refDistance = 3.0
+PTG1_num_paths   = 121
+PTG1_v_max_mps   = 0.4
+PTG1_w_max_dps   = 90.0
+PTG1_K           = -1.0
+RobotModel_shape2D_xs = -0.30 0.50 0.65 0.65 0.50 -0.30
+RobotModel_shape2D_ys = 0.275 0.275 0.20 -0.20 -0.275 -0.275
+)cfg";
+
+    mrpt::config::CConfigFileMemory cfg(kTightTurn);
+    mpp::PlannerInput               in;
+    in.ptgs.initFromConfigFile(cfg, "SelfDriving");
+
+    // Mirrors fig:cases left panel: start at 45 deg, SE(2) goal ~3.4 m away at
+    // 90 deg. A gentle curve aligns naturally; no loop is needed.
+    in.stateStart.pose = {0, 0, 45.0 * M_PI / 180.0};
+    in.stateGoal.state = mrpt::math::TPose2D{0.6, 3.35, 90.0 * M_PI / 180.0};
+    in.worldBboxMin    = {-3, -1, -M_PI};
+    in.worldBboxMax    = {3, 5, M_PI};
+
+    mpp::TPS_Astar planner;
+    planner.setMinLoggingLevel(mrpt::system::LVL_ERROR);
+    planner.params_.grid_resolution_xy              = 0.10;
+    planner.params_.grid_resolution_yaw             = 7.5 * M_PI / 180.0;
+    planner.params_.max_ptg_trajectories_to_explore = 30;
+    planner.params_.ptg_sample_timestamps           = {1.0, 3.0, 5.0};
+    planner.params_.max_ptg_speeds_to_explore       = 1;
+    planner.params_.maximumComputationTime          = 30.0;
+    planner.params_.SE2_metricAngleWeight           = 1.0;
+    planner.params_.heuristic_heading_weight        = 0.1;
+
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success) << "Easy open-space SE(2) goal must be solvable";
+
+    const auto q        = measurePath(out);
+    const double straight = std::hypot(0.6, 3.35);
+
+    // The net required heading change is only 45 deg. Anything close to a full
+    // revolution (the old artifact accumulated ~406 deg) is a spurious loop.
+    EXPECT_LT(q.totalTurn, M_PI)
+        << "Path winds " << q.totalTurn * 180.0 / M_PI
+        << " deg (>180): a spurious near-full-circle loop near the goal";
+
+    // An easy gentle curve should be only marginally longer than the straight
+    // line. The looping solution was ~1.6x; a clean approach is ~1.0-1.1x.
+    EXPECT_LT(q.length, 1.3 * straight)
+        << "Path length " << q.length << " m is >1.3x the straight-line "
+        << straight << " m: over-complicated solution";
+}
 
 TEST(AstarDiffDrive, ForwardReachesGoalAhead)
 {
