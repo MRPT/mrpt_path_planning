@@ -33,6 +33,12 @@ selfdriving_add_test(
 )
 
 selfdriving_add_test(
+    TARGET  test_astar_diffdrive_bidir
+    SOURCES test_astar_diffdrive_bidir.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
+
+selfdriving_add_test(
     TARGET  test_viz_svg
     SOURCES test_viz_svg.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
