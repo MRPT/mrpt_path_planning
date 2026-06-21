@@ -142,7 +142,11 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         [this](const SE2_KinState& from, const SE2orR2_KinState& goal)
         { return this->default_heuristic(from, goal); });
 
-   private:
+    // NOTE: members below are `protected` (not `private`) so that the
+    // bidirectional variant `TPS_Astar_Bidir` can reuse the lattice/binning,
+    // the neighbor generation, the collision machinery (cached_local_obstacles)
+    // and the heuristics without forking any of the collision/PTG code.
+   protected:
     struct NodeCoords
     {
         NodeCoords() = default;
