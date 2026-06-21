@@ -35,6 +35,11 @@ struct SvgExportOptions
     /** Plot one obstacle point out of every N (1 = all). */
     size_t obstacle_decimation = 1;
 
+    /** Draw one motion-tree edge out of every N (1 = all). Use a larger value
+     *  to thin out a very dense exhaustive-search tree (e.g. failed queries)
+     *  into a visually usable figure instead of tens of thousands of edges. */
+    size_t tree_decimation = 1;
+
     std::string color_background = "#ffffff";
     std::string color_obstacles  = "#2255cc";
     std::string color_tree       = "#bdbdbd";
