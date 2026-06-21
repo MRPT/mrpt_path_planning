@@ -581,8 +581,17 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
 
     if (chainEdges.empty())
     {
-        // Degenerate: start cell == goal cell already. Emit trivial success.
-        po.success = false;
+        // Degenerate: the two frontiers met at the root, i.e. the start cell is
+        // already the goal cell. Emit a trivial single-node success (zero-cost,
+        // empty path), consistent with how the forward planner terminates when
+        // the start already satisfies the goal.
+        tree.root = 0;
+        tree.insert_root_node(tree.root, chainNodes.front());
+        po.goalNodeId           = tree.root;
+        po.bestNodeId           = tree.root;
+        po.bestNodeIdCostToGoal = 0;
+        po.pathCost             = 0;
+        po.success              = true;
         return po;
     }
 
