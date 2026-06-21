@@ -218,10 +218,13 @@ std::string mpp::plan_to_svg(
     if (o.draw_tree)
     {
         os << "<g>\n";
+        const size_t treeDec = o.tree_decimation > 0 ? o.tree_decimation : 1;
+        size_t       edgeIdx = 0;
         for (const auto& kv : plan.motionTree.edges_to_children)
         {
             for (const auto& entry : kv.second)
             {
+                if ((edgeIdx++ % treeDec) != 0) continue;
                 polyline(
                     os, edgePoses(entry.data), fr, o.color_tree,
                     o.stroke_tree_px);
