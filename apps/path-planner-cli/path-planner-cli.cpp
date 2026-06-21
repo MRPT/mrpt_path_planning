@@ -154,6 +154,22 @@ TCLAP::SwitchArg arg_playAnimation(
     "Shows the GUI with an animation of the vehicle moving along the path",
     cmd);
 
+TCLAP::SwitchArg arg_noGui(
+    "", "no-gui",
+    "Do not open any GUI window (for headless/batch use, e.g. mass figure "
+    "export). The process exits without waiting for a window to be closed.",
+    cmd);
+
+TCLAP::ValueArg<size_t> arg_svg_tree_decimation(
+    "", "svg-tree-decimation",
+    "When exporting SVG, draw only one motion-tree edge out of every N. Use a "
+    "larger value to thin out very dense (e.g. failed-query) trees.",
+    false, 1, "1", cmd);
+
+TCLAP::SwitchArg arg_svg_no_tree(
+    "", "svg-no-tree", "When exporting SVG, omit the motion tree entirely.",
+    cmd);
+
 static mrpt::maps::CPointsMap::Ptr load_obstacles()
 {
     auto obsPts = mrpt::maps::CSimplePointsMap::Create();
@@ -355,7 +371,10 @@ static void do_plan_path()
 
     if (arg_save_svg.isSet())
     {
-        if (mpp::save_plan_to_svg(plan, arg_save_svg.getValue()))
+        mpp::SvgExportOptions svgOpts;
+        svgOpts.draw_tree      = !arg_svg_no_tree.isSet();
+        svgOpts.tree_decimation = arg_svg_tree_decimation.getValue();
+        if (mpp::save_plan_to_svg(plan, arg_save_svg.getValue(), svgOpts))
             std::cout << "Saved SVG plot: " << arg_save_svg.getValue() << "\n";
         else
             std::cerr << "Could not write SVG: " << arg_save_svg.getValue()
@@ -431,7 +450,8 @@ static void do_plan_path()
         }
     }
 
-    // GUI:
+    // GUI (skipped entirely in headless/batch mode):
+    if (arg_noGui.isSet()) return;
     if (!arg_playAnimation.isSet() || !traj.has_value())
     {
         // regular UI:
