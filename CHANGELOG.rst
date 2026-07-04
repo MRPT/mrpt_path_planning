@@ -2,6 +2,13 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* feat: bidirectional TP-Space A* solver (TPS_Astar_Bidir) (`#32 <https://github.com/MRPT/mrpt_path_planning/issues/32>`_)
+* feat(cli): add --no-gui and SVG motion-tree decimation (`#31 <https://github.com/MRPT/mrpt_path_planning/issues/31>`_)
+* fix(TPS_Astar): defer analytic goal expansion to avoid suboptimal goal loops (`#30 <https://github.com/MRPT/mrpt_path_planning/issues/30>`_)
+* Contributors: Jose Luis Blanco-Claraco
+
 1.0.0 (2026-06-16)
 ------------------
 * feat(TPS_Astar): weighted A* via ``heuristic_epsilon`` param (default 1.0 = exact A*); eps in [1.5, 2] cuts median plan time ~4-5x at ~3-8% longer paths
