@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+1.0.1 (2026-07-04)
+------------------
 * feat: bidirectional TP-Space A* solver (TPS_Astar_Bidir) (`#32 <https://github.com/MRPT/mrpt_path_planning/issues/32>`_)
 * feat(cli): add --no-gui and SVG motion-tree decimation (`#31 <https://github.com/MRPT/mrpt_path_planning/issues/31>`_)
 * fix(TPS_Astar): defer analytic goal expansion to avoid suboptimal goal loops (`#30 <https://github.com/MRPT/mrpt_path_planning/issues/30>`_)
