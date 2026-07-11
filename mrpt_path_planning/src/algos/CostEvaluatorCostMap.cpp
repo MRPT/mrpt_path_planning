@@ -9,6 +9,9 @@
 #include <mrpt/maps/COccupancyGridMap2D.h>
 #include <mrpt/opengl/CTexturedPlane.h>
 
+#include <algorithm>
+#include <cmath>
+
 using namespace mpp;
 
 IMPLEMENTS_MRPT_OBJECT(CostEvaluatorCostMap, CostEvaluator, mpp)
@@ -51,13 +54,68 @@ void CostEvaluatorCostMap::Parameters::load_from_yaml(
 
 CostEvaluatorCostMap::~CostEvaluatorCostMap() = default;
 
+namespace
+{
+// Builds the set of robot-frame points at which the footprint cost is sampled.
+// For a polygon: its vertices plus points subdividing each edge finer than the
+// costmap resolution, so the max cost picks up the footprint side/corner
+// closest to an obstacle. For a radius: a ring of points at that radius. The
+// maximum costmap value over these points (transformed to a path pose) then
+// reflects the true footprint clearance, not just the reference-point
+// clearance.
+std::vector<mrpt::math::TPoint2D> buildShapeSamples(
+    const mpp::RobotShape& shape, double resolution)
+{
+    std::vector<mrpt::math::TPoint2D> pts;
+    const double                      step = std::max(0.01, resolution);
+
+    if (const auto* poly = std::get_if<mrpt::math::TPolygon2D>(&shape))
+    {
+        const auto&  v = *poly;
+        const size_t n = v.size();
+        if (n < 2) return pts;
+        for (size_t i = 0; i < n; i++)
+        {
+            const auto&  a   = v[i];
+            const auto&  b   = v[(i + 1) % n];
+            const double len = std::hypot(b.x - a.x, b.y - a.y);
+            const int    nSeg =
+                std::max(1, static_cast<int>(std::ceil(len / step)));
+            for (int k = 0; k < nSeg;
+                 k++)  // include a, exclude b (next edge's a)
+            {
+                const double t = static_cast<double>(k) / nSeg;
+                pts.emplace_back(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y));
+            }
+        }
+    }
+    else if (const auto* radius = std::get_if<mpp::robot_radius_t>(&shape))
+    {
+        const double r = *radius;
+        if (r <= 0) return pts;
+        const int nSeg =
+            std::max(8, static_cast<int>(std::ceil(2 * M_PI * r / step)));
+        for (int k = 0; k < nSeg; k++)
+        {
+            const double a = 2 * M_PI * k / nSeg;
+            pts.emplace_back(r * std::cos(a), r * std::sin(a));
+        }
+    }
+    // std::monostate -> empty (legacy origin-only sampling)
+    return pts;
+}
+}  // namespace
+
 CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
     const mrpt::maps::CPointsMap&             obsPts,
     const CostEvaluatorCostMap::Parameters&   p,
-    const std::optional<mrpt::math::TPose2D>& curRobotPose)
+    const std::optional<mrpt::math::TPose2D>& curRobotPose,
+    const RobotShape&                         robotShape)
 {
     auto cm     = CostEvaluatorCostMap::Create();
     cm->params_ = p;
+
+    cm->shapeSamples_ = buildShapeSamples(robotShape, p.resolution);
 
     ASSERT_(!obsPts.empty());
 
@@ -173,8 +231,28 @@ double CostEvaluatorCostMap::operator()(const MoveEdgeSE2_TPS& edge) const
 double CostEvaluatorCostMap::eval_single_pose(
     const mrpt::math::TPose2D& p) const
 {
-    const double* cell = costmap_.cellByPos(p.x, p.y);
-    return cell ? *cell : .0;
+    // Legacy behavior: sample only the trajectory reference point.
+    if (shapeSamples_.empty())
+    {
+        const double* cell = costmap_.cellByPos(p.x, p.y);
+        return cell ? *cell : .0;
+    }
+
+    // Footprint-aware: max cost over the robot shape at this pose. The costmap
+    // cost decreases with distance to the nearest obstacle, so the maximum over
+    // the footprint boundary is the cost at the footprint point closest to an
+    // obstacle, i.e. the true clearance cost.
+    const double c       = std::cos(p.phi);
+    const double s       = std::sin(p.phi);
+    double       maxCost = .0;
+    for (const auto& v : shapeSamples_)
+    {
+        const double  wx   = p.x + v.x * c - v.y * s;
+        const double  wy   = p.y + v.x * s + v.y * c;
+        const double* cell = costmap_.cellByPos(wx, wy);
+        if (cell && *cell > maxCost) maxCost = *cell;
+    }
+    return maxCost;
 }
 
 mrpt::opengl::CSetOfObjects::Ptr CostEvaluatorCostMap::get_visualization() const
