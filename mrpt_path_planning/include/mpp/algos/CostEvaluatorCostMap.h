@@ -14,6 +14,12 @@
 
 #include <vector>
 
+/** Feature-test macro: defined (=1) since `FromStaticPointObstacles()` gained
+ * the optional `RobotShape` argument (footprint-aware costmap). Downstream code
+ * can `#if defined(MPP_COSTEVALUATORCOSTMAP_HAS_ROBOT_SHAPE)` to stay
+ * source-compatible with older mpp releases that lack that overload. */
+#define MPP_COSTEVALUATORCOSTMAP_HAS_ROBOT_SHAPE 1
+
 namespace mpp
 {
 /** Defines higher costs to paths that pass closer to obstacles.
