@@ -15,6 +15,12 @@ selfdriving_add_test(
 )
 
 selfdriving_add_test(
+    TARGET  test_trajectory_follower
+    SOURCES test_trajectory_follower.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
+
+selfdriving_add_test(
     TARGET  test_heuristic
     SOURCES test_heuristic.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
