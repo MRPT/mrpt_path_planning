@@ -6,12 +6,14 @@
 
 #pragma once
 
+#include <mpp/data/TrajectoriesAndRobotShape.h>  // RobotShape
 #include <mpp/data/VehicleLocalizationState.h>
 #include <mpp/data/VehicleOdometryState.h>
 #include <mpp/follow/data/SampledTrajectory.h>
 #include <mpp/follow/data/Trajectory.h>
 #include <mrpt/containers/yaml.h>
 #include <mrpt/core/bits_math.h>
+#include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/math/TPoint2D.h>
 #include <mrpt/system/COutputLogger.h>
 
@@ -35,7 +37,7 @@ enum class FollowerStatus : uint8_t
     OffPathExceeded
 };
 
-/** Pure-pursuit trajectory follower core (ROS-free, no safety yet).
+/** Pure-pursuit trajectory follower core with predictive safety (ROS-free).
  *
  * Consumes a planner-agnostic pose+speed polyline (\ref Trajectory) and, each
  * control cycle, emits a short rolling \ref SampledTrajectory (the motion it
@@ -47,8 +49,12 @@ enum class FollowerStatus : uint8_t
  * emitted chunk is expressed in the odom frame (via the current map->odom
  * correction) so relocalization jumps do not lurch the wheels.
  *
- * This is the pursuit + speed-profile + events core. The predictive safety
- * layer (speed-scale/stop/resume) and the mvsim benchmark are added on top.
+ * Predictive safety: if a robot footprint and live obstacle points are set
+ * (\ref setRobotShape / \ref setObstacles), each cycle the follower sweeps the
+ * footprint over both its own forecast rollout and the upcoming reference
+ * segment, and scales the commanded speed down (to a full stop before contact),
+ * resuming automatically when the way clears. With no footprint or no obstacles
+ * this layer is inert and the follower behaves as a plain pursuit core.
  */
 class TrajectoryFollower : public mrpt::system::COutputLogger
 {
@@ -78,6 +84,42 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
 
         std::string emit_frame = "odom";  //!< frame of the emitted chunk
 
+        // --- Predictive safety (inert unless a footprint + obstacles are set)
+        // ---
+
+        /** [m] Footprint clearance at or below which a swept pose counts as a
+         * predicted contact (a small inflation of the footprint). */
+        double safety_margin = 0.05;
+
+        /** [m] If the nearest predicted contact is within this travel distance,
+         * command a full stop (speed scale 0). */
+        double stop_distance = 0.3;
+
+        /** [m] If the nearest predicted contact is beyond this travel distance,
+         * do not slow down at all (speed scale 1). Linear scaling in between.
+         */
+        double slow_distance = 1.5;
+
+        /** [s] How far ahead to roll out the command forecast for the safety
+         * sweep. */
+        double safety_horizon = 3.0;
+
+        /** [m] How far ahead along the reference path to sweep the footprint.
+         */
+        double reference_lookahead_dist = 2.5;
+
+        /** [m] Step used to sample the footprint boundary and to march the
+         * reference sweep. */
+        double footprint_sample_resolution = 0.1;
+
+        /** Speed scale that must be recovered before resuming after a safety
+         * stop (hysteresis to avoid chattering). */
+        double resume_scale = 0.2;
+
+        /** [s] If held stopped by the safety layer longer than this, report
+         * `Blocked`. */
+        double block_timeout = 5.0;
+
         static Parameters      FromYAML(const mrpt::containers::yaml& c);
         mrpt::containers::yaml as_yaml() const;
         void                   load_from_yaml(const mrpt::containers::yaml& c);
@@ -91,6 +133,17 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
 
     /** Clears the trajectory and progress. */
     void reset();
+
+    /** Sets the robot footprint used by the predictive safety sweeps (polygon,
+     * radius, or `std::monostate` to sample only the reference point). */
+    void setRobotShape(const RobotShape& shape);
+
+    /** Sets/replaces the live obstacle points (map frame) used by the
+     * predictive safety sweeps. An empty cloud disables safety scaling. */
+    void setObstacles(const mrpt::maps::CPointsMap& obstacles);
+
+    /** Convenience overload: obstacle points as (x,y) in the map frame. */
+    void setObstacles(const std::vector<mrpt::math::TPoint2D>& obstacles);
 
     bool   hasTrajectory() const { return traj_.size() >= 2; }
     double totalLength() const { return cumS_.empty() ? 0.0 : cumS_.back(); }
@@ -107,6 +160,10 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         double               heading_err     = 0;  //!< [rad]
         double               target_speed    = 0;  //!< [m/s] immediate command
         mrpt::math::TPoint2D lookahead_point{0, 0};
+
+        /** Safety speed scale applied this cycle (1 = unrestricted, 0 = stopped
+         * by the predictive safety layer). */
+        double safety_scale = 1.0;
     };
 
     /** One control cycle: given the latest localization (map) and odometry
@@ -120,6 +177,13 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     Trajectory          traj_;
     std::vector<double> cumS_;  //!< cumulative arc-length per point
     double              lastS_ = 0;  //!< monotonic progress (map projection)
+
+    // Predictive safety state:
+    std::vector<mrpt::math::TPoint2D>
+                                 shapeSamples_;  //!< footprint, robot frame
+    mrpt::maps::CSimplePointsMap obstacles_;  //!< map frame (kd-tree)
+    bool stopped_ = false;  //!< safety-stop hysteresis latch
+    mrpt::system::TTimeStamp stoppedSince_ = INVALID_TIMESTAMP;
 
     struct Projection
     {
@@ -149,10 +213,34 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
 
     /** Pure-pursuit command at `fromPose` given `currentV`, advancing the
      * lookahead from projection near `sHint`. `dt` bounds the accel/decel step.
+     * `speedScale` (0..1) caps the target speed before rate-limiting (safety).
      */
     Command pursuit(
         const mrpt::math::TPose2D& fromPose, double currentV, double sHint,
-        double dt) const;
+        double dt, double speedScale = 1.0) const;
+
+    /** Pose (x,y + tangent heading) on the reference polyline at arc-length
+     * `s`. */
+    mrpt::math::TPose2D poseAtArc(double s) const;
+
+    /** Min distance from the footprint (at map-frame pose `p`) to the nearest
+     * obstacle point; +inf if no obstacles are set. */
+    double footprintClearance(const mrpt::math::TPose2D& p) const;
+
+    /** Rolls the command forecast forward from `startPose` (map frame) and
+     * returns the travel distance to the first predicted footprint contact;
+     * +inf if none within `safety_horizon`. */
+    double forecastContactDistance(
+        const mrpt::math::TPose2D& startPose, double startV,
+        double startS) const;
+
+    /** Sweeps the footprint along the reference path ahead of `startS` and
+     * returns the travel distance to the first predicted contact; +inf if none
+     * within `reference_lookahead_dist`. */
+    double referenceContactDistance(double startS) const;
+
+    /** Maps a nearest-contact travel distance to a [0,1] speed scale. */
+    double contactDistanceToScale(double d) const;
 };
 
 }  // namespace mpp

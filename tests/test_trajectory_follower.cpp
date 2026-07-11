@@ -13,8 +13,10 @@
 
 #include <gtest/gtest.h>
 #include <mpp/follow/algos/TrajectoryFollower.h>
+#include <mrpt/core/Clock.h>
 #include <mrpt/math/wrap2pi.h>
 
+#include <chrono>
 #include <cmath>
 
 namespace
@@ -229,15 +231,127 @@ TEST(TrajectoryFollower, EmitsHorizonChunk)
         EXPECT_GT(out.command.points[i].t, out.command.points[i - 1].t);
 }
 
+// --------------------------- predictive safety ----------------------------
+
+TEST(TrajectoryFollower, SafetyInertWithoutObstacles)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {5, 0}};
+    mpp::TrajectoryFollower     f;
+    f.setRobotShape(mpp::robot_radius_t{0.3});  // shape but no obstacles
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    const auto r = simulate(f, {0, 0, 0}, pts);
+    EXPECT_TRUE(r.reached);  // safety layer does nothing without obstacles
+}
+
+TEST(TrajectoryFollower, StopsBeforeObstacle)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};
+    mpp::TrajectoryFollower     f;
+    f.setRobotShape(mpp::robot_radius_t{0.3});
+    f.setObstacles(std::vector<TPoint2D>{{3.0, 0.0}});  // right on the path
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    const auto r = simulate(f, {0, 0, 0}, pts);
+    EXPECT_FALSE(r.reached);  // must not drive through the obstacle
+    // Stops short of the obstacle (center + radius margin), but did advance.
+    EXPECT_GT(r.finalPose.x, 1.5);
+    EXPECT_LT(r.finalPose.x, 2.9);
+}
+
+TEST(TrajectoryFollower, ResumesAfterObstacleCleared)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};
+    mpp::TrajectoryFollower     f;
+    f.setRobotShape(mpp::robot_radius_t{0.3});
+    f.setObstacles(std::vector<TPoint2D>{{3.0, 0.0}});
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    // Phase 1: drive into the obstacle field until it stops.
+    TPose2D      robot = {0, 0, 0};
+    double       v     = 0;
+    const double dt    = f.params.control_period;
+    for (int k = 0; k < 2000; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        const auto tw  = out.command.points.front().twist;
+        robot          = integrate(robot, tw.vx, tw.omega, dt);
+        v              = tw.vx;
+        if (v < 1e-3 && robot.x > 1.0) break;  // stopped in front of obstacle
+    }
+    ASSERT_LT(v, 1e-2);
+    ASSERT_LT(robot.x, 2.9);
+
+    // Phase 2: obstacle removed -> must resume and reach the goal.
+    f.setObstacles(std::vector<TPoint2D>{});
+    bool reached = false;
+    for (int k = 0; k < 2000; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal)
+        {
+            reached = true;
+            break;
+        }
+        const auto tw = out.command.points.front().twist;
+        robot         = integrate(robot, tw.vx, tw.omega, dt);
+        v             = tw.vx;
+    }
+    EXPECT_TRUE(reached);
+    EXPECT_NEAR(robot.x, 6.0, 0.2);
+}
+
+TEST(TrajectoryFollower, BlockedAfterTimeout)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};
+    mpp::TrajectoryFollower     f;
+    f.params.block_timeout = 5.0;
+    f.setRobotShape(mpp::robot_radius_t{0.3});
+    f.setObstacles(std::vector<TPoint2D>{{3.0, 0.0}});
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    const auto t0 = mrpt::Clock::now();
+
+    // Start already stopped in front of the obstacle.
+    auto loc      = mkLoc({2.6, 0, 0});
+    loc.timestamp = t0;
+    auto out      = f.step(loc, mkOdo({2.6, 0, 0}, 0));
+    EXPECT_EQ(out.safety_scale, 0.0);
+    EXPECT_NE(out.status, mpp::FollowerStatus::Blocked);  // just started
+
+    // Same obstacle, timestamp advanced past the block timeout.
+    loc.timestamp = t0 + std::chrono::milliseconds(6000);
+    out           = f.step(loc, mkOdo({2.6, 0, 0}, 0));
+    EXPECT_EQ(out.status, mpp::FollowerStatus::Blocked);
+}
+
+TEST(TrajectoryFollower, IgnoresObstacleOffPath)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};
+    mpp::TrajectoryFollower     f;
+    f.setRobotShape(mpp::robot_radius_t{0.3});
+    // Obstacle well clear of the swept footprint corridor.
+    f.setObstacles(std::vector<TPoint2D>{{3.0, 2.0}});
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    const auto r = simulate(f, {0, 0, 0}, pts);
+    EXPECT_TRUE(r.reached);
+    EXPECT_NEAR(r.finalPose.x, 6.0, 0.2);
+}
+
 TEST(TrajectoryFollower, ParamsYamlRoundTrip)
 {
     mpp::TrajectoryFollower::Parameters p;
     p.max_speed     = 0.33;
     p.lookahead_max = 2.0;
     p.horizon       = 2.5;
+    p.stop_distance = 0.42;
+    p.slow_distance = 1.75;
     const auto y    = p.as_yaml();
     const auto p2   = mpp::TrajectoryFollower::Parameters::FromYAML(y);
     EXPECT_NEAR(p2.max_speed, 0.33, 1e-9);
     EXPECT_NEAR(p2.lookahead_max, 2.0, 1e-9);
     EXPECT_NEAR(p2.horizon, 2.5, 1e-9);
+    EXPECT_NEAR(p2.stop_distance, 0.42, 1e-9);
+    EXPECT_NEAR(p2.slow_distance, 1.75, 1e-9);
 }

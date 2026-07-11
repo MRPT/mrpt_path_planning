@@ -4,9 +4,13 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
+#include <mpp/data/robot_shape_sampling.h>
 #include <mpp/follow/algos/TrajectoryFollower.h>
+#include <mrpt/core/Clock.h>
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/poses/CPose2D.h>
+#include <mrpt/poses/CPose3D.h>
+#include <mrpt/system/datetime.h>
 
 #include <algorithm>
 #include <cmath>
@@ -61,6 +65,14 @@ void TrajectoryFollower::Parameters::load_from_yaml(
     MCP_LOAD_OPT(c, horizon);
     MCP_LOAD_OPT(c, sample_period);
     MCP_LOAD_OPT(c, emit_frame);
+    MCP_LOAD_OPT(c, safety_margin);
+    MCP_LOAD_OPT(c, stop_distance);
+    MCP_LOAD_OPT(c, slow_distance);
+    MCP_LOAD_OPT(c, safety_horizon);
+    MCP_LOAD_OPT(c, reference_lookahead_dist);
+    MCP_LOAD_OPT(c, footprint_sample_resolution);
+    MCP_LOAD_OPT(c, resume_scale);
+    MCP_LOAD_OPT(c, block_timeout);
 }
 
 mrpt::containers::yaml TrajectoryFollower::Parameters::as_yaml() const
@@ -80,6 +92,14 @@ mrpt::containers::yaml TrajectoryFollower::Parameters::as_yaml() const
     MCP_SAVE(c, horizon);
     MCP_SAVE(c, sample_period);
     MCP_SAVE(c, emit_frame);
+    MCP_SAVE(c, safety_margin);
+    MCP_SAVE(c, stop_distance);
+    MCP_SAVE(c, slow_distance);
+    MCP_SAVE(c, safety_horizon);
+    MCP_SAVE(c, reference_lookahead_dist);
+    MCP_SAVE(c, footprint_sample_resolution);
+    MCP_SAVE(c, resume_scale);
+    MCP_SAVE(c, block_timeout);
     return c;
 }
 
@@ -102,14 +122,37 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
         const auto& b = traj_[i].pose;
         cumS_[i]      = cumS_[i - 1] + std::hypot(b.x - a.x, b.y - a.y);
     }
-    lastS_ = 0;
+    lastS_        = 0;
+    stopped_      = false;
+    stoppedSince_ = INVALID_TIMESTAMP;
 }
 
 void TrajectoryFollower::reset()
 {
     traj_.clear();
     cumS_.clear();
-    lastS_ = 0;
+    lastS_        = 0;
+    stopped_      = false;
+    stoppedSince_ = INVALID_TIMESTAMP;
+}
+
+void TrajectoryFollower::setRobotShape(const RobotShape& shape)
+{
+    shapeSamples_ =
+        footprintSamplePoints(shape, params.footprint_sample_resolution);
+}
+
+void TrajectoryFollower::setObstacles(const mrpt::maps::CPointsMap& obstacles)
+{
+    obstacles_.clear();
+    obstacles_.insertAnotherMap(&obstacles, mrpt::poses::CPose3D::Identity());
+}
+
+void TrajectoryFollower::setObstacles(
+    const std::vector<mrpt::math::TPoint2D>& obstacles)
+{
+    obstacles_.clear();
+    for (const auto& p : obstacles) obstacles_.insertPoint(p.x, p.y);
 }
 
 // ------------------------------------------------------------------ geometry
@@ -174,6 +217,20 @@ mrpt::math::TPoint2D TrajectoryFollower::pointAtArc(double s) const
     return {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)};
 }
 
+mrpt::math::TPose2D TrajectoryFollower::poseAtArc(double s) const
+{
+    if (traj_.empty()) return {0, 0, 0};
+    s             = std::clamp(s, 0.0, totalLength());
+    std::size_t i = 0;
+    while (i + 2 < traj_.size() && cumS_[i + 1] < s) i++;
+    const auto&  a       = traj_[i].pose;
+    const auto&  b       = traj_[i + 1].pose;
+    const double segLen  = cumS_[i + 1] - cumS_[i];
+    const double t       = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
+    const double heading = std::atan2(b.y - a.y, b.x - a.x);
+    return {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), heading};
+}
+
 double TrajectoryFollower::speedCapAt(double s) const
 {
     if (traj_.empty()) return params.max_speed;
@@ -192,7 +249,7 @@ double TrajectoryFollower::speedCapAt(double s) const
 // ------------------------------------------------------------------- pursuit
 TrajectoryFollower::Command TrajectoryFollower::pursuit(
     const mrpt::math::TPose2D& fromPose, double currentV, double sHint,
-    double dt) const
+    double dt, double speedScale) const
 {
     Command          out;
     const Projection proj = projectToPath({fromPose.x, fromPose.y}, sHint);
@@ -221,6 +278,10 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
             std::min(cap, std::sqrt(params.max_lateral_accel / std::abs(curv)));
     cap = std::min(cap, std::sqrt(2.0 * params.max_decel * remaining));
 
+    // Predictive-safety speed scale (caps the target before rate-limiting so
+    // decel stays bounded by max_decel).
+    cap *= std::clamp(speedScale, 0.0, 1.0);
+
     // Rate-limit the speed toward the cap.
     double v = std::clamp(
         cap, currentV - params.max_decel * dt,
@@ -230,6 +291,82 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     out.v     = v;
     out.omega = v * curv;
     return out;
+}
+
+// -------------------------------------------------------------------- safety
+double TrajectoryFollower::footprintClearance(
+    const mrpt::math::TPose2D& p) const
+{
+    if (obstacles_.empty()) return std::numeric_limits<double>::infinity();
+
+    const double c = std::cos(p.phi);
+    const double s = std::sin(p.phi);
+
+    // With no footprint set, fall back to the reference point only.
+    auto clearanceAt = [&](double lx, double ly) -> double
+    {
+        const double wx = p.x + lx * c - ly * s;
+        const double wy = p.y + lx * s + ly * c;
+        return std::sqrt(static_cast<double>(
+            obstacles_.kdTreeClosestPoint2DsqrError(wx, wy)));
+    };
+
+    if (shapeSamples_.empty()) return clearanceAt(0.0, 0.0);
+
+    double best = std::numeric_limits<double>::infinity();
+    for (const auto& v : shapeSamples_)
+        best = std::min(best, clearanceAt(v.x, v.y));
+    return best;
+}
+
+double TrajectoryFollower::forecastContactDistance(
+    const mrpt::math::TPose2D& startPose, double startV, double startS) const
+{
+    double              L = 0;
+    mrpt::math::TPose2D p = startPose;
+    double              v = std::max(0.0, startV);
+    double              s = startS;
+
+    const int nSteps = std::max(
+        1, static_cast<int>(
+               std::ceil(params.safety_horizon / params.sample_period)));
+
+    for (int k = 0; k <= nSteps; k++)
+    {
+        if (footprintClearance(p) <= params.safety_margin) return L;
+
+        const Command cmd = pursuit(p, v, s, params.sample_period, 1.0);
+        const mrpt::math::TPose2D pNext =
+            integrateUnicycle(p, cmd.v, cmd.omega, params.sample_period);
+
+        L += std::hypot(pNext.x - p.x, pNext.y - p.y);
+        p = pNext;
+        v = cmd.v;
+        s = projectToPath({p.x, p.y}, s).s;
+
+        if (totalLength() - s <= params.goal_dist_tol) break;
+    }
+    return std::numeric_limits<double>::infinity();
+}
+
+double TrajectoryFollower::referenceContactDistance(double startS) const
+{
+    const double step = std::max(0.02, params.footprint_sample_resolution);
+    for (double ds = 0; ds <= params.reference_lookahead_dist; ds += step)
+    {
+        const double s = startS + ds;
+        if (s > totalLength()) break;
+        if (footprintClearance(poseAtArc(s)) <= params.safety_margin) return ds;
+    }
+    return std::numeric_limits<double>::infinity();
+}
+
+double TrajectoryFollower::contactDistanceToScale(double d) const
+{
+    if (!std::isfinite(d)) return 1.0;
+    const double span =
+        std::max(1e-3, params.slow_distance - params.stop_distance);
+    return std::clamp((d - params.stop_distance) / span, 0.0, 1.0);
 }
 
 // ---------------------------------------------------------------------- step
@@ -269,14 +406,53 @@ TrajectoryFollower::Output TrajectoryFollower::step(
                      ? FollowerStatus::OffPathExceeded
                      : FollowerStatus::Running;
 
+    double predV = odo.valid ? odo.odometryVelocityLocal.vx : 0.0;
+    predV        = std::max(0.0, predV);
+
+    // Predictive safety: sweep the footprint over the command forecast and the
+    // reference path ahead, and scale the commanded speed toward a stop before
+    // contact. A hysteresis latch avoids chattering; a sustained stop reports
+    // Blocked. Inert when no obstacles/footprint are set.
+    double scale = 1.0;
+    if (!obstacles_.empty())
+    {
+        const double dFwd = forecastContactDistance(loc.pose, predV, proj.s);
+        const double dRef = referenceContactDistance(proj.s);
+        scale             = std::min(
+                        contactDistanceToScale(dFwd), contactDistanceToScale(dRef));
+    }
+
+    const auto nowStamp =
+        loc.timestamp != INVALID_TIMESTAMP ? loc.timestamp : mrpt::Clock::now();
+    if (stopped_)
+    {
+        if (scale >= params.resume_scale)
+        {
+            stopped_      = false;
+            stoppedSince_ = INVALID_TIMESTAMP;
+        }
+        else
+            scale = 0.0;
+    }
+    if (!stopped_ && scale <= 1e-3)
+    {
+        stopped_      = true;
+        stoppedSince_ = nowStamp;
+    }
+    if (stopped_ && out.status != FollowerStatus::OffPathExceeded &&
+        stoppedSince_ != INVALID_TIMESTAMP &&
+        mrpt::system::timeDifference(stoppedSince_, nowStamp) >=
+            params.block_timeout)
+        out.status = FollowerStatus::Blocked;
+
+    out.safety_scale = scale;
+
     // map->odom correction so the emitted chunk is smooth despite
     // relocalization.
     const mrpt::poses::CPose2D map2odom =
         mrpt::poses::CPose2D(odo.odometry) +
         (mrpt::poses::CPose2D() - mrpt::poses::CPose2D(loc.pose));
 
-    double predV = odo.valid ? odo.odometryVelocityLocal.vx : 0.0;
-    predV        = std::max(0.0, predV);
     mrpt::math::TPose2D predPose = loc.pose;
     double              predS    = proj.s;
 
@@ -289,7 +465,7 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     for (int k = 0; k <= nSamples; k++)
     {
         const Command cmd =
-            pursuit(predPose, predV, predS, params.sample_period);
+            pursuit(predPose, predV, predS, params.sample_period, scale);
 
         TrajSample smp;
         smp.t = k * params.sample_period;
@@ -297,7 +473,7 @@ TrajectoryFollower::Output TrajectoryFollower::step(
             map2odom + mrpt::poses::CPose2D(predPose);
         smp.pose        = poseOdom.asTPose();
         smp.twist       = {cmd.v, 0.0, cmd.omega};
-        smp.speed_scale = 1.0;  // no safety scaling in the pursuit core yet
+        smp.speed_scale = scale;
         out.command.points.push_back(smp);
 
         if (k == 0)
