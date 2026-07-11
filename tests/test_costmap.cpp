@@ -16,7 +16,9 @@
 
 #include <gtest/gtest.h>
 #include <mpp/algos/CostEvaluatorCostMap.h>
+#include <mpp/data/MoveEdgeSE2_TPS.h>
 #include <mrpt/maps/CSimplePointsMap.h>
+#include <mrpt/math/TPolygon2D.h>
 
 #include <cmath>
 
@@ -110,6 +112,97 @@ TEST(CostMap, MonotonicallyDecreasingWithDistance)
             << ")";
         prevCost = c;
     }
+}
+
+// Single-pose edge whose reference point (stateFrom.pose) is `pose`, so that
+// operator() evaluates the (footprint) cost exactly at `pose`.
+namespace
+{
+mpp::MoveEdgeSE2_TPS makeSinglePoseEdge(const mrpt::math::TPose2D& pose)
+{
+    mpp::MoveEdgeSE2_TPS e;
+    e.stateFrom.pose    = pose;
+    e.estimatedExecTime = 1.0;
+    e.interpolatedPath[0.0] =
+        mrpt::math::TPose2D(0, 0, 0);  // relative to `from`
+    return e;
+}
+}  // namespace
+
+TEST(CostMap, ShapeSamplesEmptyByDefault)
+{
+    // No robot shape given -> legacy origin-only sampling.
+    auto cm = makeMapWithOneObstacle(0.0, 0.0);
+    EXPECT_TRUE(cm->shape_samples().empty());
+}
+
+TEST(CostMap, FootprintAwareVsOriginOnly)
+{
+    // Obstacle at the origin; clearance zone of 1 m.
+    auto pts = mrpt::maps::CSimplePointsMap::Create();
+    pts->insertPoint(0.0, 0.0, 0.0);
+
+    mpp::CostEvaluatorCostMap::Parameters p;
+    p.maxCost                    = 1.0;
+    p.preferredClearanceDistance = 1.0;
+    p.resolution                 = 0.05;
+
+    // Robot footprint: a rectangle extending forward (+x) 1 m ahead of the
+    // reference point, half-width 0.3 m.
+    mrpt::math::TPolygon2D shape;
+    shape.emplace_back(0.0, -0.3);
+    shape.emplace_back(1.0, -0.3);
+    shape.emplace_back(1.0, 0.3);
+    shape.emplace_back(0.0, 0.3);
+
+    auto cmOrigin =
+        mpp::CostEvaluatorCostMap::FromStaticPointObstacles(*pts, p);
+    auto cmShape = mpp::CostEvaluatorCostMap::FromStaticPointObstacles(
+        *pts, p, std::nullopt, mpp::RobotShape(shape));
+
+    EXPECT_FALSE(cmShape->shape_samples().empty());
+
+    // Reference point 1.2 m from the obstacle (beyond the 1 m clearance), but
+    // facing the obstacle (yaw=pi) so the footprint's front edge reaches to
+    // ~0.2 m from it.
+    const auto edge = makeSinglePoseEdge({1.2, 0.0, M_PI});
+
+    const double cOrigin = (*cmOrigin)(edge);
+    const double cShape  = (*cmShape)(edge);
+
+    EXPECT_NEAR(cOrigin, 0.0, 1e-9)
+        << "Origin-only: reference point is beyond the clearance distance";
+    EXPECT_GT(cShape, 0.4)
+        << "Footprint-aware: the front edge is well inside the clearance zone";
+    EXPECT_LE(cShape, p.maxCost + 1e-9);
+}
+
+TEST(CostMap, FootprintAwareFarAwayIsZero)
+{
+    // Same footprint, but far enough that not even the footprint reaches the
+    // clearance zone -> zero cost.
+    auto pts = mrpt::maps::CSimplePointsMap::Create();
+    pts->insertPoint(0.0, 0.0, 0.0);
+
+    mpp::CostEvaluatorCostMap::Parameters p;
+    p.maxCost                    = 1.0;
+    p.preferredClearanceDistance = 1.0;
+    p.resolution                 = 0.05;
+
+    mrpt::math::TPolygon2D shape;
+    shape.emplace_back(0.0, -0.3);
+    shape.emplace_back(1.0, -0.3);
+    shape.emplace_back(1.0, 0.3);
+    shape.emplace_back(0.0, 0.3);
+
+    auto cmShape = mpp::CostEvaluatorCostMap::FromStaticPointObstacles(
+        *pts, p, std::nullopt, mpp::RobotShape(shape));
+
+    // Facing away (+x), reference point at x=2.5: nearest footprint point is at
+    // x=2.5, well beyond the 1 m clearance.
+    const auto   edge   = makeSinglePoseEdge({2.5, 0.0, 0.0});
+    const double cShape = (*cmShape)(edge);
+    EXPECT_NEAR(cShape, 0.0, 1e-9);
 }
 
 TEST(CostMap, QuadraticDecay)

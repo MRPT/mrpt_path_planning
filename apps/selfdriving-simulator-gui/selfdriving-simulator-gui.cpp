@@ -1001,7 +1001,8 @@ void on_do_single_path_planning(
     {
         auto staticCostmap =
             mpp::CostEvaluatorCostMap::FromStaticPointObstacles(
-                *obsPts, cmP, pi.stateStart.pose);
+                *obsPts, cmP, pi.stateStart.pose,
+                sd->navigator.config_.ptgs.robotShape);
 
         planner.costEvaluators_.push_back(staticCostmap);
     }
@@ -1015,7 +1016,8 @@ void on_do_single_path_planning(
         {
             auto lidarCostmap =
                 mpp::CostEvaluatorCostMap::FromStaticPointObstacles(
-                    *obs, cmP, pi.stateStart.pose);
+                    *obs, cmP, pi.stateStart.pose,
+                    sd->navigator.config_.ptgs.robotShape);
 
             planner.costEvaluators_.push_back(lidarCostmap);
         }
