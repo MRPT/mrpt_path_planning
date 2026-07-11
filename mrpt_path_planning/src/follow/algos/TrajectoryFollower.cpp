@@ -122,18 +122,20 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
         const auto& b = traj_[i].pose;
         cumS_[i]      = cumS_[i - 1] + std::hypot(b.x - a.x, b.y - a.y);
     }
-    lastS_        = 0;
-    stopped_      = false;
-    stoppedSince_ = INVALID_TIMESTAMP;
+    lastS_             = 0;
+    lastCommandedSpeed_ = 0;
+    stopped_           = false;
+    stoppedSince_      = INVALID_TIMESTAMP;
 }
 
 void TrajectoryFollower::reset()
 {
     traj_.clear();
     cumS_.clear();
-    lastS_        = 0;
-    stopped_      = false;
-    stoppedSince_ = INVALID_TIMESTAMP;
+    lastS_             = 0;
+    lastCommandedSpeed_ = 0;
+    stopped_           = false;
+    stoppedSince_      = INVALID_TIMESTAMP;
 }
 
 void TrajectoryFollower::setRobotShape(const RobotShape& shape)
@@ -406,8 +408,12 @@ TrajectoryFollower::Output TrajectoryFollower::step(
                      ? FollowerStatus::OffPathExceeded
                      : FollowerStatus::Running;
 
-    double predV = odo.valid ? odo.odometryVelocityLocal.vx : 0.0;
-    predV        = std::max(0.0, predV);
+    // Seed the speed ramp from the follower's own last commanded speed (a
+    // feedforward integrator), not the measured odometry velocity: the profile
+    // must keep accelerating even when the odometry source reports no forward
+    // twist. Safety is handled by the predictive-safety scale and the node
+    // watchdog, not by throttling the ramp to measured velocity.
+    double predV = std::max(0.0, lastCommandedSpeed_);
 
     // Predictive safety: sweep the footprint over the command forecast and the
     // reference path ahead, and scale the commanded speed toward a stop before
@@ -480,6 +486,8 @@ TrajectoryFollower::Output TrajectoryFollower::step(
         {
             out.target_speed    = cmd.v;
             out.lookahead_point = cmd.lookahead;
+            // Persist for the next cycle's feedforward ramp seed.
+            lastCommandedSpeed_ = cmd.v;
         }
 
         // Advance the forecast.
