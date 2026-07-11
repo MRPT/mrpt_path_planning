@@ -290,6 +290,15 @@ static void do_plan_path()
     // Enable time profiler:
     planner->profiler_().enable(true);
 
+    // PTGs config file (loaded before the costmap so the robot shape is
+    // available to make the costmap footprint-aware):
+    std::cout << "[PTGs] Initializing PTGs..." << std::endl;
+
+    mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
+    pi.ptgs.initFromConfigFile(cfg, arg_config_file_section.getValue());
+
+    std::cout << "[PTGs] Done." << std::endl;
+
     if (arg_costMap.isSet())
     {
         // cost map:
@@ -298,7 +307,7 @@ static void do_plan_path()
                 mrpt::containers::yaml::FromFile(arg_costMap.getValue()));
 
         auto costmap = mpp::CostEvaluatorCostMap::FromStaticPointObstacles(
-            *obsPts, costMapParams, pi.stateStart.pose);
+            *obsPts, costMapParams, pi.stateStart.pose, pi.ptgs.robotShape);
 
         planner->costEvaluators_.push_back(costmap);
     }
@@ -349,14 +358,6 @@ static void do_plan_path()
                   << " bestCostToGoal: " << pcd.bestCostToGoal
                   << " bestPathLength: " << pcd.bestPath.size() << std::endl;
     };
-
-    // PTGs config file:
-    std::cout << "[PTGs] Initializing PTGs..." << std::endl;
-
-    mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
-    pi.ptgs.initFromConfigFile(cfg, arg_config_file_section.getValue());
-
-    std::cout << "[PTGs] Done." << std::endl;
 
     // ==================================================
     // ACTUAL PATH PLANNING

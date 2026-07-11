@@ -745,7 +745,7 @@ NavEngine::PathPlannerOutput NavEngine::path_planner_function(
             planner.costEvaluators_.push_back(
                 mpp::CostEvaluatorCostMap::FromStaticPointObstacles(
                     *obs, config_.globalCostParameters,
-                    ppi.pi.stateStart.pose));
+                    ppi.pi.stateStart.pose, config_.ptgs.robotShape));
         }
     }
 
@@ -756,7 +756,8 @@ NavEngine::PathPlannerOutput NavEngine::path_planner_function(
         {
             planner.costEvaluators_.push_back(
                 mpp::CostEvaluatorCostMap::FromStaticPointObstacles(
-                    *obs, config_.localCostParameters, ppi.pi.stateStart.pose));
+                    *obs, config_.localCostParameters, ppi.pi.stateStart.pose,
+                    config_.ptgs.robotShape));
         }
     }
 

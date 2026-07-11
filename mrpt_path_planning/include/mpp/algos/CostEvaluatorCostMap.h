@@ -7,8 +7,18 @@
 #pragma once
 
 #include <mpp/algos/CostEvaluator.h>
+#include <mpp/data/TrajectoriesAndRobotShape.h>  // RobotShape
 #include <mrpt/containers/CDynamicGrid.h>
 #include <mrpt/maps/CPointsMap.h>
+#include <mrpt/math/TPoint2D.h>
+
+#include <vector>
+
+/** Feature-test macro: defined (=1) since `FromStaticPointObstacles()` gained
+ * the optional `RobotShape` argument (footprint-aware costmap). Downstream code
+ * can `#if defined(MPP_COSTEVALUATORCOSTMAP_HAS_ROBOT_SHAPE)` to stay
+ * source-compatible with older mpp releases that lack that overload. */
+#define MPP_COSTEVALUATORCOSTMAP_HAS_ROBOT_SHAPE 1
 
 namespace mpp
 {
@@ -50,10 +60,21 @@ class CostEvaluatorCostMap : public CostEvaluator
         void                   load_from_yaml(const mrpt::containers::yaml& c);
     };
 
+    /** Builds a costmap from static point obstacles.
+     *
+     * If `robotShape` is given (a polygon or a radius), the per-edge cost is
+     * the maximum costmap value sampled over the robot footprint transformed to
+     * each path pose, instead of a single sample at the trajectory reference
+     * point (base_link origin). This makes `preferredClearanceDistance`
+     * correspond to actual footprint clearance for non-point robots. A
+     * `std::monostate` shape (the default) keeps the legacy origin-only
+     * behavior.
+     */
     static CostEvaluatorCostMap::Ptr FromStaticPointObstacles(
         const mrpt::maps::CPointsMap&             obsPts,
         const Parameters&                         p            = Parameters(),
-        const std::optional<mrpt::math::TPose2D>& curRobotPose = std::nullopt);
+        const std::optional<mrpt::math::TPose2D>& curRobotPose = std::nullopt,
+        const RobotShape& robotShape = std::monostate{});
 
     /** Evaluate cost of move-tree edge */
     double operator()(const MoveEdgeSE2_TPS& edge) const override;
@@ -70,9 +91,25 @@ class CostEvaluatorCostMap : public CostEvaluator
 
     const Parameters& params() const { return params_; }
 
+    /** Sample points (robot frame) over which the footprint cost is evaluated;
+     * empty means legacy origin-only sampling. Exposed for
+     * testing/visualization.
+     */
+    const std::vector<mrpt::math::TPoint2D>& shape_samples() const
+    {
+        return shapeSamples_;
+    }
+
    private:
     cost_gridmap_t costmap_;
     Parameters     params_;
+
+    /** Precomputed footprint sample points in the robot frame. When non-empty,
+     * `eval_single_pose` returns the max cost over these points transformed to
+     * the query pose. Built once by `FromStaticPointObstacles` from
+     * `RobotShape`.
+     */
+    std::vector<mrpt::math::TPoint2D> shapeSamples_;
 
     double eval_single_pose(const mrpt::math::TPose2D& p) const;
 };
