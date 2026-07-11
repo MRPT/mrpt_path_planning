@@ -24,6 +24,7 @@ set(LIB_SRCS
 	src/data/MoveEdgeSE2_TPS.cpp
 	src/data/PlannerInput.cpp
 	src/data/PlannerOutput.cpp
+	src/data/robot_shape_sampling.cpp
 	src/data/SE2_KinState.cpp
 	src/data/TrajectoriesAndRobotShape.cpp
 	src/data/Waypoints.cpp
@@ -66,6 +67,7 @@ set(LIB_PUBLIC_HDRS
 	include/mpp/data/ProgressCallbackData.h
 	include/mpp/data/ptg_t.h
 	include/mpp/data/RenderOptions.h
+	include/mpp/data/robot_shape_sampling.h
 	include/mpp/data/SE2_KinState.h
 	include/mpp/data/TrajectoriesAndRobotShape.h
 	include/mpp/data/trajectory_t.h
