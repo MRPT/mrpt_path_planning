@@ -178,6 +178,11 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     std::vector<double> cumS_;  //!< cumulative arc-length per point
     double              lastS_ = 0;  //!< monotonic progress (map projection)
 
+    /** Last commanded speed [m/s]. The feedforward speed ramp is rate-limited
+     * from this internal state (not from measured odometry velocity), so the
+     * profile still accelerates when the odometry source reports no twist. */
+    double lastCommandedSpeed_ = 0;
+
     // Predictive safety state:
     std::vector<mrpt::math::TPoint2D>
                                  shapeSamples_;  //!< footprint, robot frame
