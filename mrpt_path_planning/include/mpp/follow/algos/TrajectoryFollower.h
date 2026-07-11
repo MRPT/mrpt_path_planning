@@ -18,6 +18,7 @@
 #include <mrpt/system/COutputLogger.h>
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace mpp
@@ -77,6 +78,12 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         double goal_dist_tol   = 0.15;  //!< [m]
         double goal_ang_tol    = mrpt::DEG2RAD(12.0);  //!< [rad]
         double max_cross_track = 1.0;  //!< [m] OffPathExceeded
+
+        /** [m] Once the robot settles within this distance of the goal and has
+         * passed its closest approach, it latches "arrived" and holds a stop,
+         * so it never drives back away from a goal it cannot perfectly seat (no
+         * runaway / thrashing on a kinematically infeasible final pose). */
+        double arrival_radius = 0.3;
 
         double control_period = 0.05;  //!< [s] nominal call period (20 Hz)
         double horizon        = 1.5;  //!< [s] emitted chunk length
@@ -183,6 +190,21 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      * profile still accelerates when the odometry source reports no twist. */
     double lastCommandedSpeed_ = 0;
 
+    /** Latched driving gear (+1 forward, -1 reverse). Held with hysteresis so
+     * the noisy per-segment travel direction on the goal reorientation does not
+     * chatter the gear (and cusp-brake) the robot to a crawl. */
+    double gear_ = 1.0;
+
+    /** Latched once the robot has settled within `arrival_radius` of the goal;
+     * from then on it holds a stop instead of driving back away from a pose it
+     * cannot perfectly seat. */
+    bool arrived_ = false;
+
+    /** Closest distance to the goal point reached so far, used to detect when
+     * the robot has passed its closest approach and would start driving away.
+     */
+    double minDistToGoal_ = std::numeric_limits<double>::infinity();
+
     // Predictive safety state:
     std::vector<mrpt::math::TPoint2D>
                                  shapeSamples_;  //!< footprint, robot frame
@@ -219,10 +241,13 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     /** Pure-pursuit command at `fromPose` given `currentV`, advancing the
      * lookahead from projection near `sHint`. `dt` bounds the accel/decel step.
      * `speedScale` (0..1) caps the target speed before rate-limiting (safety).
+     * `gear` (+1 forward, -1 reverse) sets the travel direction; the caller
+     * decides it once per cycle (with hysteresis) and holds it over the
+     * horizon.
      */
     Command pursuit(
         const mrpt::math::TPose2D& fromPose, double currentV, double sHint,
-        double dt, double speedScale = 1.0) const;
+        double dt, double gear, double speedScale = 1.0) const;
 
     /** Pose (x,y + tangent heading) on the reference polyline at arc-length
      * `s`. */

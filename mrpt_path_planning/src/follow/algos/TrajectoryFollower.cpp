@@ -61,6 +61,7 @@ void TrajectoryFollower::Parameters::load_from_yaml(
     MCP_LOAD_OPT(c, goal_dist_tol);
     MCP_LOAD_OPT_DEG(c, goal_ang_tol);
     MCP_LOAD_OPT(c, max_cross_track);
+    MCP_LOAD_OPT(c, arrival_radius);
     MCP_LOAD_OPT(c, control_period);
     MCP_LOAD_OPT(c, horizon);
     MCP_LOAD_OPT(c, sample_period);
@@ -88,6 +89,7 @@ mrpt::containers::yaml TrajectoryFollower::Parameters::as_yaml() const
     MCP_SAVE(c, goal_dist_tol);
     MCP_SAVE_DEG(c, goal_ang_tol);
     MCP_SAVE(c, max_cross_track);
+    MCP_SAVE(c, arrival_radius);
     MCP_SAVE(c, control_period);
     MCP_SAVE(c, horizon);
     MCP_SAVE(c, sample_period);
@@ -122,20 +124,47 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
         const auto& b = traj_[i].pose;
         cumS_[i]      = cumS_[i - 1] + std::hypot(b.x - a.x, b.y - a.y);
     }
-    lastS_             = 0;
+    lastS_              = 0;
     lastCommandedSpeed_ = 0;
-    stopped_           = false;
-    stoppedSince_      = INVALID_TIMESTAMP;
+    stopped_            = false;
+    stoppedSince_       = INVALID_TIMESTAMP;
+    arrived_            = false;
+    minDistToGoal_      = std::numeric_limits<double>::infinity();
+
+    // Global driving gear, chosen so the robot arrives at the goal heading:
+    // reverse when the reference ends tail-first (e.g. a differential-drive
+    // planner backs the robot in), forward when the goal heading matches the
+    // path's forward travel direction (an open-space approach the robot can
+    // drive nose-first). One gear for the whole path avoids mid-path cusp
+    // chatter and, for open-space cases, sidesteps a terminal in-place turn an
+    // Ackermann robot could not seat. Measured over the final approach so the
+    // jagged micro-tail at the goal does not decide it.
+    gear_ = 1.0;
+    if (traj_.size() >= 2)
+    {
+        const double total = totalLength();
+        const double w     = std::min(total, 0.7);
+        const auto   pB    = pointAtArc(total);
+        const auto   pA    = pointAtArc(total - w);
+        const double chord = std::hypot(pB.x - pA.x, pB.y - pA.y);
+        const double tang  = chord > 1e-3 ? std::atan2(pB.y - pA.y, pB.x - pA.x)
+                                          : traj_.back().pose.phi;
+        const double endH  = traj_.back().pose.phi;
+        gear_ = std::cos(mrpt::math::wrapToPi(endH - tang)) >= 0.0 ? 1.0 : -1.0;
+    }
 }
 
 void TrajectoryFollower::reset()
 {
     traj_.clear();
     cumS_.clear();
-    lastS_             = 0;
+    lastS_              = 0;
     lastCommandedSpeed_ = 0;
-    stopped_           = false;
-    stoppedSince_      = INVALID_TIMESTAMP;
+    stopped_            = false;
+    stoppedSince_       = INVALID_TIMESTAMP;
+    gear_               = 1.0;
+    arrived_            = false;
+    minDistToGoal_      = std::numeric_limits<double>::infinity();
 }
 
 void TrajectoryFollower::setRobotShape(const RobotShape& shape)
@@ -251,13 +280,13 @@ double TrajectoryFollower::speedCapAt(double s) const
 // ------------------------------------------------------------------- pursuit
 TrajectoryFollower::Command TrajectoryFollower::pursuit(
     const mrpt::math::TPose2D& fromPose, double currentV, double sHint,
-    double dt, double speedScale) const
+    double dt, double gear, double speedScale) const
 {
     Command          out;
     const Projection proj = projectToPath({fromPose.x, fromPose.y}, sHint);
 
     const double L = std::clamp(
-        params.lookahead_time * currentV, params.lookahead_min,
+        params.lookahead_time * std::abs(currentV), params.lookahead_min,
         params.lookahead_max);
     out.lookahead = pointAtArc(proj.s + L);
 
@@ -270,28 +299,44 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     const double yr = -sn * dx + c * dy;
     const double Ld = std::hypot(xr, yr);
 
+    // Pure-pursuit curvature; the same circle is driven forward or in reverse,
+    // the sign of the commanded speed (via `gear`) sets the travel direction.
     const double curv = Ld > 1e-3 ? 2.0 * yr / (Ld * Ld) : 0.0;
 
-    // Speed caps: profile, curvature (lateral accel), and decel-to-goal.
-    const double remaining = std::max(0.0, totalLength() - proj.s);
-    double       cap       = speedCapAt(proj.s);
+    // Speed caps (magnitude): profile, curvature (lateral accel),
+    // decel-to-goal. Decel-to-goal uses the straight-line distance to the final
+    // point (the arc-length projection saturates before the robot physically
+    // arrives and would park it short); a terminal stop latch in step()
+    // prevents any runaway once the robot has settled near the goal.
+    const mrpt::math::TPoint2D goalPt = pointAtArc(totalLength());
+    const double               distToGoal =
+        std::hypot(goalPt.x - fromPose.x, goalPt.y - fromPose.y);
+    double cap = speedCapAt(proj.s);
     if (std::abs(curv) > 1e-3)
         cap =
             std::min(cap, std::sqrt(params.max_lateral_accel / std::abs(curv)));
-    cap = std::min(cap, std::sqrt(2.0 * params.max_decel * remaining));
+    cap = std::min(cap, std::sqrt(2.0 * params.max_decel * distToGoal));
 
     // Predictive-safety speed scale (caps the target before rate-limiting so
     // decel stays bounded by max_decel).
     cap *= std::clamp(speedScale, 0.0, 1.0);
 
-    // Rate-limit the speed toward the cap.
-    double v = std::clamp(
-        cap, currentV - params.max_decel * dt,
-        currentV + params.max_accel * dt);
-    v = std::max(0.0, v);
+    // Rate-limit the *signed* speed toward the gear-directed target. `sCur` is
+    // the current speed measured in the gear's forward sense; if it is negative
+    // the robot is still moving the other way (a cusp), so brake to zero before
+    // driving off in the new gear rather than step-changing direction.
+    const double sCur    = gear * currentV;
+    const double sTarget = cap;  // desired magnitude in the gear frame
+    double       sNew;
+    if (sCur < 0.0)
+        sNew = std::min(0.0, sCur + params.max_decel * dt);
+    else if (sTarget >= sCur)
+        sNew = std::min(sTarget, sCur + params.max_accel * dt);
+    else
+        sNew = std::max(sTarget, sCur - params.max_decel * dt);
 
-    out.v     = v;
-    out.omega = v * curv;
+    out.v     = gear * sNew;
+    out.omega = out.v * curv;
     return out;
 }
 
@@ -326,7 +371,7 @@ double TrajectoryFollower::forecastContactDistance(
 {
     double              L = 0;
     mrpt::math::TPose2D p = startPose;
-    double              v = std::max(0.0, startV);
+    double              v = startV;  // signed (reverse forecasts back up)
     double              s = startS;
 
     const int nSteps = std::max(
@@ -337,7 +382,7 @@ double TrajectoryFollower::forecastContactDistance(
     {
         if (footprintClearance(p) <= params.safety_margin) return L;
 
-        const Command cmd = pursuit(p, v, s, params.sample_period, 1.0);
+        const Command cmd = pursuit(p, v, s, params.sample_period, gear_, 1.0);
         const mrpt::math::TPose2D pNext =
             integrateUnicycle(p, cmd.v, cmd.omega, params.sample_period);
 
@@ -385,22 +430,43 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     const Projection proj = projectToPath({loc.pose.x, loc.pose.y}, lastS_);
     lastS_                = proj.s;
 
-    // Heading at the path end (last segment direction).
-    const auto&  pEndA      = traj_[traj_.size() - 2].pose;
-    const auto&  pEndB      = traj_.back().pose;
-    const double endHeading = std::atan2(pEndB.y - pEndA.y, pEndB.x - pEndA.x);
+    // Desired body heading at the goal: the reference's own final heading, not
+    // the last segment's travel direction (they are opposite on a reverse
+    // approach, where the robot backs into the goal pose).
+    const double endHeading = traj_.back().pose.phi;
 
     out.arc_length_s    = proj.s;
     out.cross_track_err = proj.cross_track;
     out.heading_err     = mrpt::math::wrapToPi(loc.pose.phi - endHeading);
 
-    const double remaining = totalLength() - proj.s;
-
-    // Goal reached?
-    if (remaining <= params.goal_dist_tol &&
+    // Goal reached? Use the Euclidean distance to the final path point (the
+    // arc-length projection saturates before the robot physically arrives).
+    const mrpt::math::TPoint2D goalPt = pointAtArc(totalLength());
+    const double               distToGoal =
+        std::hypot(goalPt.x - loc.pose.x, goalPt.y - loc.pose.y);
+    if (distToGoal <= params.goal_dist_tol &&
         std::abs(out.heading_err) <= params.goal_ang_tol)
     {
         out.status = FollowerStatus::ReachedGoal;
+        return out;  // empty command => node stops
+    }
+
+    // Terminal stop latch: hold a stop once the robot, already within
+    // `arrival_radius` of the goal, has passed its closest approach and would
+    // otherwise start driving away. On a kinematically infeasible final pose
+    // (an Ackermann robot on a differential-drive path whose tail rotates in
+    // place) the exact heading cannot be seated; this parks the robot at its
+    // closest approach instead of running away and thrashing into nearby
+    // obstacles.
+    minDistToGoal_ = std::min(minDistToGoal_, distToGoal);
+    if (!arrived_ && distToGoal <= params.arrival_radius &&
+        distToGoal > minDistToGoal_ + 0.03)
+        arrived_ = true;
+    if (arrived_)
+    {
+        lastCommandedSpeed_ = 0;
+        out.status          = FollowerStatus::Running;
+        out.target_speed    = 0;
         return out;  // empty command => node stops
     }
 
@@ -413,7 +479,8 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     // must keep accelerating even when the odometry source reports no forward
     // twist. Safety is handled by the predictive-safety scale and the node
     // watchdog, not by throttling the ramp to measured velocity.
-    double predV = std::max(0.0, lastCommandedSpeed_);
+    // Signed: reverse maneuvers ramp toward a negative speed.
+    double predV = lastCommandedSpeed_;
 
     // Predictive safety: sweep the footprint over the command forecast and the
     // reference path ahead, and scale the commanded speed toward a stop before
@@ -471,7 +538,7 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     for (int k = 0; k <= nSamples; k++)
     {
         const Command cmd =
-            pursuit(predPose, predV, predS, params.sample_period, scale);
+            pursuit(predPose, predV, predS, params.sample_period, gear_, scale);
 
         TrajSample smp;
         smp.t = k * params.sample_period;
