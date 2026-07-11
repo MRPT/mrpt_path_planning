@@ -5,6 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <mpp/algos/CostEvaluatorCostMap.h>
+#include <mpp/data/robot_shape_sampling.h>
 #include <mrpt/img/color_maps.h>
 #include <mrpt/maps/COccupancyGridMap2D.h>
 #include <mrpt/opengl/CTexturedPlane.h>
@@ -54,75 +55,6 @@ void CostEvaluatorCostMap::Parameters::load_from_yaml(
 
 CostEvaluatorCostMap::~CostEvaluatorCostMap() = default;
 
-namespace
-{
-// Builds the set of robot-frame points at which the footprint cost is sampled.
-// For a polygon: its vertices plus points subdividing each edge finer than the
-// costmap resolution, so the max cost picks up the footprint side/corner
-// closest to an obstacle. For a radius: a ring of points at that radius. The
-// maximum costmap value over these points (transformed to a path pose) then
-// reflects the true footprint clearance, not just the reference-point
-// clearance.
-//
-// This runs on the cost-evaluation hot path (per interpolated pose, per edge),
-// so the total sample count is capped: sampling finer than the costmap
-// resolution is wasted (adjacent samples fall in the same cell), and for very
-// large footprints the perimeter step is coarsened to keep the count bounded.
-std::vector<mrpt::math::TPoint2D> buildShapeSamples(
-    const mpp::RobotShape& shape, double resolution)
-{
-    constexpr size_t MAX_SAMPLES = 128;
-
-    std::vector<mrpt::math::TPoint2D> pts;
-    const double                      res = std::max(0.01, resolution);
-
-    if (const auto* poly = std::get_if<mrpt::math::TPolygon2D>(&shape))
-    {
-        const auto&  v = *poly;
-        const size_t n = v.size();
-        if (n < 2) return pts;
-
-        double perimeter = 0;
-        for (size_t i = 0; i < n; i++)
-            perimeter += (v[(i + 1) % n] - v[i]).norm();
-
-        // Step at the grid resolution, coarsened if needed to stay under the
-        // cap.
-        const double step = std::max(res, perimeter / MAX_SAMPLES);
-
-        for (size_t i = 0; i < n; i++)
-        {
-            const auto&  a   = v[i];
-            const auto&  b   = v[(i + 1) % n];
-            const double len = std::hypot(b.x - a.x, b.y - a.y);
-            const int    nSeg =
-                std::max(1, static_cast<int>(std::ceil(len / step)));
-            for (int k = 0; k < nSeg;
-                 k++)  // include a, exclude b (next edge's a)
-            {
-                const double t = static_cast<double>(k) / nSeg;
-                pts.emplace_back(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y));
-            }
-        }
-    }
-    else if (const auto* radius = std::get_if<mpp::robot_radius_t>(&shape))
-    {
-        const double r = *radius;
-        if (r <= 0) return pts;
-        const double step = std::max(res, 2 * M_PI * r / MAX_SAMPLES);
-        const int    nSeg =
-            std::max(8, static_cast<int>(std::ceil(2 * M_PI * r / step)));
-        for (int k = 0; k < nSeg; k++)
-        {
-            const double a = 2 * M_PI * k / nSeg;
-            pts.emplace_back(r * std::cos(a), r * std::sin(a));
-        }
-    }
-    // std::monostate -> empty (legacy origin-only sampling)
-    return pts;
-}
-}  // namespace
-
 CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
     const mrpt::maps::CPointsMap&             obsPts,
     const CostEvaluatorCostMap::Parameters&   p,
@@ -132,7 +64,7 @@ CostEvaluatorCostMap::Ptr CostEvaluatorCostMap::FromStaticPointObstacles(
     auto cm     = CostEvaluatorCostMap::Create();
     cm->params_ = p;
 
-    cm->shapeSamples_ = buildShapeSamples(robotShape, p.resolution);
+    cm->shapeSamples_ = footprintSamplePoints(robotShape, p.resolution);
 
     ASSERT_(!obsPts.empty());
 
