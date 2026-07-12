@@ -131,6 +131,21 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
     arrived_            = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
 
+    // Cusp arc-lengths: points where the path travel direction reverses (a
+    // differential-drive planner backs up then drives forward, etc.). The
+    // pursuit must not look *across* a cusp, or the lookahead jumps to the
+    // doubling-back branch and commands an erratic, over-rotating curvature.
+    cuspS_.clear();
+    for (std::size_t i = 1; i + 1 < traj_.size(); i++)
+    {
+        const auto&  a  = traj_[i - 1].pose;
+        const auto&  b  = traj_[i].pose;
+        const auto&  c2 = traj_[i + 1].pose;
+        const double ux = b.x - a.x, uy = b.y - a.y;
+        const double wx = c2.x - b.x, wy = c2.y - b.y;
+        if (ux * wx + uy * wy < 0.0) cuspS_.push_back(cumS_[i]);
+    }
+
     // Global driving gear, chosen so the robot arrives at the goal heading:
     // reverse when the reference ends tail-first (e.g. a differential-drive
     // planner backs the robot in), forward when the goal heading matches the
@@ -158,6 +173,7 @@ void TrajectoryFollower::reset()
 {
     traj_.clear();
     cumS_.clear();
+    cuspS_.clear();
     lastS_              = 0;
     lastCommandedSpeed_ = 0;
     stopped_            = false;
@@ -288,7 +304,18 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     const double L = std::clamp(
         params.lookahead_time * std::abs(currentV), params.lookahead_min,
         params.lookahead_max);
-    out.lookahead = pointAtArc(proj.s + L);
+    // Do not look past the next cusp: on a path that doubles back, a lookahead
+    // reaching into the reversed branch yields a huge spurious curvature (the
+    // robot tries to spin toward a point it should reach by reversing gear, not
+    // by turning). Clamp the lookahead arc-length to the next direction change.
+    double lookaheadS = proj.s + L;
+    for (const double sc : cuspS_)
+        if (sc > proj.s + 1e-3)
+        {
+            lookaheadS = std::min(lookaheadS, sc);
+            break;
+        }
+    out.lookahead = pointAtArc(lookaheadS);
 
     // Lookahead in robot frame.
     const double dx = out.lookahead.x - fromPose.x;
@@ -464,8 +491,15 @@ TrajectoryFollower::Output TrajectoryFollower::step(
         arrived_ = true;
     if (arrived_)
     {
+        // Settled at the closest approach the vehicle can reach. On a
+        // differential-drive path an Ackermann robot often cannot seat the exact
+        // terminal heading (the planner's tail rotates in place); rather than
+        // hold `Running` forever -- which hangs the caller with the robot parked
+        // and no resolution -- report the goal as reached (position best-effort).
+        // Any residual heading is left to the downstream maneuver (e.g. the
+        // reactive corridor-follower that backs into the row).
         lastCommandedSpeed_ = 0;
-        out.status          = FollowerStatus::Running;
+        out.status          = FollowerStatus::ReachedGoal;
         out.target_speed    = 0;
         return out;  // empty command => node stops
     }

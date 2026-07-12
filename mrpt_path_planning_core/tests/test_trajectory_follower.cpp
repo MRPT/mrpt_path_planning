@@ -339,6 +339,139 @@ TEST(TrajectoryFollower, IgnoresObstacleOffPath)
     EXPECT_NEAR(r.finalPose.x, 6.0, 0.2);
 }
 
+// --------------------------------------------------------------------------
+// Regression: a short reverse entry leg (reproduces the live NAVIGATE_ZONE
+// "weird turn, could not finish" on the real robot). The planner backs the
+// robot ~0.55 m into a row mouth: start and goal body headings are nearly
+// aligned (~ -153 deg), so it should be an almost-straight reverse. The final
+// reference pose carries the GOAL BODY heading (opposite the travel direction,
+// as the real A* waypoints do), not the last-segment travel direction.
+namespace
+{
+// Build a reverse trajectory: polyline points + an explicit final body heading
+// (the goal orientation the robot must arrive at, tail-first).
+mpp::Trajectory revTraj(
+    const std::vector<TPoint2D>& pts, double goalHeading, double speed)
+{
+    mpp::Trajectory tr = polyToTraj(pts, speed);
+    if (!tr.empty()) tr.back().pose.phi = goalHeading;
+    return tr;
+}
+
+// Verbose closed-loop sim (unicycle), printing a trace so the follower's intent
+// is visible while iterating on a fix.
+SimResult simulateVerbose(
+    mpp::TrajectoryFollower& f, const TPose2D& start,
+    const std::vector<TPoint2D>& pathPts, const TPose2D& goal,
+    double maxCurv = 0.0, int maxSteps = 4000)
+{
+    SimResult    r;
+    TPose2D      robot = start;
+    double       v     = 0;
+    const double dt    = f.params.control_period;
+    fprintf(
+        stderr, "%5s %8s %8s %8s | %8s %8s %8s %8s %6s\n", "step", "x", "y",
+        "yaw", "v", "omega", "dGoal", "hErrDg", "stat");
+    for (int k = 0; k < maxSteps; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        r.lastStatus   = out.status;
+        r.maxCross =
+            std::max(r.maxCross, distToPolyline(pathPts, {robot.x, robot.y}));
+        r.finalPose = robot;
+        r.steps     = k;
+
+        const double dGoal = std::hypot(robot.x - goal.x, robot.y - goal.y);
+        double       vx = 0, om = 0;
+        if (!out.command.points.empty())
+        {
+            vx = out.command.points.front().twist.vx;
+            om = out.command.points.front().twist.omega;
+        }
+        if (k % 10 == 0 || out.status == mpp::FollowerStatus::ReachedGoal)
+            fprintf(
+                stderr, "%5d %8.3f %8.3f %8.1f | %8.3f %8.3f %8.3f %8.1f %6d\n",
+                k, robot.x, robot.y, mrpt::RAD2DEG(robot.phi), vx, om, dGoal,
+                mrpt::RAD2DEG(out.heading_err),
+                static_cast<int>(out.status));
+
+        if (out.status == mpp::FollowerStatus::ReachedGoal)
+        {
+            r.reached = true;
+            break;
+        }
+        if (out.command.points.empty()) break;
+        r.maxSpeed = std::max(r.maxSpeed, vx);
+        // Ackermann steering limit: curvature |omega/v| capped at maxCurv, so an
+        // in-place spin (omega large, v ~ 0) is physically impossible (a car-like
+        // robot must roll to turn). maxCurv <= 0 => ideal unicycle.
+        if (maxCurv > 0.0)
+        {
+            const double maxOm = std::abs(vx) * maxCurv;
+            om                 = std::clamp(om, -maxOm, maxOm);
+        }
+        robot = integrate(robot, vx, om, dt);
+        v     = vx;
+    }
+    return r;
+}
+}  // namespace
+
+TEST(TrajectoryFollower, ShortReverseEntryLiveCase)
+{
+    // Captured from the real robot (map frame): start pose and the entry
+    // standoff goal for block 59, a ~0.55 m reverse with aligned headings.
+    const TPose2D start(1.001, 0.553, mrpt::DEG2RAD(-152.7));
+    const TPose2D goal(1.545, 0.621, mrpt::DEG2RAD(-153.0));
+
+    // The REAL 11 A* waypoints captured live (make_plan_from_to, obstacle-free).
+    // Note the cusps: the positions overshoot to (1.636,0.701) then reverse back
+    // to (1.477,0.581) before the goal -- a differential-drive maneuver with
+    // direction reversals, not a straight reverse.
+    const std::vector<TPoint2D> pts = {
+        {1.001, 0.553},          {1.0946131281188594, 0.5874501963198541},
+        {1.1937828734685965, 0.5982016015376657},
+        {1.2936350310744624, 0.6024873565384339},
+        {1.3923220209724492, 0.6182892496624218},
+        {1.4540698751743322, 0.626809421628518},
+        {1.5511396204362184, 0.6488190768504346},
+        {1.6355899386629067, 0.7014985139566801},
+        {1.5583133646072271, 0.6380684875877585},
+        {1.476708395875546, 0.5810078987344227},
+        {1.545, 0.621}};
+
+    mpp::TrajectoryFollower f;  // deployed-like defaults
+    f.params.max_speed      = 0.5;
+    f.params.goal_dist_tol  = 0.15;
+    f.params.goal_ang_tol   = mrpt::DEG2RAD(12.0);
+    f.params.arrival_radius = 0.3;
+    f.setTrajectory(revTraj(pts, goal.phi, 0.5));
+
+    // Ackermann min turn radius ~0.36 m (tutabot) -> max curvature ~2.78 /m.
+    const double kMaxCurv = 1.0 / 0.36;
+    const auto   r        = simulateVerbose(f, start, pts, goal, kMaxCurv);
+
+    const double dGoal = std::hypot(r.finalPose.x - goal.x, r.finalPose.y - goal.y);
+    const double hErr  = mrpt::RAD2DEG(
+        std::abs(mrpt::math::wrapToPi(r.finalPose.phi - goal.phi)));
+    fprintf(
+        stderr,
+        "[result] reached=%d final=(%.3f,%.3f,%.1fdeg) dGoal=%.3f hErr=%.1fdeg "
+        "steps=%d lastStatus=%d\n",
+        r.reached, r.finalPose.x, r.finalPose.y, mrpt::RAD2DEG(r.finalPose.phi),
+        dGoal, hErr, r.steps, static_cast<int>(r.lastStatus));
+
+    // It must back cleanly into the standoff and terminate -- not turn away and
+    // hang. Position is reached within tolerance; the terminal heading is
+    // best-effort (an Ackermann robot cannot seat a differential-drive path's
+    // in-place terminal rotation, and the downstream corridor-follower
+    // re-orients from the standoff), so only a loose heading bound is asserted.
+    EXPECT_TRUE(r.reached) << "follower failed to reach/terminate on a short "
+                              "reverse goal (hung on the terminal cusp-loop)";
+    EXPECT_LT(dGoal, 0.15);
+    EXPECT_LT(hErr, 25.0);
+}
+
 TEST(TrajectoryFollower, ParamsYamlRoundTrip)
 {
     mpp::TrajectoryFollower::Parameters p;

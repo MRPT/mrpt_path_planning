@@ -183,6 +183,7 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
    private:
     Trajectory          traj_;
     std::vector<double> cumS_;  //!< cumulative arc-length per point
+    std::vector<double> cuspS_;  //!< arc-lengths where travel direction reverses
     double              lastS_ = 0;  //!< monotonic progress (map projection)
 
     /** Last commanded speed [m/s]. The feedforward speed ramp is rate-limited
