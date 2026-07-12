@@ -6,11 +6,11 @@
 
 #pragma once
 
+#include <mpp/data/SampledTrajectory.h>
 #include <mpp/data/TrajectoriesAndRobotShape.h>  // RobotShape
+#include <mpp/data/Trajectory.h>
 #include <mpp/data/VehicleLocalizationState.h>
 #include <mpp/data/VehicleOdometryState.h>
-#include <mpp/data/SampledTrajectory.h>
-#include <mpp/data/Trajectory.h>
 #include <mrpt/containers/yaml.h>
 #include <mrpt/core/bits_math.h>
 #include <mrpt/maps/CSimplePointsMap.h>
@@ -69,6 +69,17 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         double max_accel         = 0.5;  //!< [m/s^2]
         double max_decel         = 0.7;  //!< [m/s^2] (goal + speed reductions)
         double max_lateral_accel = 1.0;  //!< [m/s^2] curvature speed limit
+
+        /** [m] If > 0, the tightest turn radius the vehicle can physically
+         * make (e.g. an Ackermann robot's steering-limited minimum radius).
+         * The pure-pursuit curvature is clamped to 1/min_turn_radius before
+         * being used, so the follower never *commands* a turn tighter than
+         * the vehicle can actually execute -- unlike max_lateral_accel alone,
+         * which only trades off speed for curvature but never bounds
+         * curvature itself, so it can still ask for an arbitrarily tight
+         * (just slow) turn. <= 0 disables the clamp (differential-drive /
+         * unicycle, any curvature achievable). */
+        double min_turn_radius = 0.0;
 
         /** Lookahead distance L = clamp(lookahead_time * v, min, max) [m,s]. */
         double lookahead_min  = 0.4;
@@ -183,8 +194,9 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
    private:
     Trajectory          traj_;
     std::vector<double> cumS_;  //!< cumulative arc-length per point
-    std::vector<double> cuspS_;  //!< arc-lengths where travel direction reverses
-    double              lastS_ = 0;  //!< monotonic progress (map projection)
+    std::vector<double>
+           cuspS_;  //!< arc-lengths where travel direction reverses
+    double lastS_ = 0;  //!< monotonic progress (map projection)
 
     /** Last commanded speed [m/s]. The feedforward speed ramp is rate-limited
      * from this internal state (not from measured odometry velocity), so the

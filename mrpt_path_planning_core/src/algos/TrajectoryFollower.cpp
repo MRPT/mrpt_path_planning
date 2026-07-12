@@ -4,8 +4,8 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <mpp/data/robot_shape_sampling.h>
 #include <mpp/algos/TrajectoryFollower.h>
+#include <mpp/data/robot_shape_sampling.h>
 #include <mrpt/core/Clock.h>
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/poses/CPose2D.h>
@@ -55,6 +55,7 @@ void TrajectoryFollower::Parameters::load_from_yaml(
     MCP_LOAD_OPT(c, max_accel);
     MCP_LOAD_OPT(c, max_decel);
     MCP_LOAD_OPT(c, max_lateral_accel);
+    MCP_LOAD_OPT(c, min_turn_radius);
     MCP_LOAD_OPT(c, lookahead_min);
     MCP_LOAD_OPT(c, lookahead_max);
     MCP_LOAD_OPT(c, lookahead_time);
@@ -83,6 +84,7 @@ mrpt::containers::yaml TrajectoryFollower::Parameters::as_yaml() const
     MCP_SAVE(c, max_accel);
     MCP_SAVE(c, max_decel);
     MCP_SAVE(c, max_lateral_accel);
+    MCP_SAVE(c, min_turn_radius);
     MCP_SAVE(c, lookahead_min);
     MCP_SAVE(c, lookahead_max);
     MCP_SAVE(c, lookahead_time);
@@ -308,13 +310,14 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     // reaching into the reversed branch yields a huge spurious curvature (the
     // robot tries to spin toward a point it should reach by reversing gear, not
     // by turning). Clamp the lookahead arc-length to the next direction change.
-    double lookaheadS = proj.s + L;
-    for (const double sc : cuspS_)
-        if (sc > proj.s + 1e-3)
-        {
-            lookaheadS = std::min(lookaheadS, sc);
-            break;
-        }
+    double       lookaheadS = proj.s + L;
+    const double nextCuspS  = [&]() -> double
+    {
+        for (const double sc : cuspS_)
+            if (sc > proj.s + 1e-3) return sc;
+        return std::numeric_limits<double>::infinity();
+    }();
+    lookaheadS    = std::min(lookaheadS, nextCuspS);
     out.lookahead = pointAtArc(lookaheadS);
 
     // Lookahead in robot frame.
@@ -328,21 +331,44 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
 
     // Pure-pursuit curvature; the same circle is driven forward or in reverse,
     // the sign of the commanded speed (via `gear`) sets the travel direction.
-    const double curv = Ld > 1e-3 ? 2.0 * yr / (Ld * Ld) : 0.0;
+    double curv = Ld > 1e-3 ? 2.0 * yr / (Ld * Ld) : 0.0;
+
+    // Clamp to the vehicle's own steering-limited minimum turn radius (if
+    // set): unlike the lateral-accel cap below, which only trades off speed
+    // for curvature and so still lets an arbitrarily tight (just slow) turn
+    // through, this bounds the curvature itself so the follower never
+    // commands something the vehicle physically cannot track.
+    if (params.min_turn_radius > 0.0)
+    {
+        const double maxCurv = 1.0 / params.min_turn_radius;
+        curv                 = std::clamp(curv, -maxCurv, maxCurv);
+    }
 
     // Speed caps (magnitude): profile, curvature (lateral accel),
-    // decel-to-goal. Decel-to-goal uses the straight-line distance to the final
-    // point (the arc-length projection saturates before the robot physically
-    // arrives and would park it short); a terminal stop latch in step()
-    // prevents any runaway once the robot has settled near the goal.
+    // decel-to-goal/decel-to-next-cusp. Both use the straight-line distance to
+    // the target point (the arc-length projection saturates before the robot
+    // physically arrives and would park it short); a terminal stop latch in
+    // step() prevents any runaway once the robot has settled near the goal. A
+    // cusp is a sub-goal in the same sense: the path reverses travel direction
+    // there, so the vehicle must have slowed to near-zero by then too, or it
+    // cruises up to the cusp at speed and then has to take the sharp
+    // just-past-cusp turn while still fast.
     const mrpt::math::TPoint2D goalPt = pointAtArc(totalLength());
     const double               distToGoal =
         std::hypot(goalPt.x - fromPose.x, goalPt.y - fromPose.y);
+    double distToStop = distToGoal;
+    if (std::isfinite(nextCuspS))
+    {
+        const mrpt::math::TPoint2D cuspPt = pointAtArc(nextCuspS);
+        distToStop                        = std::min(
+                                   distToStop,
+                                   std::hypot(cuspPt.x - fromPose.x, cuspPt.y - fromPose.y));
+    }
     double cap = speedCapAt(proj.s);
     if (std::abs(curv) > 1e-3)
         cap =
             std::min(cap, std::sqrt(params.max_lateral_accel / std::abs(curv)));
-    cap = std::min(cap, std::sqrt(2.0 * params.max_decel * distToGoal));
+    cap = std::min(cap, std::sqrt(2.0 * params.max_decel * distToStop));
 
     // Predictive-safety speed scale (caps the target before rate-limiting so
     // decel stays bounded by max_decel).
@@ -492,12 +518,12 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     if (arrived_)
     {
         // Settled at the closest approach the vehicle can reach. On a
-        // differential-drive path an Ackermann robot often cannot seat the exact
-        // terminal heading (the planner's tail rotates in place); rather than
-        // hold `Running` forever -- which hangs the caller with the robot parked
-        // and no resolution -- report the goal as reached (position best-effort).
-        // Any residual heading is left to the downstream maneuver (e.g. the
-        // reactive corridor-follower that backs into the row).
+        // differential-drive path an Ackermann robot often cannot seat the
+        // exact terminal heading (the planner's tail rotates in place); rather
+        // than hold `Running` forever -- which hangs the caller with the robot
+        // parked and no resolution -- report the goal as reached (position
+        // best-effort). Any residual heading is left to the downstream maneuver
+        // (e.g. the reactive corridor-follower that backs into the row).
         lastCommandedSpeed_ = 0;
         out.status          = FollowerStatus::ReachedGoal;
         out.target_speed    = 0;

@@ -340,12 +340,13 @@ TEST(TrajectoryFollower, IgnoresObstacleOffPath)
 }
 
 // --------------------------------------------------------------------------
-// Regression: a short reverse entry leg (reproduces the live NAVIGATE_ZONE
-// "weird turn, could not finish" on the real robot). The planner backs the
-// robot ~0.55 m into a row mouth: start and goal body headings are nearly
-// aligned (~ -153 deg), so it should be an almost-straight reverse. The final
+// Regression: a short reverse leg (reproduces a "weird turn, could not
+// finish" hang seen on a real deployment). The planner backs the robot
+// ~0.55 m into a tight goal: start and goal body headings are nearly aligned
+// (~ -153 deg), so it should be an almost-straight reverse. The final
 // reference pose carries the GOAL BODY heading (opposite the travel direction,
-// as the real A* waypoints do), not the last-segment travel direction.
+// as real differential-drive A* waypoints do), not the last-segment travel
+// direction.
 namespace
 {
 // Build a reverse trajectory: polyline points + an explicit final body heading
@@ -392,8 +393,7 @@ SimResult simulateVerbose(
             fprintf(
                 stderr, "%5d %8.3f %8.3f %8.1f | %8.3f %8.3f %8.3f %8.1f %6d\n",
                 k, robot.x, robot.y, mrpt::RAD2DEG(robot.phi), vx, om, dGoal,
-                mrpt::RAD2DEG(out.heading_err),
-                static_cast<int>(out.status));
+                mrpt::RAD2DEG(out.heading_err), static_cast<int>(out.status));
 
         if (out.status == mpp::FollowerStatus::ReachedGoal)
         {
@@ -402,9 +402,9 @@ SimResult simulateVerbose(
         }
         if (out.command.points.empty()) break;
         r.maxSpeed = std::max(r.maxSpeed, vx);
-        // Ackermann steering limit: curvature |omega/v| capped at maxCurv, so an
-        // in-place spin (omega large, v ~ 0) is physically impossible (a car-like
-        // robot must roll to turn). maxCurv <= 0 => ideal unicycle.
+        // Ackermann steering limit: curvature |omega/v| capped at maxCurv, so
+        // an in-place spin (omega large, v ~ 0) is physically impossible (a
+        // car-like robot must roll to turn). maxCurv <= 0 => ideal unicycle.
         if (maxCurv > 0.0)
         {
             const double maxOm = std::abs(vx) * maxCurv;
@@ -419,17 +419,19 @@ SimResult simulateVerbose(
 
 TEST(TrajectoryFollower, ShortReverseEntryLiveCase)
 {
-    // Captured from the real robot (map frame): start pose and the entry
-    // standoff goal for block 59, a ~0.55 m reverse with aligned headings.
+    // Captured from a real robot (map frame): start pose and a goal
+    // standoff pose, a ~0.55 m reverse with aligned headings.
     const TPose2D start(1.001, 0.553, mrpt::DEG2RAD(-152.7));
     const TPose2D goal(1.545, 0.621, mrpt::DEG2RAD(-153.0));
 
-    // The REAL 11 A* waypoints captured live (make_plan_from_to, obstacle-free).
-    // Note the cusps: the positions overshoot to (1.636,0.701) then reverse back
-    // to (1.477,0.581) before the goal -- a differential-drive maneuver with
-    // direction reversals, not a straight reverse.
+    // The REAL 11 A* waypoints captured live (make_plan_from_to,
+    // obstacle-free). Note the cusps: the positions overshoot to (1.636,0.701)
+    // then reverse back to (1.477,0.581) before the goal -- a
+    // differential-drive maneuver with direction reversals, not a straight
+    // reverse.
     const std::vector<TPoint2D> pts = {
-        {1.001, 0.553},          {1.0946131281188594, 0.5874501963198541},
+        {1.001, 0.553},
+        {1.0946131281188594, 0.5874501963198541},
         {1.1937828734685965, 0.5982016015376657},
         {1.2936350310744624, 0.6024873565384339},
         {1.3923220209724492, 0.6182892496624218},
@@ -447,12 +449,13 @@ TEST(TrajectoryFollower, ShortReverseEntryLiveCase)
     f.params.arrival_radius = 0.3;
     f.setTrajectory(revTraj(pts, goal.phi, 0.5));
 
-    // Ackermann min turn radius ~0.36 m (tutabot) -> max curvature ~2.78 /m.
+    // Ackermann min turn radius ~0.36 m -> max curvature ~2.78 /m.
     const double kMaxCurv = 1.0 / 0.36;
     const auto   r        = simulateVerbose(f, start, pts, goal, kMaxCurv);
 
-    const double dGoal = std::hypot(r.finalPose.x - goal.x, r.finalPose.y - goal.y);
-    const double hErr  = mrpt::RAD2DEG(
+    const double dGoal =
+        std::hypot(r.finalPose.x - goal.x, r.finalPose.y - goal.y);
+    const double hErr = mrpt::RAD2DEG(
         std::abs(mrpt::math::wrapToPi(r.finalPose.phi - goal.phi)));
     fprintf(
         stderr,
@@ -464,27 +467,104 @@ TEST(TrajectoryFollower, ShortReverseEntryLiveCase)
     // It must back cleanly into the standoff and terminate -- not turn away and
     // hang. Position is reached within tolerance; the terminal heading is
     // best-effort (an Ackermann robot cannot seat a differential-drive path's
-    // in-place terminal rotation, and the downstream corridor-follower
-    // re-orients from the standoff), so only a loose heading bound is asserted.
+    // in-place terminal rotation, and a downstream reactive controller
+    // re-orients from the standoff in the real deployment), so only a loose
+    // heading bound is asserted.
     EXPECT_TRUE(r.reached) << "follower failed to reach/terminate on a short "
                               "reverse goal (hung on the terminal cusp-loop)";
     EXPECT_LT(dGoal, 0.15);
     EXPECT_LT(hErr, 25.0);
 }
 
+// Reproduces the "rotates too aggressively" complaint from a real
+// entry-alignment maneuver: a short, sharp turn where pure pursuit alone would
+// ask for a tighter radius than the deployed (Ackermann) vehicle can make.
+// min_turn_radius must clamp the *commanded* curvature directly, unlike
+// max_lateral_accel (which only trades speed for curvature but never bounds
+// it), so the follower never issues a physically infeasible turn.
+TEST(TrajectoryFollower, ClampsCurvatureToMinTurnRadius)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {0.3, 0}, {0.3, 0.3}};
+    mpp::TrajectoryFollower     f;
+    f.params.max_speed       = 0.5;
+    f.params.min_turn_radius = 0.36;  // a real Ackermann robot's turn limit
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    TPose2D      robot   = {0, 0, 0};
+    double       v       = 0;
+    const double dt      = f.params.control_period;
+    double       maxCurv = 0.0;
+    for (int k = 0; k < 500; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal) break;
+        if (out.command.points.empty()) break;
+        const auto tw = out.command.points.front().twist;
+        if (std::abs(tw.vx) > 1e-3)
+            maxCurv = std::max(maxCurv, std::abs(tw.omega / tw.vx));
+        robot = integrate(robot, tw.vx, tw.omega, dt);
+        v     = tw.vx;
+    }
+    EXPECT_LE(maxCurv, 1.0 / f.params.min_turn_radius + 1e-6);
+}
+
+// A path with a cusp far from the final goal must slow toward that cusp too,
+// not only toward the final goal: without this, the follower cruises at full
+// speed right up to the direction reversal and then has to take the sharp
+// just-past-cusp turn while still fast (the aggressive-looking behavior seen
+// on a real deployment's short reverse-entry maneuver).
+TEST(TrajectoryFollower, DeceleratesBeforeCusp)
+{
+    // (0,0) -> (5,0) -> (3,1): a cusp at s=5, well short of the final goal
+    // distance check dominating (at x=4.9,y=0 the cusp is 0.1 m away in a
+    // straight line, the goal 2.15 m away). The goal is off-axis so it never
+    // physically coincides with a point on the outbound leg (unlike a
+    // same-line "there and back" path, which would let the robot satisfy the
+    // Euclidean goal-distance check early, without ever tracking arc-length
+    // through the cusp).
+    const std::vector<TPoint2D> pts = {{0, 0}, {5, 0}, {3, 1}};
+    mpp::TrajectoryFollower     f;
+    f.params.max_speed = 0.5;
+    f.params.max_decel = 0.7;
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    TPose2D      robot         = {0, 0, 0};
+    double       v             = 0;
+    const double dt            = f.params.control_period;
+    double       speedNearCusp = -1;
+    for (int k = 0; k < 1000; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal) break;
+        if (out.command.points.empty()) break;
+        const auto tw = out.command.points.front().twist;
+        if (speedNearCusp < 0 && out.arc_length_s > 4.85 &&
+            out.arc_length_s < 4.98)
+            speedNearCusp = std::abs(tw.vx);
+        robot = integrate(robot, tw.vx, tw.omega, dt);
+        v     = tw.vx;
+    }
+    ASSERT_GE(speedNearCusp, 0.0) << "never sampled a point near the cusp";
+    // Without decel-to-cusp this would still be at max_speed (0.5); within
+    // 0.1-0.15 m of the cusp the cap is sqrt(2*0.7*d) = 0.37-0.46 m/s.
+    EXPECT_LT(speedNearCusp, 0.48);
+}
+
 TEST(TrajectoryFollower, ParamsYamlRoundTrip)
 {
     mpp::TrajectoryFollower::Parameters p;
-    p.max_speed     = 0.33;
-    p.lookahead_max = 2.0;
-    p.horizon       = 2.5;
-    p.stop_distance = 0.42;
-    p.slow_distance = 1.75;
-    const auto y    = p.as_yaml();
-    const auto p2   = mpp::TrajectoryFollower::Parameters::FromYAML(y);
+    p.max_speed       = 0.33;
+    p.lookahead_max   = 2.0;
+    p.horizon         = 2.5;
+    p.stop_distance   = 0.42;
+    p.slow_distance   = 1.75;
+    p.min_turn_radius = 0.4;
+    const auto y      = p.as_yaml();
+    const auto p2     = mpp::TrajectoryFollower::Parameters::FromYAML(y);
     EXPECT_NEAR(p2.max_speed, 0.33, 1e-9);
     EXPECT_NEAR(p2.lookahead_max, 2.0, 1e-9);
     EXPECT_NEAR(p2.horizon, 2.5, 1e-9);
     EXPECT_NEAR(p2.stop_distance, 0.42, 1e-9);
     EXPECT_NEAR(p2.slow_distance, 1.75, 1e-9);
+    EXPECT_NEAR(p2.min_turn_radius, 0.4, 1e-9);
 }
