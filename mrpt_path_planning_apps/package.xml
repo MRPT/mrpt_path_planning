@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<!-- This is a ROS package file, intended to allow this library to be built
+     side-by-side to real ROS packages in a catkin/ament environment.
+-->
+<package format="3">
+  <name>mrpt_path_planning_apps</name>
+  <version>2.0.0</version>
+  <description>CLI and GUI applications for mrpt_path_planning: path-planner-cli (opens a 3D viz window) and selfdriving-simulator-gui (requires mvsim). Kept in a separate package from mrpt_path_planning_core so headless consumers don't need to pull in mrpt_libgui.</description>
+
+  <author     email="joseluisblancoc@gmail.com">Jose-Luis Blanco-Claraco</author>
+  <maintainer email="joseluisblancoc@gmail.com">Jose-Luis Blanco-Claraco</maintainer>
+
+  <url type="website">https://github.com/MRPT/mrpt_path_planning</url>
+
+  <license>BSD</license>
+
+  <!-- Deps required by user code (they are in public headers or built as ROS (vs system) packages -->
+  <depend>mrpt_path_planning_core</depend>
+  <depend>mrpt_libgui</depend>
+  <depend>mrpt_libnav</depend>
+  <depend>mrpt_libtclap</depend>
+  <depend>mvsim</depend>
+
+  <!-- Minimum entries to release non-catkin pkgs: -->
+  <buildtool_depend>cmake</buildtool_depend>
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+  <!-- End -->
+
+</package>

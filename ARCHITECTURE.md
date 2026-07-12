@@ -5,14 +5,18 @@
 **mrpt_path_planning** (namespace: `mpp`) is a C++17 library for kinematically-feasible path planning on planar environments with point-cloud obstacles. It builds on the MRPT libraries and uses **Parameterized Trajectory Generators (PTGs)** as motion primitives to plan paths for vehicles with realistic kinematics (differential-drive, Ackermann, holonomic).
 
 - **License**: BSD
-- **Build**: CMake (standalone) or colcon (ROS 2)
-- **Dependencies**: MRPT >= 2.12.0 (mrpt-nav, mrpt-maps, mrpt-graphs, mrpt-gui, mrpt-containers, mrpt-tclap)
+- **Build**: colcon only (no standalone top-level CMake build)
+- **Dependencies**: MRPT >= 2.12.0 (mrpt-nav, mrpt-maps, mrpt-graphs, mrpt-containers, mrpt-tclap; mrpt-gui only in the apps package)
 
 ## 2. Directory Structure
 
+The repository holds three independent colcon/ROS 2 packages (each with its
+own `package.xml` + `CMakeLists.txt`), following the same headless/GUI split
+`mp2p_icp` uses (`mp2p_icp_core` / `mp2p_icp_viz` / `mp2p_icp`):
+
 ```
-mrpt_path_planning/
-├── mrpt_path_planning/           # Core library
+mrpt_path_planning/                     # git repo root
+├── mrpt_path_planning_core/            # Headless algorithms library (no GUI dep)
 │   ├── include/mpp/
 │   │   ├── algos/                # Planning algorithms
 │   │   │   ├── TPS_Astar.h       # ★ Main A* planner
@@ -21,8 +25,9 @@ mrpt_path_planning/
 │   │   │   ├── tp_obstacles_single_path.h  # Collision checking
 │   │   │   ├── edge_interpolated_path.h    # Path interpolation
 │   │   │   ├── transform_pc_square_clipping.h  # Obstacle transform
-│   │   │   ├── render_tree.h / render_vehicle.h / viz.h  # Visualization
+│   │   │   ├── render_tree.h / render_vehicle.h / viz_svg.h  # Visualization (opengl scene objects, no windowing)
 │   │   │   ├── bestTrajectory.h / trajectories.h / refine_trajectory.h
+│   │   │   ├── TrajectoryFollower.h  # Pure-pursuit trajectory follower
 │   │   │   └── within_bbox.h / NavEngine.h
 │   │   ├── data/                 # Data structures
 │   │   │   ├── SE2_KinState.h    # SE(2) pose+velocity state
@@ -30,26 +35,34 @@ mrpt_path_planning/
 │   │   │   ├── MoveEdgeSE2_TPS.h # Edge: PTG-based motion segment
 │   │   │   ├── PlannerInput.h / PlannerOutput.h
 │   │   │   ├── trajectory_t.h / Waypoints.h / TrajectoriesAndRobotShape.h
+│   │   │   ├── Trajectory.h / SampledTrajectory.h  # TrajectoryFollower's I/O types
 │   │   │   ├── basic_types.h / ptg_t.h / RenderOptions.h
 │   │   │   ├── EnqueuedMotionCmd.h / ProgressCallbackData.h
 │   │   │   └── VehicleLocalizationState.h / VehicleOdometryState.h
 │   │   ├── interfaces/           # Abstract interfaces
 │   │   │   ├── ObstacleSource.h  # Obstacle providers
 │   │   │   ├── VehicleMotionInterface.h  # Vehicle control
+│   │   │   ├── TrajectoryVehicleInterface.h  # TrajectoryFollower's platform boundary
 │   │   │   └── TargetApproachController.h
 │   │   └── ptgs/                 # PTG implementations
 │   │       ├── SpeedTrimmablePTG.h
 │   │       ├── DiffDriveCollisionGridBased.h
 │   │       ├── DiffDrive_C.h     # Circular-arc PTG
 │   │       └── HolonomicBlend.h  # Holonomic blend PTG
-│   └── src/                      # Corresponding .cpp files
-├── apps/
-│   ├── path-planner-cli/         # CLI tool for planning
-│   └── selfdriving-simulator-gui/ # GUI simulator (requires mvsim)
-├── share/                        # Config files: PTG .ini, planner .yaml, obstacles .txt
-├── wip-experimental/             # TPS_RRTstar (work-in-progress)
-└── package.xml                   # ROS 2 package manifest
+│   ├── src/                      # Corresponding .cpp files
+│   ├── tests/                    # GTest unit test suite
+│   └── wip-experimental/         # TPS_RRTstar (work-in-progress, unbuilt)
+├── mrpt_path_planning_apps/            # CLI + GUI applications (needs mrpt-gui)
+│   ├── path-planner-cli/         # CLI tool for planning (opens a 3D viz window; viz.h/.cpp live here, private)
+│   ├── selfdriving-simulator-gui/ # GUI simulator (requires mvsim)
+│   └── share/                    # Config files: PTG .ini, planner .yaml, obstacles .txt
+└── mrpt_path_planning/                 # Backward-compat metapackage (no code/targets)
 ```
+
+Anyone who only needs the planning algorithms should depend on
+`mrpt_path_planning_core` directly to avoid pulling in `mrpt_libgui` (and its
+transitive X11/nanogui/GLFW deps). Consumers of the old, undifferentiated
+`mrpt_path_planning` dependency keep working unchanged via the metapackage.
 
 ## 3. Theoretical Foundations
 

@@ -11,7 +11,6 @@ jobs:
     env:
       CTEST_OUTPUT_ON_FAILURE: ON
       CTEST_PARALLEL_LEVEL: 1
-      CMAKE_BUILD_TYPE: ${{ matrix.build_type }}
       VERBOSE: 1  # to show all cmake scripts debug info
 
     strategy:
@@ -32,15 +31,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@master
 
-      - name: Git submodule
-        run: |
-          git submodule sync
-          git submodule update --init --recursive
-
       - name: Install Dependencies
         run: |
           sudo apt-get -y update
-          
+
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository  ppa:joseluisblancoc/mrpt -y
           sudo apt-get update -qq
@@ -49,17 +43,19 @@ jobs:
           # libgtest-dev is required for the unit tests to be built and run;
           # without it tests/CMakeLists.txt skips the whole suite (ctest then
           # reports "No tests were found").
-          sudo apt install -qq -y cmake build-essential libmrpt-dev libgtest-dev
+          sudo apt install -qq -y cmake build-essential libmrpt-dev libgtest-dev python3-pip
 
-      - name: CMake configure
-        run: |
-          cmake -DCMAKE_VERBOSE_MAKEFILE=ON \
-                -H. -Bbuild
+          # This repo is colcon-only (no standalone top-level CMake build);
+          # colcon itself is pure Python, so pip avoids needing the ROS apt repo.
+          pip3 install -U colcon-common-extensions
 
-      - name: Build all
+      - name: colcon build
         run: |
-          make -C build
+          colcon build --base-paths . \
+            --event-handlers console_direct+ \
+            --cmake-args -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_VERBOSE_MAKEFILE=ON
 
-      - name: Unit tests
+      - name: colcon test
         run: |
-          cd build && ctest --output-on-failure -j1
+          colcon test --base-paths . --event-handlers console_direct+
+          colcon test-result --all --verbose

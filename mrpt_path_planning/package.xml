@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<!-- Metapackage kept for backward compatibility: anyone with
+     <depend>mrpt_path_planning</depend> (or `apt install ros-$ROS_DISTRO-mrpt-path-planning`)
+     keeps getting the exact same set of libraries and applications as
+     before this repo was split into mrpt_path_planning_core (headless
+     library) and mrpt_path_planning_apps (CLI/GUI applications). New
+     consumers that only need the headless C++ library should depend on
+     mrpt_path_planning_core directly to avoid pulling in mrpt_libgui.
+-->
+<package format="3">
+  <name>mrpt_path_planning</name>
+  <version>2.0.0</version>
+  <description>Metapackage for mrpt_path_planning: depends on mrpt_path_planning_core (headless path-planning library) and mrpt_path_planning_apps (CLI/GUI applications).</description>
+
+  <author     email="joseluisblancoc@gmail.com">Jose-Luis Blanco-Claraco</author>
+  <maintainer email="joseluisblancoc@gmail.com">Jose-Luis Blanco-Claraco</maintainer>
+
+  <url type="website">https://github.com/MRPT/mrpt_path_planning</url>
+
+  <license>BSD</license>
+
+  <depend>mrpt_path_planning_core</depend>
+  <depend>mrpt_path_planning_apps</depend>
+
+  <!-- Minimum entries to release non-catkin pkgs: -->
+  <buildtool_depend>cmake</buildtool_depend>
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+  <!-- End -->
+
+</package>
