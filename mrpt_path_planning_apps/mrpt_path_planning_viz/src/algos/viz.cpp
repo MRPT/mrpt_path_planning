@@ -4,7 +4,7 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include "viz.h"
+#include <mpp/algos/viz.h>
 
 #include <mpp/algos/render_tree.h>
 #include <mpp/algos/trajectories.h>

@@ -4,13 +4,12 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include "viz.h"
-
 #include <mpp/algos/CostEvaluatorCostMap.h>
 #include <mpp/algos/CostEvaluatorPreferredWaypoint.h>
 #include <mpp/algos/TPS_Astar.h>
 #include <mpp/algos/refine_trajectory.h>
 #include <mpp/algos/trajectories.h>
+#include <mpp/algos/viz.h>
 #include <mpp/algos/viz_svg.h>
 #include <mpp/data/Waypoints.h>
 #include <mrpt/3rdparty/tclap/CmdLine.h>

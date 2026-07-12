@@ -40,6 +40,7 @@ find_package(mvsim-simulator QUIET)
 find_package(mvsim-comms QUIET)
 
 # Targets:
+add_subdirectory(mrpt_path_planning_viz)
 add_subdirectory(path-planner-cli)
 add_subdirectory(selfdriving-simulator-gui)
 

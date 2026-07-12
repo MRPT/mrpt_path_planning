@@ -182,7 +182,7 @@ function(selfdriving_configure_library TARGETNAME)
   set(ALL_DEPS_LIST ${ARGN}) # used in xxx-config.cmake.in
   set(SELFDRIVING_MODULE_NAME ${TARGETNAME})
   configure_file(
-    "${PROJECT_SOURCE_DIR}/cmake/template-config.cmake.in"
+    "${CMAKE_SOURCE_DIR}/cmake/template-config.cmake.in"
     "${CMAKE_BINARY_DIR}/${TARGETNAME}-config.cmake" IMMEDIATE @ONLY
   )
   # Version file:
@@ -196,6 +196,8 @@ function(selfdriving_configure_library TARGETNAME)
 	install(
 		EXPORT
 			${TARGETNAME}-targets
+		NAMESPACE
+			mpp::
 		DESTINATION
 			${CMAKE_INSTALL_LIBDIR}/${TARGETNAME}/cmake
 	)
