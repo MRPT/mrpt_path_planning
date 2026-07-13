@@ -195,18 +195,23 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     Trajectory          traj_;
     std::vector<double> cumS_;  //!< cumulative arc-length per point
     std::vector<double>
-           cuspS_;  //!< arc-lengths where travel direction reverses
+        cuspS_;  //!< arc-lengths where travel direction reverses
+    std::vector<std::size_t>
+           cuspIdx_;  //!< traj_ knot index for each entry in cuspS_
     double lastS_ = 0;  //!< monotonic progress (map projection)
+
+    /** Driving gear (+1 forward, -1 reverse) for each cusp-bounded interval
+     * of the path (size == cuspS_.size() + 1); see \ref advanceGear. */
+    std::vector<double> gearPerInterval_;
+
+    /** Index into gearPerInterval_ of the interval the follower has last
+     * committed to; monotonic (see \ref advanceGear). */
+    std::size_t currentInterval_ = 0;
 
     /** Last commanded speed [m/s]. The feedforward speed ramp is rate-limited
      * from this internal state (not from measured odometry velocity), so the
      * profile still accelerates when the odometry source reports no twist. */
     double lastCommandedSpeed_ = 0;
-
-    /** Latched driving gear (+1 forward, -1 reverse). Held with hysteresis so
-     * the noisy per-segment travel direction on the goal reorientation does not
-     * chatter the gear (and cusp-brake) the robot to a crawl. */
-    double gear_ = 1.0;
 
     /** Latched once the robot has settled within `arrival_radius` of the goal;
      * from then on it holds a stop instead of driving back away from a pose it
@@ -244,6 +249,20 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      * max_speed). */
     double speedCapAt(double s) const;
 
+    /** Advances \ref currentInterval_ past every cusp whose arc-length the
+     * localized projection `s` has already reached, and returns that
+     * interval's gear (\ref gearPerInterval_). Monotonic and latched (never
+     * regresses), called once per real \ref step cycle -- not re-evaluated
+     * per predicted sample -- so a projection that lingers at/near a cusp
+     * (e.g. while nearly stopped there, or pinned on the shared vertex of a
+     * path that loops back close to itself, see \ref projectToPath) commits
+     * to the new gear instead of chattering back and forth. A path with a
+     * genuine mid-path direction reversal (e.g. a three-point turn) needs a
+     * different gear before and after the cusp; using a single gear for the
+     * whole path would make the follower cut straight across such a
+     * maneuver instead of tracing it. */
+    double advanceGear(double s);
+
     struct Command
     {
         double               v     = 0;  //!< [m/s]
@@ -272,10 +291,12 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
 
     /** Rolls the command forecast forward from `startPose` (map frame) and
      * returns the travel distance to the first predicted footprint contact;
-     * +inf if none within `safety_horizon`. */
+     * +inf if none within `safety_horizon`. `gear` is the interval gear
+     * already latched by \ref advanceGear for this cycle (the forecast does
+     * not re-decide it per predicted sample). */
     double forecastContactDistance(
-        const mrpt::math::TPose2D& startPose, double startV,
-        double startS) const;
+        const mrpt::math::TPose2D& startPose, double startV, double startS,
+        double gear) const;
 
     /** Sweeps the footprint along the reference path ahead of `startS` and
      * returns the travel distance to the first predicted contact; +inf if none

@@ -127,6 +127,7 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
         cumS_[i]      = cumS_[i - 1] + std::hypot(b.x - a.x, b.y - a.y);
     }
     lastS_              = 0;
+    currentInterval_    = 0;
     lastCommandedSpeed_ = 0;
     stopped_            = false;
     stoppedSince_       = INVALID_TIMESTAMP;
@@ -138,6 +139,7 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
     // pursuit must not look *across* a cusp, or the lookahead jumps to the
     // doubling-back branch and commands an erratic, over-rotating curvature.
     cuspS_.clear();
+    cuspIdx_.clear();
     for (std::size_t i = 1; i + 1 < traj_.size(); i++)
     {
         const auto&  a  = traj_[i - 1].pose;
@@ -145,30 +147,85 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
         const auto&  c2 = traj_[i + 1].pose;
         const double ux = b.x - a.x, uy = b.y - a.y;
         const double wx = c2.x - b.x, wy = c2.y - b.y;
-        if (ux * wx + uy * wy < 0.0) cuspS_.push_back(cumS_[i]);
+        if (ux * wx + uy * wy < 0.0)
+        {
+            cuspS_.push_back(cumS_[i]);
+            cuspIdx_.push_back(i);
+        }
     }
 
-    // Global driving gear, chosen so the robot arrives at the goal heading:
-    // reverse when the reference ends tail-first (e.g. a differential-drive
-    // planner backs the robot in), forward when the goal heading matches the
-    // path's forward travel direction (an open-space approach the robot can
-    // drive nose-first). One gear for the whole path avoids mid-path cusp
-    // chatter and, for open-space cases, sidesteps a terminal in-place turn an
-    // Ackermann robot could not seat. Measured over the final approach so the
-    // jagged micro-tail at the goal does not decide it.
-    gear_ = 1.0;
+    // Driving gear per cusp-bounded interval. The final interval is decided
+    // exactly as before (unchanged formula/behavior for a path with no
+    // cusps): reverse when the path ends tail-first (e.g. a
+    // differential-drive planner backs the robot in), forward when the goal
+    // heading matches the final approach's own travel direction. Measured
+    // over a <=0.7 m window so a jagged micro-tail does not decide it.
+    gearPerInterval_.assign(cuspS_.size() + 1, 1.0);
     if (traj_.size() >= 2)
     {
-        const double total = totalLength();
-        const double w     = std::min(total, 0.7);
-        const auto   pB    = pointAtArc(total);
-        const auto   pA    = pointAtArc(total - w);
-        const double chord = std::hypot(pB.x - pA.x, pB.y - pA.y);
-        const double tang  = chord > 1e-3 ? std::atan2(pB.y - pA.y, pB.x - pA.x)
-                                          : traj_.back().pose.phi;
-        const double endH  = traj_.back().pose.phi;
-        gear_ = std::cos(mrpt::math::wrapToPi(endH - tang)) >= 0.0 ? 1.0 : -1.0;
+        {
+            const double total = totalLength();
+            const double w     = std::min(total, 0.7);
+            const auto   pB    = pointAtArc(total);
+            const auto   pA    = pointAtArc(total - w);
+            const double chord = std::hypot(pB.x - pA.x, pB.y - pA.y);
+            const double endH  = traj_.back().pose.phi;
+            const double tang =
+                chord > 1e-3 ? std::atan2(pB.y - pA.y, pB.x - pA.x) : endH;
+            gearPerInterval_.back() =
+                std::cos(mrpt::math::wrapToPi(endH - tang)) >= 0.0 ? 1.0 : -1.0;
+        }
+
+        // Walk backward across each cusp deciding whether the gear actually
+        // flips there or just continues (a genuine three-point-turn cusp vs.
+        // a merely sharp forward/reverse corner -- both look identical as a
+        // position-only direction reversal, see cuspS_ above). The
+        // distinguishing signal is the *recorded heading*, not position: a
+        // real gear flip lets the vehicle keep rotating smoothly through the
+        // cusp (only which way it drives relative to that heading changes),
+        // so the heading is near-continuous there; a same-gear sharp corner
+        // instead re-points the heading itself to match the new travel
+        // direction, so the heading jumps by roughly the corner's own turn
+        // angle. A real planner's waypoint headings make this well defined
+        // per cusp; kHeadingContinuityThreshold errs toward "same gear"
+        // (needs a small jump to call it a flip) so an ordinary sharp corner
+        // is never mistaken for a reversal.
+        constexpr double kHeadingContinuityThreshold = 90.0 * M_PI / 180.0;
+        for (std::size_t k = cuspS_.size(); k >= 1; k--)
+        {
+            const std::size_t cuspIdx = cuspIdx_[k - 1];
+            const double      jump    = std::abs(mrpt::math::wrapToPi(
+                        traj_[cuspIdx].pose.phi - traj_[cuspIdx - 1].pose.phi));
+            const bool        flips   = jump < kHeadingContinuityThreshold;
+            gearPerInterval_[k - 1] =
+                flips ? -gearPerInterval_[k] : gearPerInterval_[k];
+        }
     }
+}
+
+double TrajectoryFollower::advanceGear(double s)
+{
+    // Monotonic and latched: once progress reaches a cusp's own arc-length,
+    // permanently commit to the next interval and never step back, even if a
+    // later cycle's projection lands slightly earlier again. This matters
+    // beyond the instant of crossing: on a path that loops back close to
+    // itself (the very shape a cusp maneuver produces), a robot that has
+    // drifted off-track can have its nearest-point projection clamp to the
+    // cusp vertex from *both* neighboring segments over a whole range of
+    // nearby positions (projectToPath's per-segment `t` clamps to that
+    // shared endpoint) -- and the vehicle naturally slows toward ~0 right at
+    // a cusp by design (see the decel-to-cusp cap in pursuit()), so it can
+    // sit there, straddling the arc-length by less than a millimeter, for
+    // many cycles. A stateless "which interval is s in" lookup would flip
+    // back and forth across that millimeter every cycle (each flip reversing
+    // the commanded direction) and never actually cross; latching makes the
+    // crossing a one-way, one-time decision instead.
+    while (currentInterval_ < cuspS_.size() &&
+           s >= cuspS_[currentInterval_] - 1e-6)
+    {
+        currentInterval_++;
+    }
+    return gearPerInterval_.empty() ? 1.0 : gearPerInterval_[currentInterval_];
 }
 
 void TrajectoryFollower::reset()
@@ -176,11 +233,13 @@ void TrajectoryFollower::reset()
     traj_.clear();
     cumS_.clear();
     cuspS_.clear();
+    cuspIdx_.clear();
+    gearPerInterval_.clear();
+    currentInterval_    = 0;
     lastS_              = 0;
     lastCommandedSpeed_ = 0;
     stopped_            = false;
     stoppedSince_       = INVALID_TIMESTAMP;
-    gear_               = 1.0;
     arrived_            = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
 }
@@ -310,15 +369,18 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     // reaching into the reversed branch yields a huge spurious curvature (the
     // robot tries to spin toward a point it should reach by reversing gear, not
     // by turning). Clamp the lookahead arc-length to the next direction change.
+    // Bounded via currentInterval_ (the same latch `gear` was already read
+    // from), not by re-scanning cuspS_ against `proj.s`: projectToPath's
+    // windowed search can legitimately let `proj.s` drift back below a cusp
+    // the vehicle has already committed past (its own nearest-point search
+    // window, not a progress guarantee), which would otherwise re-clamp the
+    // lookahead onto a cusp already behind the vehicle and pin it there.
     double       lookaheadS = proj.s + L;
-    const double nextCuspS  = [&]() -> double
-    {
-        for (const double sc : cuspS_)
-            if (sc > proj.s + 1e-3) return sc;
-        return std::numeric_limits<double>::infinity();
-    }();
-    lookaheadS    = std::min(lookaheadS, nextCuspS);
-    out.lookahead = pointAtArc(lookaheadS);
+    const double nextCuspS  = currentInterval_ < cuspS_.size()
+                                  ? cuspS_[currentInterval_]
+                                  : std::numeric_limits<double>::infinity();
+    lookaheadS              = std::min(lookaheadS, nextCuspS);
+    out.lookahead           = pointAtArc(lookaheadS);
 
     // Lookahead in robot frame.
     const double dx = out.lookahead.x - fromPose.x;
@@ -332,6 +394,14 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     // Pure-pursuit curvature; the same circle is driven forward or in reverse,
     // the sign of the commanded speed (via `gear`) sets the travel direction.
     double curv = Ld > 1e-3 ? 2.0 * yr / (Ld * Ld) : 0.0;
+    // Desired (unclamped) curvature, kept for the lateral-accel speed cap
+    // below: when the turn the pursuit geometry actually wants is tighter
+    // than the vehicle can make, clamping curv down (next) still leaves the
+    // vehicle needing to travel a wide arc around the lookahead point: the
+    // speed must be capped for *that* wide, fast sweep, not for the gentler
+    // clamped curvature it ends up commanding, or it cruises through a sharp
+    // turn too fast and overshoots the reference further than necessary.
+    const double curvDesired = curv;
 
     // Clamp to the vehicle's own steering-limited minimum turn radius (if
     // set): unlike the lateral-accel cap below, which only trades off speed
@@ -365,9 +435,9 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
                                    std::hypot(cuspPt.x - fromPose.x, cuspPt.y - fromPose.y));
     }
     double cap = speedCapAt(proj.s);
-    if (std::abs(curv) > 1e-3)
-        cap =
-            std::min(cap, std::sqrt(params.max_lateral_accel / std::abs(curv)));
+    if (std::abs(curvDesired) > 1e-3)
+        cap = std::min(
+            cap, std::sqrt(params.max_lateral_accel / std::abs(curvDesired)));
     cap = std::min(cap, std::sqrt(2.0 * params.max_decel * distToStop));
 
     // Predictive-safety speed scale (caps the target before rate-limiting so
@@ -420,7 +490,8 @@ double TrajectoryFollower::footprintClearance(
 }
 
 double TrajectoryFollower::forecastContactDistance(
-    const mrpt::math::TPose2D& startPose, double startV, double startS) const
+    const mrpt::math::TPose2D& startPose, double startV, double startS,
+    double gear) const
 {
     double              L = 0;
     mrpt::math::TPose2D p = startPose;
@@ -435,7 +506,7 @@ double TrajectoryFollower::forecastContactDistance(
     {
         if (footprintClearance(p) <= params.safety_margin) return L;
 
-        const Command cmd = pursuit(p, v, s, params.sample_period, gear_, 1.0);
+        const Command cmd = pursuit(p, v, s, params.sample_period, gear, 1.0);
         const mrpt::math::TPose2D pNext =
             integrateUnicycle(p, cmd.v, cmd.omega, params.sample_period);
 
@@ -482,6 +553,10 @@ TrajectoryFollower::Output TrajectoryFollower::step(
 
     const Projection proj = projectToPath({loc.pose.x, loc.pose.y}, lastS_);
     lastS_                = proj.s;
+    // Latched once from the real localized projection; reused below for both
+    // the safety forecast and the emitted command sampling loop instead of
+    // being re-decided per predicted sample (see advanceGear).
+    const double gear = advanceGear(proj.s);
 
     // Desired body heading at the goal: the reference's own final heading, not
     // the last segment's travel direction (they are opposite on a reverse
@@ -549,7 +624,8 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     double scale = 1.0;
     if (!obstacles_.empty())
     {
-        const double dFwd = forecastContactDistance(loc.pose, predV, proj.s);
+        const double dFwd =
+            forecastContactDistance(loc.pose, predV, proj.s, gear);
         const double dRef = referenceContactDistance(proj.s);
         scale             = std::min(
                         contactDistanceToScale(dFwd), contactDistanceToScale(dRef));
@@ -598,7 +674,7 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     for (int k = 0; k <= nSamples; k++)
     {
         const Command cmd =
-            pursuit(predPose, predV, predS, params.sample_period, gear_, scale);
+            pursuit(predPose, predV, predS, params.sample_period, gear, scale);
 
         TrajSample smp;
         smp.t = k * params.sample_period;

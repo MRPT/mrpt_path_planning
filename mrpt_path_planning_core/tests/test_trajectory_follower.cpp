@@ -550,6 +550,119 @@ TEST(TrajectoryFollower, DeceleratesBeforeCusp)
     EXPECT_LT(speedNearCusp, 0.48);
 }
 
+// --------------------------------------------------------------------------
+// Regression: two REAL A* plans captured from a field-robot rosbag, both
+// requested a few seconds apart by the same "approach then enter a narrow
+// row" maneuver (an agricultural robot lining up with, then backing into, a
+// crop row). Each waypoint's heading below is the *exact* orientation the
+// live reference-path message carried for that pose (not a
+// tangent-from-neighbor reconstruction), so the test reproduces precisely
+// what a deployed `TrajectoryFollower`-based node consumed.
+namespace
+{
+struct XYYawDeg
+{
+    double x, y, yaw_deg;
+};
+
+mpp::Trajectory mkTrajFromRecorded(
+    const std::vector<XYYawDeg>& pts, double speed)
+{
+    mpp::Trajectory tr;
+    for (const auto& p : pts)
+    {
+        tr.emplace_back(TPose2D(p.x, p.y, mrpt::DEG2RAD(p.yaw_deg)), speed);
+    }
+    return tr;
+}
+
+std::vector<TPoint2D> xyOf(const std::vector<XYYawDeg>& pts)
+{
+    std::vector<TPoint2D> out;
+    for (const auto& p : pts) out.emplace_back(p.x, p.y);
+    return out;
+}
+
+// Deployment-like tuning (small Ackermann field robot: ~0.36 m min turn
+// radius), so this test exercises a realistic follower configuration.
+void applyDeployedParams(mpp::TrajectoryFollower& f)
+{
+    f.params.max_speed         = 0.5;
+    f.params.max_accel         = 0.5;
+    f.params.max_decel         = 0.7;
+    f.params.max_lateral_accel = 1.0;
+    f.params.min_turn_radius   = 0.4;
+    f.params.lookahead_min     = 0.4;
+    f.params.lookahead_max     = 1.5;
+    f.params.lookahead_time    = 1.0;
+    f.params.goal_dist_tol     = 0.15;
+    f.params.goal_ang_tol      = mrpt::DEG2RAD(12.0);
+    f.params.max_cross_track   = 1.0;
+    f.params.arrival_radius    = 0.3;
+}
+}  // namespace
+
+TEST(TrajectoryFollower, ApproachStandoffLiveCase)
+{
+    const std::vector<XYYawDeg> pts = {
+        {2.542, 2.945, -63.2},  {2.593, 2.858, -55.8},  {2.654, 2.780, -48.4},
+        {2.725, 2.709, -41.0},  {2.805, 2.649, -33.6},  {2.886, 2.590, -38.1},
+        {2.962, 2.526, -42.5},  {3.033, 2.455, -46.9},  {3.099, 2.380, -51.4},
+        {3.155, 2.297, -60.2},  {3.192, 2.220, -67.8},  {3.215, 2.123, -86.2},
+        {3.205, 2.024, -104.7}, {3.165, 1.933, -123.1}, {3.098, 1.859, -141.6},
+        {3.178, 1.919, -144.5}, {3.260, 1.975, -147.4}, {3.236, 1.924, -152.4}};
+
+    mpp::TrajectoryFollower f;
+    applyDeployedParams(f);
+    f.setTrajectory(mkTrajFromRecorded(pts, 0.5));
+
+    const TPose2D start(
+        pts.front().x, pts.front().y, mrpt::DEG2RAD(pts.front().yaw_deg));
+    const TPose2D goal(
+        pts.back().x, pts.back().y, mrpt::DEG2RAD(pts.back().yaw_deg));
+    const double kMaxCurv = 1.0 / 0.364;  // real Ackermann wheelbase limit
+    const auto   r = simulateVerbose(f, start, xyOf(pts), goal, kMaxCurv);
+
+    const double dGoal =
+        std::hypot(r.finalPose.x - goal.x, r.finalPose.y - goal.y);
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(dGoal, 0.3);
+    EXPECT_LT(r.maxCross, 0.5);
+}
+
+TEST(TrajectoryFollower, RowEntryCuspLiveCase)
+{
+    const std::vector<XYYawDeg> pts = {
+        {3.047, 2.063, -17.8},  {3.146, 2.051, 4.4},    {3.242, 2.078, 26.5},
+        {3.330, 2.125, 30.2},   {3.414, 2.178, 33.9},   {3.496, 2.236, 37.6},
+        {3.573, 2.300, 41.3},   {3.646, 2.368, 44.9},   {3.714, 2.441, 48.6},
+        {3.729, 2.458, 49.5},   {3.788, 2.538, 57.6},   {3.836, 2.626, 65.7},
+        {3.859, 2.723, 87.8},   {3.843, 2.821, 110.0},  {3.792, 2.906, 132.1},
+        {3.713, 2.966, 154.2},  {3.809, 2.941, 176.3},  {3.907, 2.953, -161.5},
+        {3.994, 3.002, -139.4}, {4.056, 3.080, -117.3}, {4.090, 3.174, -103.2},
+        {4.101, 3.273, -89.2},  {4.088, 3.372, -75.2},  {4.051, 3.464, -61.2},
+        {4.102, 3.505, -62.4}};
+
+    mpp::TrajectoryFollower f;
+    applyDeployedParams(f);
+    f.setTrajectory(mkTrajFromRecorded(pts, 0.5));
+
+    const TPose2D start(
+        pts.front().x, pts.front().y, mrpt::DEG2RAD(pts.front().yaw_deg));
+    const TPose2D goal(
+        pts.back().x, pts.back().y, mrpt::DEG2RAD(pts.back().yaw_deg));
+    const double kMaxCurv = 1.0 / 0.364;  // real Ackermann wheelbase limit
+    const auto   r = simulateVerbose(f, start, xyOf(pts), goal, kMaxCurv);
+
+    const double dGoal =
+        std::hypot(r.finalPose.x - goal.x, r.finalPose.y - goal.y);
+    EXPECT_NE(r.lastStatus, mpp::FollowerStatus::OffPathExceeded)
+        << "follower lost track of the cusp path, exactly as on the real robot";
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(dGoal, 0.3);
+    EXPECT_LT(r.maxCross, 0.5);
+}
+
 TEST(TrajectoryFollower, ParamsYamlRoundTrip)
 {
     mpp::TrajectoryFollower::Parameters p;
