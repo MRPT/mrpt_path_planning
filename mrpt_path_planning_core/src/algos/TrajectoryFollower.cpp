@@ -154,51 +154,45 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
         }
     }
 
-    // Driving gear per cusp-bounded interval. The final interval is decided
-    // exactly as before (unchanged formula/behavior for a path with no
-    // cusps): reverse when the path ends tail-first (e.g. a
-    // differential-drive planner backs the robot in), forward when the goal
-    // heading matches the final approach's own travel direction. Measured
-    // over a <=0.7 m window so a jagged micro-tail does not decide it.
+    // Driving gear per cusp-bounded interval, decided independently for each
+    // interval's own end boundary (no dependency between intervals): reverse
+    // when the vehicle's recorded heading approaching that boundary is
+    // opposed to the boundary's own approach direction (e.g. a
+    // differential-drive planner backs the robot in), forward when it
+    // matches (an open-space approach the robot can drive nose-first).
+    // Measured over a <=0.7 m window so a jagged micro-tail does not decide
+    // it; the window is anchored at the boundary and reaches backward as far
+    // as needed (even past an earlier cusp) rather than being clipped to the
+    // interval's own extent, so a short interval still gets a robust
+    // decision instead of being dominated by its own noise.
+    //
+    // The heading compared against is the *previous* knot's, not the
+    // boundary knot's own: at an intermediate cusp, comparing against the
+    // cusp knot's own heading would, for a planner that reports each
+    // waypoint's heading as its tangent to the *next* leg (a valid
+    // convention some callers use), spuriously look like a reversal there
+    // even for an ordinary same-gear sharp corner (its heading is that of
+    // the *incoming* leg, not the outgoing one the corner is actually
+    // turning into). The previous knot is unambiguously still inside this
+    // interval under either heading convention.
     gearPerInterval_.assign(cuspS_.size() + 1, 1.0);
     if (traj_.size() >= 2)
     {
+        for (std::size_t k = 0; k < gearPerInterval_.size(); k++)
         {
-            const double total = totalLength();
-            const double w     = std::min(total, 0.7);
-            const auto   pB    = pointAtArc(total);
-            const auto   pA    = pointAtArc(total - w);
+            const bool        isLast = k == cuspS_.size();
+            const double      sEnd   = isLast ? totalLength() : cuspS_[k];
+            const std::size_t endHIdx =
+                isLast ? traj_.size() - 1 : cuspIdx_[k] - 1;
+            const double endH  = traj_[endHIdx].pose.phi;
+            const double w     = std::min(sEnd, 0.7);
+            const auto   pB    = pointAtArc(sEnd);
+            const auto   pA    = pointAtArc(sEnd - w);
             const double chord = std::hypot(pB.x - pA.x, pB.y - pA.y);
-            const double endH  = traj_.back().pose.phi;
             const double tang =
                 chord > 1e-3 ? std::atan2(pB.y - pA.y, pB.x - pA.x) : endH;
-            gearPerInterval_.back() =
+            gearPerInterval_[k] =
                 std::cos(mrpt::math::wrapToPi(endH - tang)) >= 0.0 ? 1.0 : -1.0;
-        }
-
-        // Walk backward across each cusp deciding whether the gear actually
-        // flips there or just continues (a genuine three-point-turn cusp vs.
-        // a merely sharp forward/reverse corner -- both look identical as a
-        // position-only direction reversal, see cuspS_ above). The
-        // distinguishing signal is the *recorded heading*, not position: a
-        // real gear flip lets the vehicle keep rotating smoothly through the
-        // cusp (only which way it drives relative to that heading changes),
-        // so the heading is near-continuous there; a same-gear sharp corner
-        // instead re-points the heading itself to match the new travel
-        // direction, so the heading jumps by roughly the corner's own turn
-        // angle. A real planner's waypoint headings make this well defined
-        // per cusp; kHeadingContinuityThreshold errs toward "same gear"
-        // (needs a small jump to call it a flip) so an ordinary sharp corner
-        // is never mistaken for a reversal.
-        constexpr double kHeadingContinuityThreshold = 90.0 * M_PI / 180.0;
-        for (std::size_t k = cuspS_.size(); k >= 1; k--)
-        {
-            const std::size_t cuspIdx = cuspIdx_[k - 1];
-            const double      jump    = std::abs(mrpt::math::wrapToPi(
-                        traj_[cuspIdx].pose.phi - traj_[cuspIdx - 1].pose.phi));
-            const bool        flips   = jump < kHeadingContinuityThreshold;
-            gearPerInterval_[k - 1] =
-                flips ? -gearPerInterval_[k] : gearPerInterval_[k];
         }
     }
 }

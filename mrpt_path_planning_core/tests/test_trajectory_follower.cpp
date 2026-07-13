@@ -158,6 +158,99 @@ TEST(TrajectoryFollower, StraightLineOnPath)
     EXPECT_NEAR(r.finalPose.y, 0.0, 0.2);
 }
 
+// Regression: the robot starts ahead of (not on) a straight reference path
+// whose waypoints all carry the *same* heading as the robot's own start
+// heading, with the path itself running the opposite way in position -- a
+// straight reverse where every waypoint's phi is left at the "facing"
+// direction rather than the travel direction (e.g. a plan whose points only
+// ever carry one constant orientation). The robot, starting at the origin
+// facing +x, must back straight into it (drive -x), not drive forward.
+TEST(TrajectoryFollower, ReversesOnStraightLineBehindRobot)
+{
+    const std::vector<TPoint2D> pts = {
+        {-1.0, 0.0}, {-1.5, 0.0}, {-2.0, 0.0}, {-2.5, 0.0}, {-3.0, 0.0}};
+    mpp::Trajectory tr;
+    for (const auto& p : pts) tr.emplace_back(TPose2D(p.x, p.y, 0.0), 0.5);
+
+    mpp::TrajectoryFollower f;
+    f.setTrajectory(tr);
+
+    const auto r = simulate(f, {0, 0, 0}, pts);
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(r.finalPose.x, 0.0) << "must drive backward (-x), not forward";
+    EXPECT_NEAR(r.finalPose.x, -3.0, 0.3);
+}
+
+// Same straight reverse, but the robot starts laterally offset and must
+// steer (nonzero curvature) while already committed to reverse gear -- a
+// combination the other straight-reverse tests above don't exercise (they
+// have zero curvature need throughout).
+TEST(TrajectoryFollower, ReversesWithLateralOffsetNeedingCorrection)
+{
+    const std::vector<TPoint2D> pts = {
+        {-1.0, 0.0}, {-1.5, 0.0}, {-2.0, 0.0}, {-2.5, 0.0}, {-3.0, 0.0}};
+    mpp::Trajectory tr;
+    for (const auto& p : pts) tr.emplace_back(TPose2D(p.x, p.y, 0.0), 0.5);
+
+    mpp::TrajectoryFollower f;
+    f.setTrajectory(tr);
+
+    const auto r = simulate(f, {0, 0.5, 0}, pts);
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(r.finalPose.x, 0.0) << "must drive backward (-x), not forward";
+    EXPECT_NEAR(r.finalPose.x, -3.0, 0.3);
+
+    // Repeated step() calls once parked at the goal (a real node timer keeps
+    // calling step() every cycle regardless of status) must not drift.
+    TPose2D robot = r.finalPose;
+    double  v     = 0;
+    for (int k = 0; k < 20; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        double     vx  = out.command.points.empty()
+                             ? 0.0
+                             : out.command.points.front().twist.vx;
+        double     om  = out.command.points.empty()
+                             ? 0.0
+                             : out.command.points.front().twist.omega;
+        robot          = integrate(robot, vx, om, f.params.control_period);
+        v              = vx;
+    }
+    EXPECT_LT(robot.x, 0.0)
+        << "must not drift forward after arrival on repeated step() calls";
+}
+
+// Mimics a live caller that re-publishes the same reference path every
+// control cycle until superseded (a common pattern for a node driving this
+// follower from a periodically-republished planner output).
+TEST(TrajectoryFollower, ReversesOnStraightLineRepublished)
+{
+    const std::vector<TPoint2D> pts = {
+        {-1.0, 0.0}, {-1.5, 0.0}, {-2.0, 0.0}, {-2.5, 0.0}, {-3.0, 0.0}};
+    mpp::Trajectory tr;
+    for (const auto& p : pts) tr.emplace_back(TPose2D(p.x, p.y, 0.0), 0.5);
+
+    mpp::TrajectoryFollower f;
+    f.params.max_speed       = 0.5;
+    f.params.max_accel       = 0.5;
+    f.params.max_decel       = 0.7;
+    f.params.min_turn_radius = 0.4;
+
+    TPose2D robot = {0, 0, 0};
+    double  v     = 0;
+    for (int k = 0; k < 200; k++)
+    {
+        f.setTrajectory(tr);  // re-published every cycle
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal) break;
+        if (out.command.points.empty()) break;
+        const auto tw = out.command.points.front().twist;
+        robot = integrate(robot, tw.vx, tw.omega, f.params.control_period);
+        v     = tw.vx;
+    }
+    EXPECT_LT(robot.x, 0.0) << "must drive backward (-x), not forward";
+}
+
 TEST(TrajectoryFollower, ConvergesFromLateralOffset)
 {
     const std::vector<TPoint2D> pts = {{0, 0}, {8, 0}};
@@ -349,13 +442,28 @@ TEST(TrajectoryFollower, IgnoresObstacleOffPath)
 // direction.
 namespace
 {
-// Build a reverse trajectory: polyline points + an explicit final body heading
-// (the goal orientation the robot must arrive at, tail-first).
+// Build a reverse trajectory: polyline points with each point's heading
+// linearly interpolated (by index, not arc-length) between the start and
+// goal body headings, matching a real differential-drive planner's waypoint
+// convention -- a genuinely reversing vehicle's heading evolves smoothly
+// near-constant over a short leg like this one, it does not tangent-track
+// its own travel direction (the tangent-to-next-point convention `polyToTraj`
+// uses for its *own* purpose is a good stand-in for a forward leg, but
+// reports the *opposite* of a real reversing vehicle's heading, and would
+// misidentify this leg's own gear).
 mpp::Trajectory revTraj(
-    const std::vector<TPoint2D>& pts, double goalHeading, double speed)
+    const std::vector<TPoint2D>& pts, double startHeading, double goalHeading,
+    double speed)
 {
-    mpp::Trajectory tr = polyToTraj(pts, speed);
-    if (!tr.empty()) tr.back().pose.phi = goalHeading;
+    mpp::Trajectory tr;
+    const auto      n = pts.size();
+    for (std::size_t i = 0; i < n; i++)
+    {
+        const double t = n > 1 ? static_cast<double>(i) / (n - 1) : 0.0;
+        const double heading =
+            startHeading + t * mrpt::math::wrapToPi(goalHeading - startHeading);
+        tr.emplace_back(TPose2D(pts[i].x, pts[i].y, heading), speed);
+    }
     return tr;
 }
 
@@ -447,7 +555,7 @@ TEST(TrajectoryFollower, ShortReverseEntryLiveCase)
     f.params.goal_dist_tol  = 0.15;
     f.params.goal_ang_tol   = mrpt::DEG2RAD(12.0);
     f.params.arrival_radius = 0.3;
-    f.setTrajectory(revTraj(pts, goal.phi, 0.5));
+    f.setTrajectory(revTraj(pts, start.phi, goal.phi, 0.5));
 
     // Ackermann min turn radius ~0.36 m -> max curvature ~2.78 /m.
     const double kMaxCurv = 1.0 / 0.36;
@@ -474,6 +582,65 @@ TEST(TrajectoryFollower, ShortReverseEntryLiveCase)
                               "reverse goal (hung on the terminal cusp-loop)";
     EXPECT_LT(dGoal, 0.15);
     EXPECT_LT(hErr, 25.0);
+}
+
+// Regression: a second real capture of essentially the same short
+// standoff-reverse maneuver as ShortReverseEntryLiveCase above (same start
+// pose, same ~0.72 m goal, same small end-of-path wiggle) -- but this one
+// carries the plan's *real* recorded per-point headings (the A* planner's
+// waypoints from a live rosbag) instead of ShortReverseEntryLiveCase's
+// tangent-reconstructed ones, and reproduces a live OffPathExceeded ~1.4 s
+// after the follower picked up the plan.
+TEST(TrajectoryFollower, ShortReverseEntryLiveCaseWithRecordedHeadings)
+{
+    struct XYYawDeg
+    {
+        double x, y, yaw_deg;
+    };
+    const std::vector<XYYawDeg> pts = {
+        {1.0019, 0.5520, -152.84}, {1.0909, 0.5977, -152.84},
+        {1.1799, 0.6433, -152.84}, {1.2689, 0.6890, -152.84},
+        {1.3578, 0.7346, -152.84}, {1.4436, 0.7858, -145.46},
+        {1.5222, 0.8476, -138.09}, {1.5921, 0.9190, -130.71},
+        {1.6523, 0.9988, -123.33}, {1.7154, 1.0761, -135.13},
+        {1.7926, 1.1387, -146.89}, {1.7274, 1.1555, -152.28}};
+
+    mpp::Trajectory       tr;
+    std::vector<TPoint2D> xy;
+    for (const auto& p : pts)
+    {
+        tr.emplace_back(TPose2D(p.x, p.y, mrpt::DEG2RAD(p.yaw_deg)), 0.5);
+        xy.emplace_back(p.x, p.y);
+    }
+
+    mpp::TrajectoryFollower f;  // deployed-like defaults
+    f.params.max_speed      = 0.5;
+    f.params.goal_dist_tol  = 0.15;
+    f.params.goal_ang_tol   = mrpt::DEG2RAD(12.0);
+    f.params.arrival_radius = 0.3;
+    f.setTrajectory(tr);
+
+    const TPose2D start(
+        pts.front().x, pts.front().y, mrpt::DEG2RAD(pts.front().yaw_deg));
+    const TPose2D goal(
+        pts.back().x, pts.back().y, mrpt::DEG2RAD(pts.back().yaw_deg));
+    const double kMaxCurv = 1.0 / 0.36;  // Ackermann min turn radius ~0.36 m
+    const auto   r        = simulateVerbose(f, start, xy, goal, kMaxCurv);
+
+    const double dGoal =
+        std::hypot(r.finalPose.x - goal.x, r.finalPose.y - goal.y);
+    fprintf(
+        stderr,
+        "[result] reached=%d final=(%.3f,%.3f,%.1fdeg) dGoal=%.3f "
+        "steps=%d lastStatus=%d\n",
+        r.reached, r.finalPose.x, r.finalPose.y, mrpt::RAD2DEG(r.finalPose.phi),
+        dGoal, r.steps, static_cast<int>(r.lastStatus));
+
+    EXPECT_NE(r.lastStatus, mpp::FollowerStatus::OffPathExceeded)
+        << "follower lost track of the reverse path, exactly as on the real "
+           "robot";
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(dGoal, 0.2);
 }
 
 // Reproduces the "rotates too aggressively" complaint from a real
