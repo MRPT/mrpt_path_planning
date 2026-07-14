@@ -823,9 +823,8 @@ void applyDeployedParams(mpp::TrajectoryFollower& f)
     f.params.max_decel         = 0.7;
     f.params.max_lateral_accel = 1.0;
     f.params.min_turn_radius   = 0.4;
-    f.params.lookahead_min     = 0.4;
     f.params.lookahead_max     = 1.5;
-    f.params.lookahead_time    = 1.0;
+    f.params.lookahead_bend    = mrpt::DEG2RAD(25.0);
     f.params.goal_dist_tol     = 0.15;
     f.params.goal_ang_tol      = mrpt::DEG2RAD(12.0);
     f.params.max_cross_track   = 1.0;

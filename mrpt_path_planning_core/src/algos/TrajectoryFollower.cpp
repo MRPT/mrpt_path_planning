@@ -56,9 +56,8 @@ void TrajectoryFollower::Parameters::load_from_yaml(
     MCP_LOAD_OPT(c, max_decel);
     MCP_LOAD_OPT(c, max_lateral_accel);
     MCP_LOAD_OPT(c, min_turn_radius);
-    MCP_LOAD_OPT(c, lookahead_min);
     MCP_LOAD_OPT(c, lookahead_max);
-    MCP_LOAD_OPT(c, lookahead_time);
+    MCP_LOAD_OPT_DEG(c, lookahead_bend);
     MCP_LOAD_OPT(c, goal_dist_tol);
     MCP_LOAD_OPT_DEG(c, goal_ang_tol);
     MCP_LOAD_OPT(c, max_cross_track);
@@ -85,9 +84,8 @@ mrpt::containers::yaml TrajectoryFollower::Parameters::as_yaml() const
     MCP_SAVE(c, max_decel);
     MCP_SAVE(c, max_lateral_accel);
     MCP_SAVE(c, min_turn_radius);
-    MCP_SAVE(c, lookahead_min);
     MCP_SAVE(c, lookahead_max);
-    MCP_SAVE(c, lookahead_time);
+    MCP_SAVE_DEG(c, lookahead_bend);
     MCP_SAVE(c, goal_dist_tol);
     MCP_SAVE_DEG(c, goal_ang_tol);
     MCP_SAVE(c, max_cross_track);
@@ -348,6 +346,52 @@ double TrajectoryFollower::speedCapAt(double s) const
     return std::min(cap, params.max_speed);
 }
 
+double TrajectoryFollower::adaptiveLookaheadS(double sStart, double capS) const
+{
+    // Numerical floor so the lookahead never collapses onto the robot; with an
+    // arbitrarily short lookahead the pure-pursuit curvature diverges. The
+    // min_turn_radius clamp and this floor together bound the commanded turn.
+    constexpr double kFloor = 0.3;  // [m]
+    const double     total  = totalLength();
+    const double     sFloor = sStart + kFloor;
+    if (capS <= sFloor)
+        return std::min(std::max(capS, sStart), total);
+
+    // Segment tangent (heading of segment [k, k+1]).
+    auto tangentOf = [&](std::size_t k)
+    {
+        const auto& a = traj_[k].pose;
+        const auto& b = traj_[k + 1].pose;
+        return std::atan2(b.y - a.y, b.x - a.x);
+    };
+
+    // March knot by knot from the segment containing sStart, accumulating the
+    // absolute turned angle. Stop where the path has bent by lookahead_bend
+    // (past the floor), else at the cap.
+    std::size_t i = 0;
+    while (i + 2 < traj_.size() && cumS_[i + 1] < sStart) i++;
+
+    double accum    = 0.0;
+    double prevTang = tangentOf(i);
+    for (std::size_t j = i + 1; j + 1 < traj_.size(); j++)
+    {
+        const double sj = cumS_[j];
+        if (sj >= capS) break;
+        const double tang = tangentOf(j);
+        accum += std::abs(mrpt::math::wrapToPi(tang - prevTang));
+        prevTang = tang;
+        // Bend reached: place the lookahead here, but never below the floor --
+        // clamp it up to sFloor rather than skipping past the bend (skipping
+        // would let the lookahead leap beyond a corner the robot is right on
+        // top of, which cuts the corner instead of tracing it).
+        if (accum >= params.lookahead_bend)
+        {
+            return std::clamp(sj, sFloor, capS);
+        }
+    }
+    return std::min(capS, total);
+}
+
 // ------------------------------------------------------------------- pursuit
 TrajectoryFollower::Command TrajectoryFollower::pursuit(
     const mrpt::math::TPose2D& fromPose, double currentV, double sHint,
@@ -356,9 +400,6 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     Command          out;
     const Projection proj = projectToPath({fromPose.x, fromPose.y}, sHint);
 
-    const double L = std::clamp(
-        params.lookahead_time * std::abs(currentV), params.lookahead_min,
-        params.lookahead_max);
     // Do not look past the next cusp: on a path that doubles back, a lookahead
     // reaching into the reversed branch yields a huge spurious curvature (the
     // robot tries to spin toward a point it should reach by reversing gear, not
@@ -369,11 +410,13 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     // the vehicle has already committed past (its own nearest-point search
     // window, not a progress guarantee), which would otherwise re-clamp the
     // lookahead onto a cusp already behind the vehicle and pin it there.
-    double       lookaheadS = proj.s + L;
-    const double nextCuspS  = currentInterval_ < cuspS_.size()
-                                  ? cuspS_[currentInterval_]
-                                  : std::numeric_limits<double>::infinity();
-    lookaheadS              = std::min(lookaheadS, nextCuspS);
+    const double nextCuspS = currentInterval_ < cuspS_.size()
+                                 ? cuspS_[currentInterval_]
+                                 : std::numeric_limits<double>::infinity();
+    // Curvature-adaptive lookahead within the [proj.s, cap] arc-length window,
+    // where the cap is the shorter of the max travel and the next cusp.
+    const double capS       = std::min(proj.s + params.lookahead_max, nextCuspS);
+    const double lookaheadS = adaptiveLookaheadS(proj.s, capS);
     out.lookahead           = pointAtArc(lookaheadS);
 
     // Lookahead in robot frame.

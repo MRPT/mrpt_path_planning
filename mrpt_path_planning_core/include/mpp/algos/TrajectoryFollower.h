@@ -81,10 +81,17 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
          * unicycle, any curvature achievable). */
         double min_turn_radius = 0.0;
 
-        /** Lookahead distance L = clamp(lookahead_time * v, min, max) [m,s]. */
-        double lookahead_min  = 0.4;
-        double lookahead_max  = 1.5;
-        double lookahead_time = 1.0;
+        /** Curvature-adaptive lookahead: the lookahead point is marched forward
+         * along the path from the projection to where the path has bent
+         * (accumulated |turned angle|) by `lookahead_bend`, capped at
+         * `lookahead_max` travel and never past the next cusp. Geometry-driven,
+         * so it needs no per-speed schedule to tune: on a straight run the bend
+         * never accumulates and the full cap distance is used (smooth
+         * tracking); through a curve or into the terminal maneuver the
+         * lookahead shortens automatically to trace it tightly. */
+        double lookahead_max  = 1.5;  //!< [m] max lookahead travel
+        double lookahead_bend = mrpt::DEG2RAD(25.0);  //!< [rad] path bend that
+                                                      //!< caps the lookahead
 
         double goal_dist_tol   = 0.15;  //!< [m]
         double goal_ang_tol    = mrpt::DEG2RAD(12.0);  //!< [rad]
@@ -248,6 +255,13 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     /** Interpolated speed cap at arc-length `s` (<=0 entries treated as
      * max_speed). */
     double speedCapAt(double s) const;
+
+    /** Curvature-adaptive lookahead arc-length: marches forward from `sStart`
+     * accumulating the path's |turned angle| and returns the arc-length where
+     * it first reaches `params.lookahead_bend`, clamped to `[sStart + floor,
+     * capS]`. A small floor keeps the lookahead off the robot itself (an
+     * arbitrarily short lookahead blows up the pure-pursuit curvature). */
+    double adaptiveLookaheadS(double sStart, double capS) const;
 
     /** Advances \ref currentInterval_ past every cusp whose arc-length the
      * localized projection `s` has already reached, and returns that
