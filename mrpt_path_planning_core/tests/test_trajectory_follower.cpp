@@ -432,6 +432,70 @@ TEST(TrajectoryFollower, IgnoresObstacleOffPath)
     EXPECT_NEAR(r.finalPose.x, 6.0, 0.2);
 }
 
+// A differential-drive A* entry path that backs the robot into a row pose
+// (reproduced from a simulation run of a robot approaching a row entrance).
+// The path loops back on itself, so its *forward* leg passes
+// ~0.16 m from the goal *position* while the robot still points ~90 deg away
+// from the goal *heading*; a reverse cusp near the end is what swings the nose
+// round to the goal heading. Regression: a Euclidean-only arrival test latches
+// "reached" on that forward-leg near-pass and stops the robot ~0.3 m short at
+// ~75 deg heading error, never running the terminal maneuver. The follower
+// must instead drive the whole path and seat the final heading.
+namespace
+{
+mpp::Trajectory entryManeuverTraj(double speed)
+{
+    // {x, y, heading[deg]} per knot, goal (last) heading = -152.4 deg.
+    const double knots[][3] = {
+        {2.568, 2.936, -62.0},  {2.610, 2.845, -68.6},  {2.641, 2.750, -75.2},
+        {2.661, 2.652, -81.9},  {2.669, 2.553, -88.5},  {2.677, 2.453, -81.9},
+        {2.697, 2.355, -75.2},  {2.728, 2.260, -68.6},  {2.770, 2.169, -62.0},
+        {2.833, 2.092, -39.8},  {2.920, 2.044, -17.7},  {3.007, 1.997, -39.1},
+        {3.071, 1.921, -60.5},  {3.104, 1.827, -81.9},  {3.099, 1.728, -103.3},
+        {3.137, 1.820, -121.7}, {3.202, 1.895, -140.2}, {3.281, 1.957, -143.8},
+        {3.363, 2.013, -147.5}, {3.236, 1.924, -152.4}};
+    mpp::Trajectory tr;
+    for (const auto& k : knots)
+        tr.emplace_back(TPose2D(k[0], k[1], mrpt::DEG2RAD(k[2])), speed);
+    return tr;
+}
+}  // namespace
+
+TEST(TrajectoryFollower, SelfApproachingEntryPathSeatsFinalHeading)
+{
+    const auto            tr = entryManeuverTraj(0.3);
+    std::vector<TPoint2D> pts;
+    for (std::size_t i = 0; i < tr.size(); i++)
+        pts.push_back({tr[i].pose.x, tr[i].pose.y});
+
+    mpp::TrajectoryFollower f;
+    f.params.max_speed       = 0.3;
+    f.params.min_turn_radius = 0.0;  // unicycle sim: can trace the tight cusp
+
+    // Direct gate check: a single step() with the robot sitting on the forward
+    // leg (knot 12), 0.16 m from the goal *position* but far from the path end
+    // in arc-length, must not be mistaken for arrival.
+    f.setTrajectory(tr);
+    const TPose2D onForwardLeg{3.071, 1.921, mrpt::DEG2RAD(-60.5)};
+    const auto    gateOut =
+        f.step(mkLoc(onForwardLeg), mkOdo(onForwardLeg, 0.3));
+    EXPECT_NE(gateOut.status, mpp::FollowerStatus::ReachedGoal)
+        << "must not arrive on a forward-leg near-pass of a loop-back path";
+
+    // Full closed-loop drive: reach the goal position AND heading.
+    f.setTrajectory(tr);  // reset progress
+    const auto r =
+        simulate(f, TPose2D(2.568, 2.936, mrpt::DEG2RAD(-62.0)), pts, 8000);
+    EXPECT_TRUE(r.reached);
+    EXPECT_NEAR(r.finalPose.x, 3.236, 0.25);
+    EXPECT_NEAR(r.finalPose.y, 1.924, 0.25);
+    const double headErrDeg = std::abs(mrpt::RAD2DEG(
+        mrpt::math::wrapToPi(r.finalPose.phi - mrpt::DEG2RAD(-152.4))));
+    EXPECT_LT(headErrDeg, 25.0)
+        << "stopped at heading " << mrpt::RAD2DEG(r.finalPose.phi)
+        << " deg (goal -152.4): the terminal maneuver was not executed";
+}
+
 // --------------------------------------------------------------------------
 // Regression: a short reverse leg (reproduces a "weird turn, could not
 // finish" hang seen on a real deployment). The planner backs the robot

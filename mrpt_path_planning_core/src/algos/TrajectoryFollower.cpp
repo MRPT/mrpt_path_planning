@@ -563,10 +563,24 @@ TrajectoryFollower::Output TrajectoryFollower::step(
 
     // Goal reached? Use the Euclidean distance to the final path point (the
     // arc-length projection saturates before the robot physically arrives).
+    //
+    // Both the goal check and the arrival latch below are additionally gated on
+    // the *arc-length* remaining, not the Euclidean distance alone: a
+    // differential-drive entry path loops back on itself (it backs the robot
+    // into the goal pose), so its forward leg can pass within a goal tolerance
+    // of the goal *position* while the robot is still far from the path end in
+    // arc-length and pointing the wrong way. Euclidean proximity alone would
+    // then report the goal reached (or latch the terminal stop) mid-path,
+    // before the reverse maneuver that actually seats the final heading has
+    // run. Requiring the projection to be near the path end disambiguates a
+    // forward-leg near-pass from a true arrival. Near the real end the path is
+    // essentially straight, so this never blocks a legitimate arrival (there
+    // arc-length remaining and Euclidean distance to the goal agree).
     const mrpt::math::TPoint2D goalPt = pointAtArc(totalLength());
     const double               distToGoal =
         std::hypot(goalPt.x - loc.pose.x, goalPt.y - loc.pose.y);
-    if (distToGoal <= params.goal_dist_tol &&
+    const bool nearPathEnd = totalLength() - proj.s <= params.arrival_radius;
+    if (nearPathEnd && distToGoal <= params.goal_dist_tol &&
         std::abs(out.heading_err) <= params.goal_ang_tol)
     {
         out.status = FollowerStatus::ReachedGoal;
@@ -574,16 +588,20 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     }
 
     // Terminal stop latch: hold a stop once the robot, already within
-    // `arrival_radius` of the goal, has passed its closest approach and would
+    // `arrival_radius` of the goal (in both Euclidean distance and path
+    // arc-length, see above), has passed its closest approach and would
     // otherwise start driving away. On a kinematically infeasible final pose
     // (an Ackermann robot on a differential-drive path whose tail rotates in
     // place) the exact heading cannot be seated; this parks the robot at its
     // closest approach instead of running away and thrashing into nearby
     // obstacles.
-    minDistToGoal_ = std::min(minDistToGoal_, distToGoal);
-    if (!arrived_ && distToGoal <= params.arrival_radius &&
-        distToGoal > minDistToGoal_ + 0.03)
-        arrived_ = true;
+    if (nearPathEnd)
+    {
+        minDistToGoal_ = std::min(minDistToGoal_, distToGoal);
+        if (!arrived_ && distToGoal <= params.arrival_radius &&
+            distToGoal > minDistToGoal_ + 0.03)
+            arrived_ = true;
+    }
     if (arrived_)
     {
         // Settled at the closest approach the vehicle can reach. On a
