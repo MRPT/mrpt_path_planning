@@ -898,6 +898,7 @@ TEST(TrajectoryFollower, ParamsYamlRoundTrip)
     mpp::TrajectoryFollower::Parameters p;
     p.max_speed       = 0.33;
     p.lookahead_max   = 2.0;
+    p.lookahead_bend  = mrpt::DEG2RAD(40.0);
     p.horizon         = 2.5;
     p.stop_distance   = 0.42;
     p.slow_distance   = 1.75;
@@ -906,8 +907,72 @@ TEST(TrajectoryFollower, ParamsYamlRoundTrip)
     const auto p2     = mpp::TrajectoryFollower::Parameters::FromYAML(y);
     EXPECT_NEAR(p2.max_speed, 0.33, 1e-9);
     EXPECT_NEAR(p2.lookahead_max, 2.0, 1e-9);
+    EXPECT_NEAR(p2.lookahead_bend, mrpt::DEG2RAD(40.0), 1e-9);
     EXPECT_NEAR(p2.horizon, 2.5, 1e-9);
     EXPECT_NEAR(p2.stop_distance, 0.42, 1e-9);
     EXPECT_NEAR(p2.slow_distance, 1.75, 1e-9);
     EXPECT_NEAR(p2.min_turn_radius, 0.4, 1e-9);
+}
+
+// Short-term tracking runs on the smooth wheel odometry with the map->odom
+// anchor slewed toward localization. A one-time relocalization jump in the
+// localized pose must be absorbed gradually -- the commanded angular velocity
+// must not lurch -- while the follower still reacts to the correction and
+// reaches the goal. (Under a non-anchored, localization-only pursuit the same
+// jump steps the tracked cross-track error and spikes the commanded omega.)
+TEST(TrajectoryFollower, RelocalizationJumpDoesNotLurch)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {8, 0}};
+    mpp::TrajectoryFollower      f;
+    f.params.max_speed = 0.5;
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    // "odom" is the smooth physical frame; map->odom is a fixed rotation +
+    // offset, except for a one-time relocalization jump injected mid-drive.
+    const TPose2D odomFromMap{1.5, -2.0, mrpt::DEG2RAD(30.0)};
+    auto          toOdom = [&](const TPose2D& pm)
+    {
+        return (mrpt::poses::CPose2D(odomFromMap) + mrpt::poses::CPose2D(pm))
+            .asTPose();
+    };
+
+    TPose2D mapPose{0, 0, 0};  // true robot pose (map frame)
+    double  v         = 0;
+    double  prevOmega = 0;
+    double  maxDOmega = 0;
+    double  maxAbsY   = 0;
+    bool    reached   = false;
+    for (int k = 0; k < 4000; k++)
+    {
+        // Localization reports the true map pose, except a one-time +0.25 m
+        // lateral step from step 60 onward (a relocalization correction). The
+        // wheel odometry stays continuous throughout.
+        TPose2D locMap = mapPose;
+        if (k >= 60) locMap.y += 0.25;
+
+        const auto out = f.step(mkLoc(locMap), mkOdo(toOdom(mapPose), v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal)
+        {
+            reached = true;
+            break;
+        }
+        ASSERT_FALSE(out.command.points.empty());
+        const auto tw = out.command.points.front().twist;
+        if (k > 1) maxDOmega = std::max(maxDOmega, std::abs(tw.omega - prevOmega));
+        prevOmega = tw.omega;
+        mapPose = integrate(mapPose, tw.vx, tw.omega, f.params.control_period);
+        v       = tw.vx;
+        if (k > 60) maxAbsY = std::max(maxAbsY, std::abs(mapPose.y));
+    }
+    EXPECT_TRUE(reached);
+    // The follower must actually act on the correction (not ignore it): the
+    // true pose deviates toward the reported step, confirming omega was
+    // genuinely exercised.
+    EXPECT_GT(maxAbsY, 0.15) << "follower did not respond to the localization step";
+    // ...but it is slewed in over many cycles, so the per-cycle change in
+    // commanded angular velocity stays small even across the jump (measured
+    // ~0.01 rad/s with the anchor slew vs ~0.11 for a localization-only pursuit
+    // that steps the tracked pose in a single cycle).
+    EXPECT_LT(maxDOmega, 0.05)
+        << "commanded omega lurched on the relocalization jump";
 }

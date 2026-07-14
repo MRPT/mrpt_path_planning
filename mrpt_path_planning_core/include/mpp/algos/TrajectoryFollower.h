@@ -15,6 +15,7 @@
 #include <mrpt/core/bits_math.h>
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/math/TPoint2D.h>
+#include <mrpt/poses/CPose2D.h>
 #include <mrpt/system/COutputLogger.h>
 
 #include <cstdint>
@@ -230,6 +231,16 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      */
     double minDistToGoal_ = std::numeric_limits<double>::infinity();
 
+    /** Latched odom->map anchor (map_pose = odomToMap_ (+) odom_pose). The
+     * control pose is derived from the smooth, high-rate wheel odometry through
+     * this anchor, which is slewed toward the value the map-frame localization
+     * implies at a bounded rate. Between relocalizations the implied anchor is
+     * constant, so the control pose equals the localization exactly; a
+     * relocalization jump is spread over a few cycles instead of lurching the
+     * commanded curvature. */
+    mrpt::poses::CPose2D odomToMap_;
+    bool                 anchorInit_ = false;
+
     // Predictive safety state:
     std::vector<mrpt::math::TPoint2D>
                                  shapeSamples_;  //!< footprint, robot frame
@@ -255,6 +266,12 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     /** Interpolated speed cap at arc-length `s` (<=0 entries treated as
      * max_speed). */
     double speedCapAt(double s) const;
+
+    /** Smooth control pose (map frame) from wheel odometry composed with the
+     * slewed odom->map anchor (\ref odomToMap_); mutates the anchor state.
+     * Falls back to the raw localization pose when no odometry is available. */
+    mrpt::math::TPose2D controlPose(
+        const VehicleLocalizationState& loc, const VehicleOdometryState& odo);
 
     /** Curvature-adaptive lookahead arc-length: marches forward from `sStart`
      * accumulating the path's |turned angle| and returns the arc-length where

@@ -131,6 +131,7 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
     stoppedSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
+    anchorInit_         = false;
 
     // Cusp arc-lengths: points where the path travel direction reverses (a
     // differential-drive planner backs up then drives forward, etc.). The
@@ -234,6 +235,7 @@ void TrajectoryFollower::reset()
     stoppedSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
+    anchorInit_         = false;
 }
 
 void TrajectoryFollower::setRobotShape(const RobotShape& shape)
@@ -577,6 +579,56 @@ double TrajectoryFollower::contactDistanceToScale(double d) const
     return std::clamp((d - params.stop_distance) / span, 0.0, 1.0);
 }
 
+// --------------------------------------------------------------- control pose
+mrpt::math::TPose2D TrajectoryFollower::controlPose(
+    const VehicleLocalizationState& loc, const VehicleOdometryState& odo)
+{
+    // No odometry to propagate: track the raw localization directly.
+    if (!odo.valid)
+    {
+        anchorInit_ = false;
+        return loc.pose;
+    }
+
+    const mrpt::poses::CPose2D odoP(odo.odometry);
+    // Anchor the current localization implies: map_pose = implied (+) odom.
+    const mrpt::poses::CPose2D implied =
+        mrpt::poses::CPose2D(loc.pose) + (mrpt::poses::CPose2D() - odoP);
+
+    if (!anchorInit_)
+    {
+        odomToMap_  = implied;
+        anchorInit_ = true;
+    }
+    else
+    {
+        // Rate-limited slew of the anchor toward the localization-implied value
+        // (a complementary filter: wheel odometry is trusted for short-term
+        // motion, localization corrects the anchor slowly). Between
+        // relocalizations the implied anchor is constant, so the slew is a
+        // no-op and the control pose equals the localization exactly; only a
+        // genuine correction (a relocalization jump) is spread over several
+        // cycles, so the commanded curvature never lurches.
+        constexpr double kLinRate = 0.5;  // [m/s] max anchor translation slew
+        constexpr double kAngRate = 1.0;  // [rad/s] max anchor rotation slew
+        const mrpt::math::TPose2D d =
+            (mrpt::poses::CPose2D() - odomToMap_ + implied).asTPose();
+        const double        maxLin = kLinRate * params.control_period;
+        const double        maxAng = kAngRate * params.control_period;
+        mrpt::math::TPose2D step   = d;
+        const double        lin    = std::hypot(d.x, d.y);
+        if (lin > maxLin)
+        {
+            const double s = maxLin / lin;
+            step.x         = d.x * s;
+            step.y         = d.y * s;
+        }
+        step.phi   = std::clamp(mrpt::math::wrapToPi(d.phi), -maxAng, maxAng);
+        odomToMap_ = odomToMap_ + mrpt::poses::CPose2D(step);
+    }
+    return (odomToMap_ + odoP).asTPose();
+}
+
 // ---------------------------------------------------------------------- step
 TrajectoryFollower::Output TrajectoryFollower::step(
     const VehicleLocalizationState& loc, const VehicleOdometryState& odo)
@@ -588,7 +640,13 @@ TrajectoryFollower::Output TrajectoryFollower::step(
         return out;
     }
 
-    const Projection proj = projectToPath({loc.pose.x, loc.pose.y}, lastS_);
+    // Short-term tracking runs on a smooth control pose derived from the
+    // high-rate wheel odometry (the map-frame localization only anchors the
+    // path, see controlPose). With an identity/static map->odom (e.g. the unit
+    // tests) this equals loc.pose exactly.
+    const mrpt::math::TPose2D ctrlPose = controlPose(loc, odo);
+
+    const Projection proj = projectToPath({ctrlPose.x, ctrlPose.y}, lastS_);
     lastS_                = proj.s;
     // Latched once from the real localized projection; reused below for both
     // the safety forecast and the emitted command sampling loop instead of
@@ -602,7 +660,7 @@ TrajectoryFollower::Output TrajectoryFollower::step(
 
     out.arc_length_s    = proj.s;
     out.cross_track_err = proj.cross_track;
-    out.heading_err     = mrpt::math::wrapToPi(loc.pose.phi - endHeading);
+    out.heading_err     = mrpt::math::wrapToPi(ctrlPose.phi - endHeading);
 
     // Goal reached? Use the Euclidean distance to the final path point (the
     // arc-length projection saturates before the robot physically arrives).
@@ -621,7 +679,7 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     // arc-length remaining and Euclidean distance to the goal agree).
     const mrpt::math::TPoint2D goalPt = pointAtArc(totalLength());
     const double               distToGoal =
-        std::hypot(goalPt.x - loc.pose.x, goalPt.y - loc.pose.y);
+        std::hypot(goalPt.x - ctrlPose.x, goalPt.y - ctrlPose.y);
     const bool nearPathEnd = totalLength() - proj.s <= params.arrival_radius;
     if (nearPathEnd && distToGoal <= params.goal_dist_tol &&
         std::abs(out.heading_err) <= params.goal_ang_tol)
@@ -680,7 +738,7 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     if (!obstacles_.empty())
     {
         const double dFwd =
-            forecastContactDistance(loc.pose, predV, proj.s, gear);
+            forecastContactDistance(ctrlPose, predV, proj.s, gear);
         const double dRef = referenceContactDistance(proj.s);
         scale             = std::min(
                         contactDistanceToScale(dFwd), contactDistanceToScale(dRef));
@@ -711,13 +769,16 @@ TrajectoryFollower::Output TrajectoryFollower::step(
 
     out.safety_scale = scale;
 
-    // map->odom correction so the emitted chunk is smooth despite
-    // relocalization.
+    // map->odom correction so the emitted chunk is expressed in the odom frame.
+    // Built from the same smooth control pose used for tracking, so the chunk's
+    // first sample sits exactly at the current odometry pose and stays
+    // continuous across a relocalization (the anchor slew, not the wheels,
+    // absorbs the jump).
     const mrpt::poses::CPose2D map2odom =
         mrpt::poses::CPose2D(odo.odometry) +
-        (mrpt::poses::CPose2D() - mrpt::poses::CPose2D(loc.pose));
+        (mrpt::poses::CPose2D() - mrpt::poses::CPose2D(ctrlPose));
 
-    mrpt::math::TPose2D predPose = loc.pose;
+    mrpt::math::TPose2D predPose = ctrlPose;
     double              predS    = proj.s;
 
     out.command.frame_id = params.emit_frame;
