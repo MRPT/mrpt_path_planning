@@ -26,7 +26,10 @@
 
 using namespace mpp;
 
-static std::vector<mrpt::gui::CDisplayWindow3D::Ptr> nonmodal_wins;
+// Non-modal calls reuse this single window instead of piling up a new one
+// per call (the caller, e.g. a planner node re-planning on every request,
+// may call viz_nav_plan() many times over the node's lifetime).
+static mrpt::gui::CDisplayWindow3D::Ptr nonmodal_win;
 
 namespace
 {
@@ -83,13 +86,37 @@ void mpp::viz_nav_plan(
     const std::vector<CostEvaluator::Ptr> costEvaluators)
 {
     MRPT_START
-    auto win = mrpt::gui::CDisplayWindow3D::Create("Path plan viz", 800, 600);
+
+    const std::string title =
+        !opts.windowTitle.empty() ? opts.windowTitle : "Path plan viz";
+
+    mrpt::gui::CDisplayWindow3D::Ptr win;
+    if (opts.gui_modal)
+    {
+        // Modal calls block until the user closes the window, so there is
+        // no benefit (and no way) to reuse a previous one.
+        win = mrpt::gui::CDisplayWindow3D::Create(title, 800, 600);
+    }
+    else
+    {
+        if (!nonmodal_win || !nonmodal_win->isOpen())
+        {
+            nonmodal_win = mrpt::gui::CDisplayWindow3D::Create(title, 800, 600);
+        }
+        else
+        {
+            nonmodal_win->setWindowTitle(title);
+        }
+        win = nonmodal_win;
+    }
 
     mrpt::opengl::COpenGLScene::Ptr scene;
 
-    // Build opengl scene:
+    // Build opengl scene (replacing any previous contents, if this window is
+    // being reused across calls):
     {
         mrpt::gui::CDisplayWindow3DLocker dwl(*win, scene);
+        scene->clear();
 
         auto glTree = render_tree(
             plan.motionTree, plan.originalInput, opts.renderOptions);
@@ -125,10 +152,7 @@ void mpp::viz_nav_plan(
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
-    else
-    {
-        nonmodal_wins.push_back(win);
-    }
+    // else: non-modal window is already kept alive via nonmodal_win, above.
 
     MRPT_END
 }
