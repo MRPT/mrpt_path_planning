@@ -718,7 +718,24 @@ TrajectoryFollower::Output TrajectoryFollower::step(
         return out;  // empty command => node stops
     }
 
-    out.status = std::abs(proj.cross_track) > params.max_cross_track
+    // Evaluate OffPathExceeded against the raw localized pose, not the
+    // odometry-smoothed control pose. controlPose() rate-limits the map->odom
+    // anchor to keep the wheel command smooth across relocalization jumps, but
+    // that same slew makes the smoothed pose lag the true localization while
+    // map->odom is being corrected -- judging "off path" by it turns a normal
+    // localization correction into a phantom tracking error even when the robot
+    // is physically on the path. The command still uses `proj` (ctrlPose) for
+    // smoothness; only the fault test uses the true pose. A genuine sustained
+    // deviation still trips it; a brief localization glitch is left for the
+    // caller to debounce. In the identity/static map->odom case (unit tests)
+    // ctrlPose == loc.pose, so this is a no-op there.
+    double offPathCross = proj.cross_track;
+    if (loc.valid)
+    {
+        offPathCross =
+            projectToPath({loc.pose.x, loc.pose.y}, proj.s).cross_track;
+    }
+    out.status = std::abs(offPathCross) > params.max_cross_track
                      ? FollowerStatus::OffPathExceeded
                      : FollowerStatus::Running;
 
