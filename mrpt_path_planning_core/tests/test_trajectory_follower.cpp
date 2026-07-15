@@ -477,8 +477,7 @@ TEST(TrajectoryFollower, SelfApproachingEntryPathSeatsFinalHeading)
     // in arc-length, must not be mistaken for arrival.
     f.setTrajectory(tr);
     const TPose2D onForwardLeg{3.071, 1.921, mrpt::DEG2RAD(-60.5)};
-    const auto    gateOut =
-        f.step(mkLoc(onForwardLeg), mkOdo(onForwardLeg, 0.3));
+    const auto gateOut = f.step(mkLoc(onForwardLeg), mkOdo(onForwardLeg, 0.3));
     EXPECT_NE(gateOut.status, mpp::FollowerStatus::ReachedGoal)
         << "must not arrive on a forward-leg near-pass of a loop-back path";
 
@@ -923,7 +922,7 @@ TEST(TrajectoryFollower, ParamsYamlRoundTrip)
 TEST(TrajectoryFollower, RelocalizationJumpDoesNotLurch)
 {
     const std::vector<TPoint2D> pts = {{0, 0}, {8, 0}};
-    mpp::TrajectoryFollower      f;
+    mpp::TrajectoryFollower     f;
     f.params.max_speed = 0.5;
     f.setTrajectory(polyToTraj(pts, 0.5));
 
@@ -958,7 +957,8 @@ TEST(TrajectoryFollower, RelocalizationJumpDoesNotLurch)
         }
         ASSERT_FALSE(out.command.points.empty());
         const auto tw = out.command.points.front().twist;
-        if (k > 1) maxDOmega = std::max(maxDOmega, std::abs(tw.omega - prevOmega));
+        if (k > 1)
+            maxDOmega = std::max(maxDOmega, std::abs(tw.omega - prevOmega));
         prevOmega = tw.omega;
         mapPose = integrate(mapPose, tw.vx, tw.omega, f.params.control_period);
         v       = tw.vx;
@@ -968,11 +968,222 @@ TEST(TrajectoryFollower, RelocalizationJumpDoesNotLurch)
     // The follower must actually act on the correction (not ignore it): the
     // true pose deviates toward the reported step, confirming omega was
     // genuinely exercised.
-    EXPECT_GT(maxAbsY, 0.15) << "follower did not respond to the localization step";
+    EXPECT_GT(maxAbsY, 0.15)
+        << "follower did not respond to the localization step";
     // ...but it is slewed in over many cycles, so the per-cycle change in
     // commanded angular velocity stays small even across the jump (measured
     // ~0.01 rad/s with the anchor slew vs ~0.11 for a localization-only pursuit
     // that steps the tracked pose in a single cycle).
     EXPECT_LT(maxDOmega, 0.05)
         << "commanded omega lurched on the relocalization jump";
+}
+
+// --------------------------------------------------------------------------
+// Regression: two more REAL A* / generated-transition paths captured from a
+// field-robot simulation rosbag, both ending in `OffPathExceeded` on the real
+// deployment ("oscillates/dances and makes weird turns near the end of the
+// path, even though the goal heading is already essentially reached").
+namespace
+{
+// The real deployed follower-params.yaml tuning (not the looser test-only
+// values `applyDeployedParams` above uses).
+void applyIdmDeployedFollowerParams(mpp::TrajectoryFollower& f)
+{
+    f.params.max_speed         = 0.3;
+    f.params.max_accel         = 0.3;
+    f.params.max_decel         = 0.6;
+    f.params.max_lateral_accel = 0.4;
+    f.params.min_turn_radius   = 0.6;
+    f.params.lookahead_max     = 1.8;
+    f.params.lookahead_bend    = mrpt::DEG2RAD(25.0);
+    f.params.goal_dist_tol     = 0.15;
+    f.params.goal_ang_tol      = mrpt::DEG2RAD(12.0);
+    f.params.max_cross_track   = 0.6;
+    f.params.arrival_radius    = 0.3;
+}
+}  // namespace
+
+// The last 3 knots of this real reverse-into-row path all carry the SAME
+// (already-correct) goal heading, but their raw (x,y) has a small ~cm-scale
+// direction wiggle (an artifact of the upstream path generator's terminal
+// segment), which used to invert the discrete secant tangent right at the
+// tail. On the real robot this shows up as the commanded omega slamming
+// between +max and -max curvature (both directions saturate the
+// min_turn_radius clamp) over the last ~1.5 m of an otherwise smooth arc,
+// even though there is essentially no heading left to correct.
+TEST(TrajectoryFollower, ReverseArcTerminalWiggleLiveCase)
+{
+    const std::vector<XYYawDeg> pts = {
+        {0.9975, 0.4742, -153.71}, {1.3456, 0.6239, -153.71},
+        {1.6849, 0.7915, -153.71}, {2.0241, 0.9591, -153.71},
+        {2.3634, 1.1267, -153.71}, {2.7026, 1.2943, -153.71},
+        {3.0419, 1.4619, -153.71}, {3.1881, 1.5465, -146.16},
+        {3.3219, 1.6496, -138.62}, {3.4410, 1.7694, -131.07},
+        {3.5434, 1.9037, -123.52}, {3.6272, 2.0504, -115.98},
+        {3.6911, 2.2068, -108.43}, {3.7338, 2.3702, -100.88},
+        {3.7547, 2.5379, -93.34},  {3.7534, 2.7068, -85.79},
+        {3.7300, 2.8741, -78.24},  {3.6847, 3.0369, -70.70},
+        {3.6185, 3.1923, -63.15},  {3.5912, 3.2905, -63.15},
+        {3.5460, 3.3797, -63.15},  {3.5009, 3.4690, -63.15}};
+
+    mpp::TrajectoryFollower f;
+    applyIdmDeployedFollowerParams(f);
+    f.setTrajectory(mkTrajFromRecorded(pts, 0.3));
+
+    const TPose2D start(
+        pts.front().x, pts.front().y, mrpt::DEG2RAD(pts.front().yaw_deg));
+    const TPose2D goal(
+        pts.back().x, pts.back().y, mrpt::DEG2RAD(pts.back().yaw_deg));
+    const double kMaxCurv = 1.0 / 0.364;  // real Ackermann wheelbase limit
+    const auto   r = simulateVerbose(f, start, xyOf(pts), goal, kMaxCurv);
+
+    const double dGoal =
+        std::hypot(r.finalPose.x - goal.x, r.finalPose.y - goal.y);
+    EXPECT_NE(r.lastStatus, mpp::FollowerStatus::OffPathExceeded)
+        << "follower lost track of the reverse arc, exactly as on the real "
+           "robot";
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(dGoal, 0.3);
+    EXPECT_LT(r.maxCross, 0.5);
+}
+
+// A longer, continuously-curving ~155 deg turn (no terminal wiggle -- the
+// knots are smooth throughout). On the real robot this path diverges instead
+// of oscillating: once the along-path projection pins near the goal while the
+// vehicle is still well off in heading/cross-track, the pure-pursuit target
+// ends up geometrically inside the vehicle's own (clamped) minimum turning
+// circle, so commanding max curvature cannot reduce the error -- the vehicle
+// keeps circling at cruise speed and the error grows until it collides /
+// trips OffPathExceeded, instead of slowing down to make the turn.
+TEST(TrajectoryFollower, SharpCurveSpiralDivergenceLiveCase)
+{
+    const std::vector<XYYawDeg> pts = {
+        {3.5917, 3.6833, -65.71},  {3.6717, 3.4701, -73.19},
+        {3.7231, 3.2483, -80.69},  {3.7452, 3.0217, -88.19},
+        {3.7375, 2.7941, -95.69},  {3.7001, 2.5695, -103.19},
+        {3.6337, 2.3516, -110.69}, {3.5395, 2.1443, -118.19},
+        {3.4190, 1.9511, -125.69}, {3.2743, 1.7753, -133.19},
+        {3.1080, 1.6198, -140.69}, {2.9227, 1.4874, -148.19},
+        {2.7218, 1.3803, -155.69}, {2.6389, 1.3209, -155.69},
+        {2.5477, 1.2797, -155.69}, {2.4566, 1.2386, -155.69}};
+
+    mpp::TrajectoryFollower f;
+    applyIdmDeployedFollowerParams(f);
+    f.setTrajectory(mkTrajFromRecorded(pts, 0.3));
+
+    const TPose2D start(
+        pts.front().x, pts.front().y, mrpt::DEG2RAD(pts.front().yaw_deg));
+    const TPose2D goal(
+        pts.back().x, pts.back().y, mrpt::DEG2RAD(pts.back().yaw_deg));
+    const double kMaxCurv = 1.0 / 0.364;  // real Ackermann wheelbase limit
+    const auto   r = simulateVerbose(f, start, xyOf(pts), goal, kMaxCurv);
+
+    const double dGoal =
+        std::hypot(r.finalPose.x - goal.x, r.finalPose.y - goal.y);
+    EXPECT_NE(r.lastStatus, mpp::FollowerStatus::OffPathExceeded)
+        << "follower spiraled off the sharp curve, exactly as on the real "
+           "robot";
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(dGoal, 0.3);
+    EXPECT_LT(r.maxCross, 0.5);
+}
+
+// --------------------------------------------------------------------------
+// Regression: `max_omega_rate` must actually do what it documents -- bound
+// the *commanded* omega's own step size between control cycles -- on a real
+// captured path (the same sharp live-case curve above), not just in a toy
+// scenario. This is a mechanism-level check (the rate limiter is trivially
+// self-verifying), independent of any particular vehicle/actuator model.
+TEST(TrajectoryFollower, MaxOmegaRateLimitsCommandedOmegaStep)
+{
+    const std::vector<XYYawDeg> pts = {
+        {3.5917, 3.6833, -65.71},  {3.6717, 3.4701, -73.19},
+        {3.7231, 3.2483, -80.69},  {3.7452, 3.0217, -88.19},
+        {3.7375, 2.7941, -95.69},  {3.7001, 2.5695, -103.19},
+        {3.6337, 2.3516, -110.69}, {3.5395, 2.1443, -118.19},
+        {3.4190, 1.9511, -125.69}, {3.2743, 1.7753, -133.19},
+        {3.1080, 1.6198, -140.69}, {2.9227, 1.4874, -148.19},
+        {2.7218, 1.3803, -155.69}, {2.6389, 1.3209, -155.69},
+        {2.5477, 1.2797, -155.69}, {2.4566, 1.2386, -155.69}};
+
+    mpp::TrajectoryFollower f;
+    applyIdmDeployedFollowerParams(f);
+    constexpr double kMaxOmegaRate = 3.0;  // [rad/s^2]
+    f.params.max_omega_rate        = kMaxOmegaRate;
+    f.setTrajectory(mkTrajFromRecorded(pts, 0.3));
+
+    TPose2D robot = {
+        pts.front().x, pts.front().y, mrpt::DEG2RAD(pts.front().yaw_deg)};
+    double       v           = 0;
+    double       prevOmega   = 0;
+    double       maxDOmega   = 0;
+    const double dt          = f.params.control_period;
+    const double allowedStep = kMaxOmegaRate * dt + 1e-6;
+    for (int k = 0; k < 2000; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal) break;
+        if (out.command.points.empty()) break;
+        const auto tw = out.command.points.front().twist;
+        if (k > 0)
+        {
+            maxDOmega = std::max(maxDOmega, std::abs(tw.omega - prevOmega));
+        }
+        prevOmega = tw.omega;
+        robot     = integrate(robot, tw.vx, tw.omega, dt);
+        v         = tw.vx;
+    }
+    EXPECT_LE(maxDOmega, allowedStep)
+        << "commanded omega stepped by more than max_omega_rate allows";
+}
+
+// --------------------------------------------------------------------------
+// Regression: `min_lookahead_dist` must keep the pure-pursuit target's
+// Euclidean distance from the vehicle from collapsing as the vehicle closes
+// in on a goal that is not perfectly centered/aligned -- the regime where
+// curvature (~ yr/Ld^2) becomes highly sensitive to small position noise
+// (even though min_turn_radius already bounds the *magnitude* of the
+// resulting curvature either way, a collapsed Ld means a small Cartesian
+// perturbation swings the *bearing* to the target -- and hence the sign of
+// the commanded turn -- far more than the same perturbation would at a
+// healthy lookahead distance; that bearing sensitivity, not the clamped
+// magnitude, is what drives cycle-to-cycle oscillation). A short,
+// nearly-finished path with the vehicle sitting close to the end but with a
+// real lateral offset (not yet within goal tolerance) isolates the mechanism
+// without depending on any specific captured trajectory.
+TEST(TrajectoryFollower, MinLookaheadDistBoundsLookaheadDistance)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {2, 0}};
+    const TPose2D               robotPose{1.95, 0.3, 0};
+
+    double LdNoFloor = 0;
+    {
+        mpp::TrajectoryFollower f;
+        f.params.min_turn_radius    = 0.6;
+        f.params.min_lookahead_dist = 0.0;  // disabled
+        f.setTrajectory(polyToTraj(pts, 0.3));
+        const auto out = f.step(mkLoc(robotPose), mkOdo(robotPose, 0.3));
+        LdNoFloor      = std::hypot(
+                 out.lookahead_point.x - robotPose.x,
+                 out.lookahead_point.y - robotPose.y);
+    }
+
+    double LdWithFloor = 0;
+    {
+        mpp::TrajectoryFollower f;
+        f.params.min_turn_radius    = 0.6;
+        f.params.min_lookahead_dist = 0.5;
+        f.setTrajectory(polyToTraj(pts, 0.3));
+        const auto out = f.step(mkLoc(robotPose), mkOdo(robotPose, 0.3));
+        LdWithFloor    = std::hypot(
+               out.lookahead_point.x - robotPose.x,
+               out.lookahead_point.y - robotPose.y);
+    }
+
+    constexpr double kMinTurnRadius = 0.6;
+    EXPECT_LT(LdNoFloor, kMinTurnRadius)
+        << "test setup should reach the collapsed-Ld regime without the floor";
+    EXPECT_GE(LdWithFloor, kMinTurnRadius - 1e-6)
+        << "the floor should keep the lookahead at least min_turn_radius away";
+    EXPECT_GT(LdWithFloor, LdNoFloor);
 }

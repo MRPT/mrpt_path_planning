@@ -82,6 +82,23 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
          * unicycle, any curvature achievable). */
         double min_turn_radius = 0.0;
 
+        /** [rad/s^2] If > 0, caps how fast the *commanded* angular velocity
+         * itself may change between control cycles (an angular-jerk limit),
+         * independently of how fast the pure-pursuit geometry alone would ask
+         * for it to change. Pure pursuit is a memoryless geometric controller:
+         * with no rate limit, a small lookahead-point jump (e.g. a few
+         * centimeters of noise on a nearly-straight terminal approach, or the
+         * lookahead pinning to a goal a real steering actuator cannot track
+         * instantly) can step the commanded omega from one cycle to the next
+         * by more than the vehicle's steering actuator can physically follow;
+         * chasing that lag with further full-authority corrections is a
+         * classic recipe for delay-induced oscillation ("dancing") rather
+         * than convergence. This bounds the commanded omega's own rate of
+         * change so it stays within what a real (or simulated) steering loop
+         * can track, at the cost of a small tracking lag. <= 0 disables the
+         * limit (omega can step freely, as before this parameter existed). */
+        double max_omega_rate = 0.0;
+
         /** Curvature-adaptive lookahead: the lookahead point is marched forward
          * along the path from the projection to where the path has bent
          * (accumulated |turned angle|) by `lookahead_bend`, capped at
@@ -93,6 +110,26 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         double lookahead_max  = 1.5;  //!< [m] max lookahead travel
         double lookahead_bend = mrpt::DEG2RAD(25.0);  //!< [rad] path bend that
                                                       //!< caps the lookahead
+
+        /** [m] Floor on the pure-pursuit lookahead point's *Euclidean*
+         * distance from the vehicle (as opposed to `lookahead_max`/
+         * `lookahead_bend`, which only bound its arc-length travel *along the
+         * path*). Once the lookahead has pinned to the final path point --
+         * always true eventually near the goal, whenever the remaining path
+         * is shorter than `lookahead_max` and roughly straight -- that
+         * Euclidean distance shrinks as the vehicle closes in, and
+         * pure-pursuit curvature (~ 2*lateral_offset / distance^2) diverges
+         * on any residual lateral/heading error; if the point ends up nearer
+         * than the vehicle's own minimum turning radius, it becomes
+         * geometrically unreachable by turning at all (the vehicle
+         * orbits/spirals around it instead of converging). Whenever pinned to
+         * the goal with less than `max(min_lookahead_dist, min_turn_radius)`
+         * of Euclidean room left, the point is extrapolated past the goal
+         * along a smoothed trailing-chord direction (robust to a few noisy
+         * terminal knots) so the pursuit target never collapses onto the
+         * vehicle. <= 0 disables the floor (the raw goal point is used, as
+         * before this parameter existed). */
+        double min_lookahead_dist = 0.0;
 
         double goal_dist_tol   = 0.15;  //!< [m]
         double goal_ang_tol    = mrpt::DEG2RAD(12.0);  //!< [rad]
@@ -221,6 +258,11 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      * profile still accelerates when the odometry source reports no twist. */
     double lastCommandedSpeed_ = 0;
 
+    /** Last commanded angular velocity [rad/s], seeding the next cycle's
+     * \ref Parameters::max_omega_rate limiter the same way
+     * \ref lastCommandedSpeed_ seeds the speed ramp. */
+    double lastCommandedOmega_ = 0;
+
     /** Latched once the robot has settled within `arrival_radius` of the goal;
      * from then on it holds a stop instead of driving back away from a pose it
      * cannot perfectly seat. */
@@ -301,16 +343,18 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         mrpt::math::TPoint2D lookahead{0, 0};
     };
 
-    /** Pure-pursuit command at `fromPose` given `currentV`, advancing the
-     * lookahead from projection near `sHint`. `dt` bounds the accel/decel step.
+    /** Pure-pursuit command at `fromPose` given `currentV`/`currentOmega`,
+     * advancing the lookahead from projection near `sHint`. `dt` bounds the
+     * accel/decel step (and, via `Parameters::max_omega_rate`, the omega step).
      * `speedScale` (0..1) caps the target speed before rate-limiting (safety).
      * `gear` (+1 forward, -1 reverse) sets the travel direction; the caller
      * decides it once per cycle (with hysteresis) and holds it over the
      * horizon.
      */
     Command pursuit(
-        const mrpt::math::TPose2D& fromPose, double currentV, double sHint,
-        double dt, double gear, double speedScale = 1.0) const;
+        const mrpt::math::TPose2D& fromPose, double currentV,
+        double currentOmega, double sHint, double dt, double gear,
+        double speedScale = 1.0) const;
 
     /** Pose (x,y + tangent heading) on the reference polyline at arc-length
      * `s`. */
@@ -326,8 +370,8 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      * already latched by \ref advanceGear for this cycle (the forecast does
      * not re-decide it per predicted sample). */
     double forecastContactDistance(
-        const mrpt::math::TPose2D& startPose, double startV, double startS,
-        double gear) const;
+        const mrpt::math::TPose2D& startPose, double startV, double startOmega,
+        double startS, double gear) const;
 
     /** Sweeps the footprint along the reference path ahead of `startS` and
      * returns the travel distance to the first predicted contact; +inf if none

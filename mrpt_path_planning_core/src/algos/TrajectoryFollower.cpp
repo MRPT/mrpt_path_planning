@@ -56,8 +56,10 @@ void TrajectoryFollower::Parameters::load_from_yaml(
     MCP_LOAD_OPT(c, max_decel);
     MCP_LOAD_OPT(c, max_lateral_accel);
     MCP_LOAD_OPT(c, min_turn_radius);
+    MCP_LOAD_OPT(c, max_omega_rate);
     MCP_LOAD_OPT(c, lookahead_max);
     MCP_LOAD_OPT_DEG(c, lookahead_bend);
+    MCP_LOAD_OPT(c, min_lookahead_dist);
     MCP_LOAD_OPT(c, goal_dist_tol);
     MCP_LOAD_OPT_DEG(c, goal_ang_tol);
     MCP_LOAD_OPT(c, max_cross_track);
@@ -84,8 +86,10 @@ mrpt::containers::yaml TrajectoryFollower::Parameters::as_yaml() const
     MCP_SAVE(c, max_decel);
     MCP_SAVE(c, max_lateral_accel);
     MCP_SAVE(c, min_turn_radius);
+    MCP_SAVE(c, max_omega_rate);
     MCP_SAVE(c, lookahead_max);
     MCP_SAVE_DEG(c, lookahead_bend);
+    MCP_SAVE(c, min_lookahead_dist);
     MCP_SAVE(c, goal_dist_tol);
     MCP_SAVE_DEG(c, goal_ang_tol);
     MCP_SAVE(c, max_cross_track);
@@ -127,6 +131,7 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
     lastS_              = 0;
     currentInterval_    = 0;
     lastCommandedSpeed_ = 0;
+    lastCommandedOmega_ = 0;
     stopped_            = false;
     stoppedSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
@@ -231,6 +236,7 @@ void TrajectoryFollower::reset()
     currentInterval_    = 0;
     lastS_              = 0;
     lastCommandedSpeed_ = 0;
+    lastCommandedOmega_ = 0;
     stopped_            = false;
     stoppedSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
@@ -356,8 +362,7 @@ double TrajectoryFollower::adaptiveLookaheadS(double sStart, double capS) const
     constexpr double kFloor = 0.3;  // [m]
     const double     total  = totalLength();
     const double     sFloor = sStart + kFloor;
-    if (capS <= sFloor)
-        return std::min(std::max(capS, sStart), total);
+    if (capS <= sFloor) return std::min(std::max(capS, sStart), total);
 
     // Segment tangent (heading of segment [k, k+1]).
     auto tangentOf = [&](std::size_t k)
@@ -396,8 +401,8 @@ double TrajectoryFollower::adaptiveLookaheadS(double sStart, double capS) const
 
 // ------------------------------------------------------------------- pursuit
 TrajectoryFollower::Command TrajectoryFollower::pursuit(
-    const mrpt::math::TPose2D& fromPose, double currentV, double sHint,
-    double dt, double gear, double speedScale) const
+    const mrpt::math::TPose2D& fromPose, double currentV, double currentOmega,
+    double sHint, double dt, double gear, double speedScale) const
 {
     Command          out;
     const Projection proj = projectToPath({fromPose.x, fromPose.y}, sHint);
@@ -417,18 +422,78 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
                                  : std::numeric_limits<double>::infinity();
     // Curvature-adaptive lookahead within the [proj.s, cap] arc-length window,
     // where the cap is the shorter of the max travel and the next cusp.
-    const double capS       = std::min(proj.s + params.lookahead_max, nextCuspS);
+    const double capS = std::min(proj.s + params.lookahead_max, nextCuspS);
     const double lookaheadS = adaptiveLookaheadS(proj.s, capS);
     out.lookahead           = pointAtArc(lookaheadS);
 
     // Lookahead in robot frame.
-    const double dx = out.lookahead.x - fromPose.x;
-    const double dy = out.lookahead.y - fromPose.y;
-    const double c  = std::cos(fromPose.phi);
-    const double sn = std::sin(fromPose.phi);
-    const double xr = c * dx + sn * dy;
-    const double yr = -sn * dx + c * dy;
-    const double Ld = std::hypot(xr, yr);
+    const double c            = std::cos(fromPose.phi);
+    const double sn           = std::sin(fromPose.phi);
+    auto         toRobotFrame = [&](const mrpt::math::TPoint2D& p)
+    {
+        const double dx = p.x - fromPose.x;
+        const double dy = p.y - fromPose.y;
+        return mrpt::math::TPoint2D(c * dx + sn * dy, -sn * dx + c * dy);
+    };
+    mrpt::math::TPoint2D lr = toRobotFrame(out.lookahead);
+    double               Ld = lr.norm();
+
+    // Once the lookahead has pinned to the very end of the path (true
+    // whenever the remaining path is shorter than lookahead_max and roughly
+    // straight, which eventually happens near every goal), Ld collapses
+    // toward zero as the vehicle closes in and pure-pursuit curvature
+    // (~ yr/Ld^2) diverges on any residual lateral/heading error; if Ld ends
+    // up inside the vehicle's own (clamped) minimum turning circle the point
+    // becomes geometrically unreachable by turning at all. Guard both by
+    // never chasing a target nearer than the vehicle can meaningfully steer
+    // toward: extrapolate the lookahead past the goal along a smoothed
+    // trailing-chord direction (robust to a few noisy terminal knots, unlike
+    // the raw last-segment secant) until Ld reaches the floor.
+    const bool atGoal = lookaheadS >= totalLength() - 1e-6;
+    if (atGoal && params.min_lookahead_dist > 0.0)
+    {
+        const double minLd =
+            std::max(params.min_lookahead_dist, params.min_turn_radius);
+        if (Ld < minLd)
+        {
+            constexpr double           kEndWindow = 0.5;  // [m]
+            const double               w = std::min(totalLength(), kEndWindow);
+            const mrpt::math::TPoint2D pEndA = pointAtArc(totalLength() - w);
+            double                     ex    = out.lookahead.x - pEndA.x;
+            double                     ey    = out.lookahead.y - pEndA.y;
+            const double               eLen  = std::hypot(ex, ey);
+            if (eLen > 1e-6)
+            {
+                ex /= eLen;
+                ey /= eLen;
+            }
+            else
+            {
+                const double endHeading = traj_.back().pose.phi;
+                ex                      = std::cos(endHeading);
+                ey                      = std::sin(endHeading);
+            }
+            // Solve for the travel `t` along the ray (goal + t*dir) that puts
+            // it exactly `minLd` from the vehicle (a ray-circle intersection),
+            // rather than just adding `minLd - Ld` along the direction -- that
+            // naive offset only grows Ld 1:1 when the direction points
+            // straight away from the vehicle, which is not generally true
+            // here. `e` = vehicle->goal; solve |e + t*dir|^2 = minLd^2 (dir is
+            // unit length) and take the positive root (there is exactly one,
+            // since |e| = Ld < minLd means the goal is already inside the
+            // target circle).
+            const double ex0  = out.lookahead.x - fromPose.x;
+            const double ey0  = out.lookahead.y - fromPose.y;
+            const double b    = ex0 * ex + ey0 * ey;  // e . dir
+            const double disc = b * b + (minLd * minLd - Ld * Ld);
+            const double t    = -b + std::sqrt(std::max(0.0, disc));
+            out.lookahead.x += t * ex;
+            out.lookahead.y += t * ey;
+            lr = toRobotFrame(out.lookahead);
+            Ld = lr.norm();
+        }
+    }
+    const double yr = lr.y;
 
     // Pure-pursuit curvature; the same circle is driven forward or in reverse,
     // the sign of the commanded speed (via `gear`) sets the travel direction.
@@ -499,6 +564,20 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
 
     out.v     = gear * sNew;
     out.omega = out.v * curv;
+
+    // Rate-limit the commanded angular velocity itself: pure pursuit is a
+    // memoryless geometric controller, so a lookahead-point jump (path noise,
+    // a lookahead pinning to the goal, a cusp) can otherwise step omega by
+    // more than a real steering actuator can track in one control period.
+    // Chasing that lag with further full-authority corrections is what
+    // produces oscillation/"dancing" rather than convergence; this keeps the
+    // commanded omega within a rate the actuator can actually follow.
+    if (params.max_omega_rate > 0.0)
+    {
+        const double maxDOmega = params.max_omega_rate * dt;
+        out.omega              = std::clamp(
+                         out.omega, currentOmega - maxDOmega, currentOmega + maxDOmega);
+    }
     return out;
 }
 
@@ -529,13 +608,14 @@ double TrajectoryFollower::footprintClearance(
 }
 
 double TrajectoryFollower::forecastContactDistance(
-    const mrpt::math::TPose2D& startPose, double startV, double startS,
-    double gear) const
+    const mrpt::math::TPose2D& startPose, double startV, double startOmega,
+    double startS, double gear) const
 {
-    double              L = 0;
-    mrpt::math::TPose2D p = startPose;
-    double              v = startV;  // signed (reverse forecasts back up)
-    double              s = startS;
+    double              L  = 0;
+    mrpt::math::TPose2D p  = startPose;
+    double              v  = startV;  // signed (reverse forecasts back up)
+    double              om = startOmega;
+    double              s  = startS;
 
     const int nSteps = std::max(
         1, static_cast<int>(
@@ -545,14 +625,16 @@ double TrajectoryFollower::forecastContactDistance(
     {
         if (footprintClearance(p) <= params.safety_margin) return L;
 
-        const Command cmd = pursuit(p, v, s, params.sample_period, gear, 1.0);
+        const Command cmd =
+            pursuit(p, v, om, s, params.sample_period, gear, 1.0);
         const mrpt::math::TPose2D pNext =
             integrateUnicycle(p, cmd.v, cmd.omega, params.sample_period);
 
         L += std::hypot(pNext.x - p.x, pNext.y - p.y);
-        p = pNext;
-        v = cmd.v;
-        s = projectToPath({p.x, p.y}, s).s;
+        p  = pNext;
+        v  = cmd.v;
+        om = cmd.omega;
+        s  = projectToPath({p.x, p.y}, s).s;
 
         if (totalLength() - s <= params.goal_dist_tol) break;
     }
@@ -746,6 +828,9 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     // watchdog, not by throttling the ramp to measured velocity.
     // Signed: reverse maneuvers ramp toward a negative speed.
     double predV = lastCommandedSpeed_;
+    // Likewise seeds the omega rate limiter (Parameters::max_omega_rate) from
+    // the follower's own last commanded value, mirroring predV above.
+    double predOmega = lastCommandedOmega_;
 
     // Predictive safety: sweep the footprint over the command forecast and the
     // reference path ahead, and scale the commanded speed toward a stop before
@@ -755,7 +840,7 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     if (!obstacles_.empty())
     {
         const double dFwd =
-            forecastContactDistance(ctrlPose, predV, proj.s, gear);
+            forecastContactDistance(ctrlPose, predV, predOmega, proj.s, gear);
         const double dRef = referenceContactDistance(proj.s);
         scale             = std::min(
                         contactDistanceToScale(dFwd), contactDistanceToScale(dRef));
@@ -806,8 +891,9 @@ TrajectoryFollower::Output TrajectoryFollower::step(
 
     for (int k = 0; k <= nSamples; k++)
     {
-        const Command cmd =
-            pursuit(predPose, predV, predS, params.sample_period, gear, scale);
+        const Command cmd = pursuit(
+            predPose, predV, predOmega, predS, params.sample_period, gear,
+            scale);
 
         TrajSample smp;
         smp.t = k * params.sample_period;
@@ -824,13 +910,15 @@ TrajectoryFollower::Output TrajectoryFollower::step(
             out.lookahead_point = cmd.lookahead;
             // Persist for the next cycle's feedforward ramp seed.
             lastCommandedSpeed_ = cmd.v;
+            lastCommandedOmega_ = cmd.omega;
         }
 
         // Advance the forecast.
         predPose =
             integrateUnicycle(predPose, cmd.v, cmd.omega, params.sample_period);
-        predV = cmd.v;
-        predS = projectToPath({predPose.x, predPose.y}, predS).s;
+        predV     = cmd.v;
+        predOmega = cmd.omega;
+        predS     = projectToPath({predPose.x, predPose.y}, predS).s;
 
         if (totalLength() - predS <= params.goal_dist_tol) break;
     }
