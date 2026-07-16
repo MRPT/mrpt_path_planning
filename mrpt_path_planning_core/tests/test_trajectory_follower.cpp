@@ -1467,6 +1467,85 @@ TEST(TrajectoryFollower, AnchorFilterAttenuatesLocalizationJitter)
         << "true trajectory deviates too much under pure localization jitter";
 }
 
+// The correction filter must behave the same whether the robot is 2 m or
+// 300 m from where its odometry started. An earlier formulation filtered the
+// map->odom anchor, whose partially-applied yaw corrections rotate the
+// composed control pose about the odom ORIGIN: localization yaw jitter swung
+// the implied anchor position by (jitter x distance-from-origin), saturating
+// the filter and pinning the control pose at the divergence bound -- so
+// tracking was clean on the first rows of a field mission and degraded
+// linearly with distance driven. Filtered at the vehicle, yaw jitter is just
+// local heading noise: the true driven path must stay as clean far from the
+// odom origin as near it.
+TEST(TrajectoryFollower, YawJitterFarFromOdomOriginDoesNotDegrade)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {12, 0}};
+
+    // Drives the same straight path under localization yaw jitter; only the
+    // odom-origin offset differs between the two cases.
+    auto runCase = [&](const TPose2D& odomFromMap) -> double
+    {
+        mpp::TrajectoryFollower f;
+        applyAccuracyTunedParams(f);
+        f.setTrajectory(polyToTraj(pts, 0.3));
+
+        auto toOdom = [&](const TPose2D& pm)
+        {
+            return (mrpt::poses::CPose2D(odomFromMap) +
+                    mrpt::poses::CPose2D(pm))
+                .asTPose();
+        };
+
+        TPose2D          mapPose{0, 0, 0};
+        double           v  = 0;
+        const double     dt = f.params.control_period;
+        double           t  = 0;
+        constexpr double kYawJitterAmp = mrpt::DEG2RAD(2.0);
+        double           maxTrueE      = 0;
+        bool             reached       = false;
+        for (int k = 0; k < 6000; k++)
+        {
+            t += dt;
+            TPose2D locMap = mapPose;
+            locMap.phi += kYawJitterAmp * std::sin(2 * M_PI * 0.7 * t);
+
+            const auto out = f.step(mkLoc(locMap), mkOdo(toOdom(mapPose), v));
+            if (out.status == mpp::FollowerStatus::ReachedGoal)
+            {
+                reached = true;
+                break;
+            }
+            if (out.command.points.empty())
+            {
+                break;
+            }
+            const auto tw = out.command.points.front().twist;
+            mapPose       = integrate(mapPose, tw.vx, tw.omega, dt);
+            v             = tw.vx;
+            // Steady state only (skip the initial convergence).
+            if (k > 100)
+            {
+                maxTrueE = std::max(
+                    maxTrueE, distToPolyline(pts, {mapPose.x, mapPose.y}));
+            }
+        }
+        EXPECT_TRUE(reached);
+        return maxTrueE;
+    };
+
+    const double eNear = runCase({1.0, 2.0, mrpt::DEG2RAD(-15.0)});
+    const double eFar  = runCase({250.0, -180.0, mrpt::DEG2RAD(30.0)});
+
+    EXPECT_LT(eNear, 0.10) << "yaw jitter degrades tracking near the origin";
+    // The invariant is distance-independence: the far case must track as
+    // cleanly as the near one (the anchor-based formulation measured ~23x
+    // worse here), up to a small numeric epsilon.
+    EXPECT_LT(eFar, 2.0 * eNear + 0.005)
+        << "tracking error grows with the distance from the odom origin "
+           "(lever-arm-amplified correction): eNear="
+        << eNear << " m, eFar=" << eFar << " m";
+}
+
 // Approaching a cusp, the lookahead arc-length window collapses (it may not
 // cross the cusp), which used to collapse the *Euclidean* lookahead distance
 // with it -- full-authority steering on centimeter errors right where the

@@ -155,7 +155,7 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
     offPathSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
-    anchorInit_         = false;
+    ctrlPoseInit_       = false;
 
     // Cusp arc-lengths: points where the path travel direction reverses (a
     // differential-drive planner backs up then drives forward, etc.). The
@@ -262,7 +262,7 @@ void TrajectoryFollower::reset()
     offPathSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
-    anchorInit_         = false;
+    ctrlPoseInit_       = false;
 }
 
 void TrajectoryFollower::setRobotShape(const RobotShape& shape)
@@ -747,113 +747,111 @@ mrpt::math::TPose2D TrajectoryFollower::controlPose(
     // No odometry to propagate: track the raw localization directly.
     if (!odo.valid)
     {
-        anchorInit_ = false;
+        ctrlPoseInit_ = false;
         return loc.pose;
     }
 
     const mrpt::poses::CPose2D odoP(odo.odometry);
-    // Anchor the current localization implies: map_pose = implied (+) odom.
-    const mrpt::poses::CPose2D implied =
-        mrpt::poses::CPose2D(loc.pose) + (mrpt::poses::CPose2D() - odoP);
 
-    if (!anchorInit_)
+    if (!ctrlPoseInit_)
     {
-        odomToMap_  = implied;
-        anchorInit_ = true;
+        ctrlPose_     = mrpt::poses::CPose2D(loc.pose);
+        lastOdom_     = odoP;
+        ctrlPoseInit_ = true;
+        return ctrlPose_.asTPose();
     }
-    else
+
+    // Complementary filter of the control pose toward the raw localization:
+    // wheel odometry is trusted for short-term motion, localization corrects
+    // slowly. The filter state is the control pose itself, dead-reckoned with
+    // per-cycle odometry increments, and every correction is applied AT the
+    // vehicle. An earlier formulation filtered the map->odom anchor instead;
+    // its partially-applied (low-passed/clamped) yaw corrections rotate the
+    // composed pose about the odom ORIGIN, so their effect at the vehicle is
+    // amplified by a lever arm equal to the distance driven since odometry
+    // started -- the filter's effective bandwidth and its residual error
+    // under localization yaw jitter degraded linearly over a long mission.
+    // Parameterized at the vehicle, behavior is independent of that
+    // distance. Three stages:
+    //  1. First-order low-pass (anchor_time_constant): with a jittery
+    //     localization the residual moves every cycle; the low-pass averages
+    //     the jitter out instead of letting the control pose chase it. A
+    //     pure slew limiter is the wrong filter for sustained jitter: once
+    //     the residual moves faster than the slew rate, it saturates into a
+    //     heavy nonlinear lag (the phase shift that turns noise into a
+    //     closed-loop weave).
+    //  2. Rate clamp (anchor_max_lin/ang_rate): bounds how fast a genuine
+    //     one-shot relocalization jump is absorbed, so the commanded
+    //     curvature never lurches.
+    //  3. Divergence bound (anchor_max_lin/ang_divergence): hard cap on how
+    //     far the filtered control pose may stray from the raw localization,
+    //     so sustained heavy jitter can never leave the vehicle steering on
+    //     a stale pose far from anywhere the localization believes it is.
+    // Between relocalizations with a clean localization the residual is
+    // zero, all three stages are no-ops, and the control pose equals the
+    // localization exactly.
+
+    // Dead-reckon with the odometry increment (a relative quantity: immune
+    // to where the odom origin is).
+    ctrlPose_ = ctrlPose_ + (odoP - lastOdom_);
+    lastOdom_ = odoP;
+
+    // Correction residual toward the raw localization, in the control pose's
+    // own (vehicle) frame.
+    const mrpt::math::TPose2D d =
+        (mrpt::poses::CPose2D(loc.pose) - ctrlPose_).asTPose();
+    const double dt    = params.control_period;
+    const double alpha = params.anchor_time_constant > 0
+                             ? 1.0 - std::exp(-dt / params.anchor_time_constant)
+                             : 1.0;
+
+    mrpt::math::TPose2D step;
+    step.x   = d.x * alpha;
+    step.y   = d.y * alpha;
+    step.phi = mrpt::math::wrapToPi(d.phi) * alpha;
+
+    const double maxLin = params.anchor_max_lin_rate * dt;
+    const double maxAng = params.anchor_max_ang_rate * dt;
+    const double lin    = std::hypot(step.x, step.y);
+    if (lin > maxLin)
     {
-        // Complementary filter of the anchor toward the localization-implied
-        // value: wheel odometry is trusted for short-term motion,
-        // localization corrects the anchor slowly. Three stages:
-        //  1. First-order low-pass (anchor_time_constant): with a jittery
-        //     localization the implied anchor moves every cycle; the
-        //     low-pass averages the jitter out instead of letting the
-        //     control pose chase it. A pure slew limiter is the wrong filter
-        //     for sustained jitter: once the implied anchor moves faster
-        //     than the slew rate, it saturates into a heavy nonlinear lag
-        //     (the phase shift that turns noise into a closed-loop weave).
-        //  2. Rate clamp (anchor_max_lin/ang_rate): bounds how fast a
-        //     genuine one-shot relocalization jump is absorbed, so the
-        //     commanded curvature never lurches.
-        //  3. Divergence bound (anchor_max_lin/ang_divergence): hard cap on
-        //     how far the anchor-derived control pose may stray from the
-        //     raw localization, so a sustained fast-moving implied anchor
-        //     can never leave the vehicle steering on a stale pose far from
-        //     anywhere the localization believes it is.
-        // Between relocalizations with a clean localization the implied
-        // anchor is constant, all three stages are no-ops, and the control
-        // pose equals the localization exactly.
-        const mrpt::math::TPose2D d =
-            (mrpt::poses::CPose2D() - odomToMap_ + implied).asTPose();
-        const double dt    = params.control_period;
-        const double alpha = params.anchor_time_constant > 0
-                                 ? 1.0 - std::exp(-dt / params.anchor_time_constant)
-                                 : 1.0;
+        const double s = maxLin / lin;
+        step.x         = step.x * s;
+        step.y         = step.y * s;
+    }
+    step.phi  = std::clamp(step.phi, -maxAng, maxAng);
+    ctrlPose_ = ctrlPose_ + mrpt::poses::CPose2D(step);
 
-        mrpt::math::TPose2D step;
-        step.x   = d.x * alpha;
-        step.y   = d.y * alpha;
-        step.phi = mrpt::math::wrapToPi(d.phi) * alpha;
-
-        const double maxLin = params.anchor_max_lin_rate * dt;
-        const double maxAng = params.anchor_max_ang_rate * dt;
-        const double lin    = std::hypot(step.x, step.y);
-        if (lin > maxLin)
+    // Divergence bounds, both direct now that the state lives at the
+    // vehicle: excess yaw is absorbed in place (position untouched), excess
+    // translation snapped along the residual (heading untouched).
+    if (params.anchor_max_ang_divergence > 0.0)
+    {
+        const double dyaw =
+            mrpt::math::wrapToPi(loc.pose.phi - ctrlPose_.phi());
+        if (std::abs(dyaw) > params.anchor_max_ang_divergence)
         {
-            const double s = maxLin / lin;
-            step.x         = step.x * s;
-            step.y         = step.y * s;
-        }
-        step.phi   = std::clamp(step.phi, -maxAng, maxAng);
-        odomToMap_ = odomToMap_ + mrpt::poses::CPose2D(step);
-
-        if (params.anchor_max_lin_divergence > 0.0 ||
-            params.anchor_max_ang_divergence > 0.0)
-        {
-            // Evaluated in the composed control-pose space, not on the
-            // anchor's own local residual: a rotational anchor residual
-            // displaces the composed pose by a lever arm proportional to the
-            // odometry pose's distance from the odom origin, so the local
-            // residual under-represents the real divergence on long runs.
-            const mrpt::poses::CPose2D ctrl = odomToMap_ + odoP;
-
-            // Excess yaw: rotate the anchor about the control position (the
-            // composed position stays fixed, only its heading changes).
-            const double dyaw =
-                mrpt::math::wrapToPi(loc.pose.phi - ctrl.phi());
-            if (params.anchor_max_ang_divergence > 0.0 &&
-                std::abs(dyaw) > params.anchor_max_ang_divergence)
-            {
-                const double e =
-                    dyaw -
-                    std::copysign(params.anchor_max_ang_divergence, dyaw);
-                const double ce = std::cos(e);
-                const double se = std::sin(e);
-                const double ax = odomToMap_.x() - ctrl.x();
-                const double ay = odomToMap_.y() - ctrl.y();
-                odomToMap_      = mrpt::poses::CPose2D(
-                         ctrl.x() + ce * ax - se * ay,
-                         ctrl.y() + se * ax + ce * ay, odomToMap_.phi() + e);
-            }
-
-            // Excess translation: shifting the anchor's map-frame position
-            // shifts the composed pose 1:1.
-            const double dx   = loc.pose.x - ctrl.x();
-            const double dy   = loc.pose.y - ctrl.y();
-            const double dpos = std::hypot(dx, dy);
-            if (params.anchor_max_lin_divergence > 0.0 &&
-                dpos > params.anchor_max_lin_divergence)
-            {
-                const double s =
-                    (dpos - params.anchor_max_lin_divergence) / dpos;
-                odomToMap_ = mrpt::poses::CPose2D(
-                    odomToMap_.x() + dx * s, odomToMap_.y() + dy * s,
-                    odomToMap_.phi());
-            }
+            const double e =
+                dyaw - std::copysign(params.anchor_max_ang_divergence, dyaw);
+            ctrlPose_ = mrpt::poses::CPose2D(
+                ctrlPose_.x(), ctrlPose_.y(), ctrlPose_.phi() + e);
         }
     }
-    return (odomToMap_ + odoP).asTPose();
+    {
+        const double dx   = loc.pose.x - ctrlPose_.x();
+        const double dy   = loc.pose.y - ctrlPose_.y();
+        const double dpos = std::hypot(dx, dy);
+        if (params.anchor_max_lin_divergence > 0.0 &&
+            dpos > params.anchor_max_lin_divergence)
+        {
+            const double s = (dpos - params.anchor_max_lin_divergence) / dpos;
+            ctrlPose_      = mrpt::poses::CPose2D(
+                     ctrlPose_.x() + dx * s, ctrlPose_.y() + dy * s,
+                     ctrlPose_.phi());
+        }
+    }
+
+    return ctrlPose_.asTPose();
 }
 
 // ---------------------------------------------------------------------- step
@@ -946,12 +944,12 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     }
 
     // Evaluate OffPathExceeded against the raw localized pose, not the
-    // odometry-smoothed control pose. controlPose() rate-limits the map->odom
-    // anchor to keep the wheel command smooth across relocalization jumps, but
-    // that same slew makes the smoothed pose lag the true localization while
-    // map->odom is being corrected -- judging "off path" by it turns a normal
-    // localization correction into a phantom tracking error even when the robot
-    // is physically on the path. The command still uses `proj` (ctrlPose) for
+    // odometry-smoothed control pose. controlPose() rate-limits its correction
+    // toward the localization to keep the wheel command smooth across
+    // relocalization jumps, but that same slew makes the smoothed pose lag the
+    // true localization while the correction is being absorbed -- judging "off
+    // path" by it turns a normal localization correction into a phantom
+    // tracking error even when the robot is physically on the path. The command still uses `proj` (ctrlPose) for
     // smoothness; only the fault test uses the true pose. A genuine sustained
     // deviation still trips it; a brief localization glitch is left for the
     // caller to debounce. In the identity/static map->odom case (unit tests)

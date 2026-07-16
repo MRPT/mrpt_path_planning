@@ -174,35 +174,40 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
          * behavior). */
         double off_path_min_duration = 0.0;
 
-        // --- map->odom anchor (control-pose complementary filter) ---
+        // --- control-pose complementary filter (odometry + localization) ---
+        // The filter state is the control pose itself, dead-reckoned with
+        // per-cycle wheel-odometry increments and corrected toward the raw
+        // localization AT the vehicle, so every quantity below is in true
+        // vehicle-frame units regardless of how far the robot has driven from
+        // the odom origin (see controlPose()). Parameter names keep their
+        // historical "anchor_" prefix for config-file compatibility.
 
         /** [s] Time constant of the first-order low-pass applied to the
-         * anchor innovation (the difference between the current anchor and
-         * the one the latest localization implies). With a jittery
-         * localization the implied anchor moves every cycle; the low-pass
-         * averages that jitter out instead of letting the control pose chase
-         * it. 0 = no smoothing (each cycle moves the anchor all the way to
-         * the implied value, subject to the slew limits below -- previous
-         * behavior). */
+         * correction residual (raw localization minus current control pose,
+         * at the vehicle). With a jittery localization the residual moves
+         * every cycle; the low-pass averages that jitter out instead of
+         * letting the control pose chase it. 0 = no smoothing (each cycle
+         * applies the whole residual, subject to the slew limits below --
+         * previous behavior). */
         double anchor_time_constant = 0.0;
 
-        /** [m/s] Max translational slew rate of the map->odom anchor toward
-         * the localization-implied value (bounds how fast a genuine
-         * relocalization jump is absorbed; formerly a hardcoded 0.5). */
+        /** [m/s] Max translational correction rate of the control pose toward
+         * the raw localization (bounds how fast a genuine relocalization jump
+         * is absorbed; formerly a hardcoded 0.5). */
         double anchor_max_lin_rate = 0.5;
 
-        /** [rad/s] Max rotational slew rate of the anchor (formerly a
-         * hardcoded 1.0). */
+        /** [rad/s] Max rotational correction rate (formerly a hardcoded
+         * 1.0). */
         double anchor_max_ang_rate = 1.0;
 
-        /** [m] Hard bound on how far the anchor-derived control pose may
-         * diverge from the raw localization. The low-pass/slew above trade
-         * responsiveness for smoothness, but a sustained fast-moving implied
-         * anchor (heavy localization jitter) could otherwise leave the
-         * control pose steering on a stale pose far from anywhere the
-         * localization believes the robot is. When the divergence exceeds
-         * this bound the anchor is snapped along the residual so the bound
-         * holds. <= 0 disables the bound (previous behavior). */
+        /** [m] Hard bound on how far the filtered control pose may diverge
+         * from the raw localization. The low-pass/slew above trade
+         * responsiveness for smoothness, but sustained heavy localization
+         * jitter could otherwise leave the control pose steering on a stale
+         * pose far from anywhere the localization believes the robot is. When
+         * the divergence exceeds this bound the control pose is snapped along
+         * the residual so the bound holds. <= 0 disables the bound (previous
+         * behavior). */
         double anchor_max_lin_divergence = 0.0;
 
         /** [rad] Rotational counterpart of `anchor_max_lin_divergence`.
@@ -356,15 +361,20 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      */
     double minDistToGoal_ = std::numeric_limits<double>::infinity();
 
-    /** Latched odom->map anchor (map_pose = odomToMap_ (+) odom_pose). The
-     * control pose is derived from the smooth, high-rate wheel odometry through
-     * this anchor, which is slewed toward the value the map-frame localization
-     * implies at a bounded rate. Between relocalizations the implied anchor is
-     * constant, so the control pose equals the localization exactly; a
-     * relocalization jump is spread over a few cycles instead of lurching the
-     * commanded curvature. */
-    mrpt::poses::CPose2D odomToMap_;
-    bool                 anchorInit_ = false;
+    /** Filtered control pose (map frame): the pose short-term tracking runs
+     * on. Dead-reckoned each cycle with the smooth, high-rate wheel-odometry
+     * increment, and corrected toward the raw map-frame localization by a
+     * complementary filter applied at the vehicle (see controlPose()).
+     * Between relocalizations with a clean localization the correction is
+     * zero and this equals the localization exactly; a relocalization jump is
+     * spread over a few cycles instead of lurching the commanded curvature. */
+    mrpt::poses::CPose2D ctrlPose_;
+
+    /** Odometry pose at the previous controlPose() cycle, to form the
+     * per-cycle dead-reckoning increment. */
+    mrpt::poses::CPose2D lastOdom_;
+
+    bool ctrlPoseInit_ = false;
 
     // Predictive safety state:
     std::vector<mrpt::math::TPoint2D>
@@ -392,9 +402,11 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      * max_speed). */
     double speedCapAt(double s) const;
 
-    /** Smooth control pose (map frame) from wheel odometry composed with the
-     * slewed odom->map anchor (\ref odomToMap_); mutates the anchor state.
-     * Falls back to the raw localization pose when no odometry is available. */
+    /** Smooth control pose (map frame): \ref ctrlPose_ dead-reckoned with the
+     * latest wheel-odometry increment, then corrected toward the raw
+     * localization by a complementary filter applied at the vehicle; mutates
+     * the filter state. Falls back to the raw localization pose when no
+     * odometry is available. */
     mrpt::math::TPose2D controlPose(
         const VehicleLocalizationState& loc, const VehicleOdometryState& odo);
 
