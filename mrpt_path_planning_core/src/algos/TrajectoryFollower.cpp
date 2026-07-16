@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <limits>
 
 using namespace mpp;
@@ -586,13 +587,20 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     // control cycle's horizon rollout (~horizon/sample_period calls), not
     // just the first (k==0, actually-commanded) one -- useful to see how the
     // forecast curvature/speed evolve, not only what gets published.
+    // `rosT` is the wall-clock UNIX-epoch time of this call (pursuit() has
+    // no localization timestamp of its own to reuse, unlike [step]'s
+    // `nowStamp`); still directly comparable to a recorded bag's topic
+    // timestamps when use_sim_time is false.
     MRPT_LOG_DEBUG_STREAM(
-        "[pursuit] s=" << proj.s << " gear=" << gear << " Ld=" << Ld << " yr=" << yr
-                        << " curvDesired=" << curvDesired << " curvClamped=" << curv
-                        << " cap=" << cap << " sCur=" << sCur << " sTarget=" << sTarget
-                        << " sNew=" << sNew << " v=" << out.v
-                        << " omegaDesired=" << omegaDesired << " omegaOut=" << out.omega
-                        << " distToStop=" << distToStop);
+        "[pursuit] rosT=" << std::fixed << std::setprecision(6)
+                          << mrpt::Clock::nowDouble() << " s=" << proj.s
+                          << " gear=" << gear << " Ld=" << Ld << " yr=" << yr
+                          << " curvDesired=" << curvDesired << " curvClamped="
+                          << curv << " cap=" << cap << " sCur=" << sCur
+                          << " sTarget=" << sTarget << " sNew=" << sNew
+                          << " v=" << out.v << " omegaDesired=" << omegaDesired
+                          << " omegaOut=" << out.omega
+                          << " distToStop=" << distToStop);
 
     return out;
 }
@@ -890,15 +898,19 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     // Debug trace (off unless COutputLogger verbosity is raised to
     // LVL_DEBUG): one summary line per control cycle -- the actually
     // published/commanded state, as opposed to [pursuit]'s per-forecast-
-    // sample internals above.
+    // sample internals above. `rosT` is loc.timestamp (the pose's own
+    // stamp, i.e. the same UNIX-epoch convention as a ROS header.stamp when
+    // use_sim_time is false) rather than log-print wall time, so lines can
+    // be lined up against a recorded bag's topic timestamps directly.
     MRPT_LOG_DEBUG_STREAM(
-        "[step] status=" << static_cast<int>(out.status) << " s=" << proj.s << "/"
-                          << totalLength() << " gear=" << gear
-                          << " crossTrack=" << proj.cross_track
-                          << " offPathCross=" << offPathCross
-                          << " headingErr=" << out.heading_err
-                          << " distToGoal=" << distToGoal << " safetyScale=" << scale
-                          << " stopped=" << stopped_);
+        "[step] rosT=" << std::fixed << std::setprecision(6)
+                       << mrpt::Clock::toDouble(nowStamp)
+                       << " status=" << static_cast<int>(out.status)
+                       << " s=" << proj.s << "/" << totalLength()
+                       << " gear=" << gear << " crossTrack=" << proj.cross_track
+                       << " offPathCross=" << offPathCross << " headingErr="
+                       << out.heading_err << " distToGoal=" << distToGoal
+                       << " safetyScale=" << scale << " stopped=" << stopped_);
 
     // map->odom correction so the emitted chunk is expressed in the odom frame.
     // Built from the same smooth control pose used for tracking, so the chunk's
