@@ -1467,6 +1467,63 @@ TEST(TrajectoryFollower, AnchorFilterAttenuatesLocalizationJitter)
         << "true trajectory deviates too much under pure localization jitter";
 }
 
+// ReachedGoal must be terminal until a new trajectory is set: on this status
+// the caller typically hands the vehicle to another controller (e.g. a
+// reactive row-follower), and if that controller then moves the robot off the
+// completed path, the follower must NOT re-awaken on its stale trajectory and
+// emit motion commands against it (observed on a live run as the follower
+// fighting the row controller at full reverse speed for a whole row,
+// pinning the robot into the crop wall).
+TEST(TrajectoryFollower, ReachedGoalLatchesUntilNewTrajectory)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};
+    mpp::TrajectoryFollower     f;
+    applyAccuracyTunedParams(f);
+    f.setTrajectory(polyToTraj(pts, 0.3));
+
+    // Drive to the goal.
+    TPose2D robot{0, 0, 0};
+    double  v       = 0;
+    bool    reached = false;
+    for (int k = 0; k < 4000; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal)
+        {
+            reached = true;
+            break;
+        }
+        ASSERT_FALSE(out.command.points.empty());
+        const auto tw = out.command.points.front().twist;
+        robot = integrate(robot, tw.vx, tw.omega, f.params.control_period);
+        v     = tw.vx;
+    }
+    ASSERT_TRUE(reached);
+
+    // Another controller now moves the robot away from the goal (along the
+    // path direction, then laterally): every subsequent step must keep
+    // reporting ReachedGoal with an empty command.
+    for (int k = 0; k < 200; k++)
+    {
+        robot.x += 0.02;
+        if (k > 100)
+        {
+            robot.y += 0.02;
+        }
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, 0.4));
+        EXPECT_EQ(out.status, mpp::FollowerStatus::ReachedGoal)
+            << "follower re-awakened on a stale path at k=" << k;
+        EXPECT_TRUE(out.command.points.empty())
+            << "follower emitted a motion command after ReachedGoal at k=" << k;
+    }
+
+    // A new trajectory re-arms it.
+    f.setTrajectory(polyToTraj({{robot.x, robot.y}, {robot.x + 5, robot.y}}, 0.3));
+    const auto out = f.step(mkLoc(robot), mkOdo(robot, 0));
+    EXPECT_NE(out.status, mpp::FollowerStatus::ReachedGoal);
+    EXPECT_FALSE(out.command.points.empty());
+}
+
 // The correction filter must behave the same whether the robot is 2 m or
 // 300 m from where its odometry started. An earlier formulation filtered the
 // map->odom anchor, whose partially-applied yaw corrections rotate the

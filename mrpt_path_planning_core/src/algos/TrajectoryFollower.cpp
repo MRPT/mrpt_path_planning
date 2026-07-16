@@ -909,7 +909,15 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     if (nearPathEnd && distToGoal <= params.goal_dist_tol &&
         std::abs(out.heading_err) <= params.goal_ang_tol)
     {
-        out.status = FollowerStatus::ReachedGoal;
+        // Latch: ReachedGoal is terminal until a new trajectory is set. The
+        // caller typically hands the vehicle to another controller on this
+        // status; if that controller then moves the robot off the completed
+        // path, an unlatched follower would re-awaken on the stale
+        // trajectory and fight it with full-speed commands (observed as a
+        // sustained crop-wall collision on a live run).
+        arrived_            = true;
+        lastCommandedSpeed_ = 0;
+        out.status          = FollowerStatus::ReachedGoal;
         return out;  // empty command => node stops
     }
 
