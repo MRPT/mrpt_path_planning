@@ -564,6 +564,7 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
 
     out.v     = gear * sNew;
     out.omega = out.v * curv;
+    const double omegaDesired = out.omega;
 
     // Rate-limit the commanded angular velocity itself: pure pursuit is a
     // memoryless geometric controller, so a lookahead-point jump (path noise,
@@ -578,6 +579,21 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
         out.omega              = std::clamp(
                          out.omega, currentOmega - maxDOmega, currentOmega + maxDOmega);
     }
+
+    // Debug trace (off unless the caller raises the COutputLogger verbosity
+    // to LVL_DEBUG, e.g. via the ROS node's `follower_debug_trace` param):
+    // one line per pursuit() call, i.e. per predicted sample within a
+    // control cycle's horizon rollout (~horizon/sample_period calls), not
+    // just the first (k==0, actually-commanded) one -- useful to see how the
+    // forecast curvature/speed evolve, not only what gets published.
+    MRPT_LOG_DEBUG_STREAM(
+        "[pursuit] s=" << proj.s << " gear=" << gear << " Ld=" << Ld << " yr=" << yr
+                        << " curvDesired=" << curvDesired << " curvClamped=" << curv
+                        << " cap=" << cap << " sCur=" << sCur << " sTarget=" << sTarget
+                        << " sNew=" << sNew << " v=" << out.v
+                        << " omegaDesired=" << omegaDesired << " omegaOut=" << out.omega
+                        << " distToStop=" << distToStop);
+
     return out;
 }
 
@@ -870,6 +886,19 @@ TrajectoryFollower::Output TrajectoryFollower::step(
         out.status = FollowerStatus::Blocked;
 
     out.safety_scale = scale;
+
+    // Debug trace (off unless COutputLogger verbosity is raised to
+    // LVL_DEBUG): one summary line per control cycle -- the actually
+    // published/commanded state, as opposed to [pursuit]'s per-forecast-
+    // sample internals above.
+    MRPT_LOG_DEBUG_STREAM(
+        "[step] status=" << static_cast<int>(out.status) << " s=" << proj.s << "/"
+                          << totalLength() << " gear=" << gear
+                          << " crossTrack=" << proj.cross_track
+                          << " offPathCross=" << offPathCross
+                          << " headingErr=" << out.heading_err
+                          << " distToGoal=" << distToGoal << " safetyScale=" << scale
+                          << " stopped=" << stopped_);
 
     // map->odom correction so the emitted chunk is expressed in the odom frame.
     // Built from the same smooth control pose used for tracking, so the chunk's
