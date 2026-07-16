@@ -96,8 +96,29 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
          * than convergence. This bounds the commanded omega's own rate of
          * change so it stays within what a real (or simulated) steering loop
          * can track, at the cost of a small tracking lag. <= 0 disables the
-         * limit (omega can step freely, as before this parameter existed). */
+         * limit (omega can step freely, as before this parameter existed).
+         *
+         * Prefer `max_curvature_rate` below on car-like platforms: limiting
+         * in the omega domain fights the speed profile (omega = v * curvature
+         * changes with v even on a perfect circle, and legitimately flips
+         * sign instantly at a cusp at constant curvature), whereas the
+         * curvature-domain limit models the steering actuator directly. */
         double max_omega_rate = 0.0;
+
+        /** [1/m per s] If > 0, caps how fast the commanded *curvature* may
+         * change between control cycles. This is the curvature-domain
+         * counterpart of `max_omega_rate`, and the preferred one for a
+         * steered (Ackermann-like) platform: the steering angle is a
+         * function of curvature alone (delta = atan(wheelbase * curvature)),
+         * so bounding the curvature rate models the finite steering slew
+         * directly, while keeping the emitted (v, omega) pair always on one
+         * consistent circle (omega = v * curvature) even while the speed
+         * profile ramps v up or down -- an omega-domain limit corrupts the
+         * executed radius whenever v changes, and artificially slews the
+         * legitimate instantaneous omega sign flip at a cusp (constant
+         * curvature, v reversing), briefly commanding the wrong steering
+         * side when backing out. <= 0 disables the limit. */
+        double max_curvature_rate = 0.0;
 
         /** Curvature-adaptive lookahead: the lookahead point is marched forward
          * along the path from the projection to where the path has bent
@@ -111,29 +132,82 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         double lookahead_bend = mrpt::DEG2RAD(25.0);  //!< [rad] path bend that
                                                       //!< caps the lookahead
 
+        /** [m] Minimum *arc-length* advance of the lookahead point along the
+         * path from the vehicle's projection (formerly a hardcoded 0.3 m
+         * floor). Keeps the lookahead off the robot itself: with an
+         * arbitrarily short lookahead the pure-pursuit curvature (~2*y/Ld^2)
+         * diverges on any residual error. */
+        double min_lookahead_arc = 0.3;
+
         /** [m] Floor on the pure-pursuit lookahead point's *Euclidean*
          * distance from the vehicle (as opposed to `lookahead_max`/
          * `lookahead_bend`, which only bound its arc-length travel *along the
-         * path*). Once the lookahead has pinned to the final path point --
-         * always true eventually near the goal, whenever the remaining path
-         * is shorter than `lookahead_max` and roughly straight -- that
-         * Euclidean distance shrinks as the vehicle closes in, and
-         * pure-pursuit curvature (~ 2*lateral_offset / distance^2) diverges
-         * on any residual lateral/heading error; if the point ends up nearer
-         * than the vehicle's own minimum turning radius, it becomes
+         * path*). The pure-pursuit correction gain scales as ~2/Ld^2, so a
+         * collapsed Euclidean lookahead turns centimeter-level localization
+         * noise into full-authority steering swings; and if the point ends
+         * up nearer than the vehicle's own minimum turning radius it becomes
          * geometrically unreachable by turning at all (the vehicle
-         * orbits/spirals around it instead of converging). Whenever pinned to
-         * the goal with less than `max(min_lookahead_dist, min_turn_radius)`
-         * of Euclidean room left, the point is extrapolated past the goal
-         * along a smoothed trailing-chord direction (robust to a few noisy
-         * terminal knots) so the pursuit target never collapses onto the
-         * vehicle. <= 0 disables the floor (the raw goal point is used, as
+         * orbits/spirals around it instead of converging). Enforced
+         * *everywhere along the path*, not only at the goal: whenever the
+         * point at the bend-capped arc-length is nearer than
+         * `max(min_lookahead_dist, min_turn_radius)`, it is first advanced
+         * further along the path (up to the next cusp / max travel), and if
+         * still pinned too close (approaching the goal or a cusp, or a path
+         * that curls back on itself), extrapolated past the pin along a
+         * smoothed trailing-chord direction (robust to a few noisy terminal
+         * knots) so the pursuit target never collapses onto the vehicle.
+         * <= 0 disables the floor (the raw bend-capped point is used, as
          * before this parameter existed). */
         double min_lookahead_dist = 0.0;
 
         double goal_dist_tol   = 0.15;  //!< [m]
         double goal_ang_tol    = mrpt::DEG2RAD(12.0);  //!< [rad]
         double max_cross_track = 1.0;  //!< [m] OffPathExceeded
+
+        /** [s] The cross-track error must stay over `max_cross_track`
+         * continuously for at least this long before `OffPathExceeded` is
+         * reported. The fault test runs against the raw localization, which
+         * on a live system can spike transiently (localization jitter is
+         * exactly when the smoothed control pose and the raw pose disagree
+         * most); this debounces those glitches so only a sustained, real
+         * deviation trips the fault. 0 = report immediately (previous
+         * behavior). */
+        double off_path_min_duration = 0.0;
+
+        // --- map->odom anchor (control-pose complementary filter) ---
+
+        /** [s] Time constant of the first-order low-pass applied to the
+         * anchor innovation (the difference between the current anchor and
+         * the one the latest localization implies). With a jittery
+         * localization the implied anchor moves every cycle; the low-pass
+         * averages that jitter out instead of letting the control pose chase
+         * it. 0 = no smoothing (each cycle moves the anchor all the way to
+         * the implied value, subject to the slew limits below -- previous
+         * behavior). */
+        double anchor_time_constant = 0.0;
+
+        /** [m/s] Max translational slew rate of the map->odom anchor toward
+         * the localization-implied value (bounds how fast a genuine
+         * relocalization jump is absorbed; formerly a hardcoded 0.5). */
+        double anchor_max_lin_rate = 0.5;
+
+        /** [rad/s] Max rotational slew rate of the anchor (formerly a
+         * hardcoded 1.0). */
+        double anchor_max_ang_rate = 1.0;
+
+        /** [m] Hard bound on how far the anchor-derived control pose may
+         * diverge from the raw localization. The low-pass/slew above trade
+         * responsiveness for smoothness, but a sustained fast-moving implied
+         * anchor (heavy localization jitter) could otherwise leave the
+         * control pose steering on a stale pose far from anywhere the
+         * localization believes the robot is. When the divergence exceeds
+         * this bound the anchor is snapped along the residual so the bound
+         * holds. <= 0 disables the bound (previous behavior). */
+        double anchor_max_lin_divergence = 0.0;
+
+        /** [rad] Rotational counterpart of `anchor_max_lin_divergence`.
+         * <= 0 disables. */
+        double anchor_max_ang_divergence = 0.0;
 
         /** [m] Once the robot settles within this distance of the goal and has
          * passed its closest approach, it latches "arrived" and holds a stop,
@@ -263,6 +337,15 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      * \ref lastCommandedSpeed_ seeds the speed ramp. */
     double lastCommandedOmega_ = 0;
 
+    /** Last commanded curvature [1/m], seeding the next cycle's
+     * \ref Parameters::max_curvature_rate limiter. */
+    double lastCommandedCurv_ = 0;
+
+    /** When the raw-localization cross-track first exceeded
+     * `max_cross_track` continuously (for the `off_path_min_duration`
+     * debounce); INVALID while within bounds. */
+    mrpt::system::TTimeStamp offPathSince_ = INVALID_TIMESTAMP;
+
     /** Latched once the robot has settled within `arrival_radius` of the goal;
      * from then on it holds a stop instead of driving back away from a pose it
      * cannot perfectly seat. */
@@ -340,21 +423,23 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     {
         double               v     = 0;  //!< [m/s]
         double               omega = 0;  //!< [rad/s]
+        double               curv  = 0;  //!< [1/m] commanded curvature
         mrpt::math::TPoint2D lookahead{0, 0};
     };
 
-    /** Pure-pursuit command at `fromPose` given `currentV`/`currentOmega`,
-     * advancing the lookahead from projection near `sHint`. `dt` bounds the
-     * accel/decel step (and, via `Parameters::max_omega_rate`, the omega step).
-     * `speedScale` (0..1) caps the target speed before rate-limiting (safety).
-     * `gear` (+1 forward, -1 reverse) sets the travel direction; the caller
-     * decides it once per cycle (with hysteresis) and holds it over the
-     * horizon.
+    /** Pure-pursuit command at `fromPose` given `currentV`/`currentOmega`/
+     * `currentCurv`, advancing the lookahead from projection near `sHint`.
+     * `dt` bounds the accel/decel step (and, via
+     * `Parameters::max_omega_rate`/`max_curvature_rate`, the omega/curvature
+     * steps). `speedScale` (0..1) caps the target speed before rate-limiting
+     * (safety). `gear` (+1 forward, -1 reverse) sets the travel direction;
+     * the caller decides it once per cycle (with hysteresis) and holds it
+     * over the horizon.
      */
     Command pursuit(
         const mrpt::math::TPose2D& fromPose, double currentV,
-        double currentOmega, double sHint, double dt, double gear,
-        double speedScale = 1.0) const;
+        double currentOmega, double currentCurv, double sHint, double dt,
+        double gear, double speedScale = 1.0) const;
 
     /** Pose (x,y + tangent heading) on the reference polyline at arc-length
      * `s`. */
@@ -371,7 +456,7 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      * not re-decide it per predicted sample). */
     double forecastContactDistance(
         const mrpt::math::TPose2D& startPose, double startV, double startOmega,
-        double startS, double gear) const;
+        double startCurv, double startS, double gear) const;
 
     /** Sweeps the footprint along the reference path ahead of `startS` and
      * returns the travel distance to the first predicted contact; +inf if none

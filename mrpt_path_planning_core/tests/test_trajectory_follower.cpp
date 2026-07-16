@@ -895,15 +895,23 @@ TEST(TrajectoryFollower, RowEntryCuspLiveCase)
 TEST(TrajectoryFollower, ParamsYamlRoundTrip)
 {
     mpp::TrajectoryFollower::Parameters p;
-    p.max_speed       = 0.33;
-    p.lookahead_max   = 2.0;
-    p.lookahead_bend  = mrpt::DEG2RAD(40.0);
-    p.horizon         = 2.5;
-    p.stop_distance   = 0.42;
-    p.slow_distance   = 1.75;
-    p.min_turn_radius = 0.4;
-    const auto y      = p.as_yaml();
-    const auto p2     = mpp::TrajectoryFollower::Parameters::FromYAML(y);
+    p.max_speed                 = 0.33;
+    p.lookahead_max             = 2.0;
+    p.lookahead_bend            = mrpt::DEG2RAD(40.0);
+    p.horizon                   = 2.5;
+    p.stop_distance             = 0.42;
+    p.slow_distance             = 1.75;
+    p.min_turn_radius           = 0.4;
+    p.max_curvature_rate        = 3.5;
+    p.min_lookahead_arc         = 0.35;
+    p.off_path_min_duration     = 1.25;
+    p.anchor_time_constant      = 0.44;
+    p.anchor_max_lin_rate       = 0.66;
+    p.anchor_max_ang_rate       = 1.2;
+    p.anchor_max_lin_divergence = 0.41;
+    p.anchor_max_ang_divergence = 0.31;
+    const auto y                = p.as_yaml();
+    const auto p2 = mpp::TrajectoryFollower::Parameters::FromYAML(y);
     EXPECT_NEAR(p2.max_speed, 0.33, 1e-9);
     EXPECT_NEAR(p2.lookahead_max, 2.0, 1e-9);
     EXPECT_NEAR(p2.lookahead_bend, mrpt::DEG2RAD(40.0), 1e-9);
@@ -911,6 +919,14 @@ TEST(TrajectoryFollower, ParamsYamlRoundTrip)
     EXPECT_NEAR(p2.stop_distance, 0.42, 1e-9);
     EXPECT_NEAR(p2.slow_distance, 1.75, 1e-9);
     EXPECT_NEAR(p2.min_turn_radius, 0.4, 1e-9);
+    EXPECT_NEAR(p2.max_curvature_rate, 3.5, 1e-9);
+    EXPECT_NEAR(p2.min_lookahead_arc, 0.35, 1e-9);
+    EXPECT_NEAR(p2.off_path_min_duration, 1.25, 1e-9);
+    EXPECT_NEAR(p2.anchor_time_constant, 0.44, 1e-9);
+    EXPECT_NEAR(p2.anchor_max_lin_rate, 0.66, 1e-9);
+    EXPECT_NEAR(p2.anchor_max_ang_rate, 1.2, 1e-9);
+    EXPECT_NEAR(p2.anchor_max_lin_divergence, 0.41, 1e-9);
+    EXPECT_NEAR(p2.anchor_max_ang_divergence, 0.31, 1e-9);
 }
 
 // Short-term tracking runs on the smooth wheel odometry with the map->odom
@@ -1186,4 +1202,331 @@ TEST(TrajectoryFollower, MinLookaheadDistBoundsLookaheadDistance)
     EXPECT_GE(LdWithFloor, kMinTurnRadius - 1e-6)
         << "the floor should keep the lookahead at least min_turn_radius away";
     EXPECT_GT(LdWithFloor, LdNoFloor);
+}
+
+// --------------------------------------------------------------------------
+// Accuracy / noise-robustness tests, driven by the analysis of a real
+// wavy/zig-zagging deployment: the localization feed carried 10-35 cm of
+// motion-correlated jitter, the bend-capped lookahead collapsed the pursuit
+// gain window on the (arc-shaped) row-transition paths, and the omega-domain
+// rate limiter turned the resulting saturation into a slow limit-cycle
+// weave. These tests pin the fixes: the everywhere-enforced Euclidean
+// lookahead floor, the curvature-domain rate limit, the anchor low-pass +
+// divergence bound, and the off-path debounce.
+namespace
+{
+// Tuning mirroring the post-analysis deployed follower-params.yaml.
+void applyAccuracyTunedParams(mpp::TrajectoryFollower& f)
+{
+    f.params.max_speed                 = 0.3;
+    f.params.max_accel                 = 0.2;
+    f.params.max_decel                 = 0.6;
+    f.params.max_lateral_accel         = 0.2;
+    f.params.min_turn_radius           = 0.5;
+    f.params.max_omega_rate            = 0.0;  // superseded by curvature rate
+    f.params.max_curvature_rate        = 3.0;
+    f.params.lookahead_max             = 1.8;
+    f.params.lookahead_bend            = mrpt::DEG2RAD(25.0);
+    f.params.min_lookahead_dist        = 0.8;
+    f.params.goal_dist_tol             = 0.25;
+    f.params.goal_ang_tol              = mrpt::DEG2RAD(35.0);
+    f.params.max_cross_track           = 0.6;
+    f.params.off_path_min_duration     = 1.0;
+    f.params.arrival_radius            = 0.45;
+    f.params.control_period            = 0.05;
+    f.params.anchor_time_constant      = 0.4;
+    f.params.anchor_max_lin_divergence = 0.4;
+    f.params.anchor_max_ang_divergence = 0.4;
+}
+
+// The row-transition shape the deployed robot drives between crop rows:
+// a straight lead-in, a 90 deg arc of R = 1.8 m, and a straight lead-out,
+// sampled at ~0.25 m knots (the same knot pitch as the real generated
+// paths).
+std::vector<TPoint2D> rowTransitionArcPts()
+{
+    std::vector<TPoint2D> pts;
+    const double          R = 1.8;
+    for (double x = 0.0; x < 2.0; x += 0.25) pts.push_back({x, 0.0});
+    // Arc center at (2, R): from heading 0 to heading +90 deg.
+    for (double a = 0.0; a <= M_PI / 2 + 1e-9; a += 0.25 / R)
+        pts.push_back({2.0 + R * std::sin(a), R - R * std::cos(a)});
+    for (double y = R + 0.25; y < R + 1.25; y += 0.25)
+        pts.push_back({2.0 + R, y});
+    return pts;
+}
+}  // namespace
+
+// With a perfect localization, the accuracy-tuned parameters must track the
+// deployed row-transition arc tightly. Pure pursuit commands exactly the
+// arc's curvature once on it (steady-state arc error ~0); the residual is
+// the anticipatory turn-in transient at the reference's curvature *step*
+// (straight -> arc, ~9 cm here), which is inherent to lookahead-based
+// tracking of a curvature-discontinuous polyline: a finite-steering-slew
+// vehicle must begin steering before the step either way. The budget below
+// bounds that transient and, mainly, guards against any regression of the
+// Euclidean lookahead floor / curvature rate limiter re-widening it.
+TEST(TrajectoryFollower, ArcTrackingAccuracyOnRowTransition)
+{
+    const auto              pts = rowTransitionArcPts();
+    mpp::TrajectoryFollower f;
+    applyAccuracyTunedParams(f);
+    f.setTrajectory(polyToTraj(pts, 0.3));
+
+    const auto r = simulate(f, {0, 0, 0}, pts, 8000);
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(r.maxCross, 0.10)
+        << "corner-cutting/overshoot on the reference arc exceeds the "
+           "accuracy budget";
+}
+
+// The curvature-domain rate limiter must bound the per-cycle change of the
+// commanded curvature (omega/v), the quantity a steering actuator actually
+// tracks -- including across speed-profile changes, where an omega-domain
+// limit would corrupt the executed radius instead.
+TEST(TrajectoryFollower, CurvatureRateLimitBoundsCommandedCurvatureStep)
+{
+    const auto              pts = rowTransitionArcPts();
+    mpp::TrajectoryFollower f;
+    applyAccuracyTunedParams(f);
+    constexpr double kRate      = 3.0;  // [1/m per s]
+    f.params.max_curvature_rate = kRate;
+    f.setTrajectory(polyToTraj(pts, 0.3));
+
+    TPose2D      robot       = {0, 0, 0};
+    double       v           = 0;
+    double       prevCurv    = 0;
+    bool         havePrev    = false;
+    double       maxDCurv    = 0;
+    const double dt          = f.params.control_period;
+    const double allowedStep = kRate * dt + 1e-6;
+    for (int k = 0; k < 4000; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal) break;
+        if (out.command.points.empty()) break;
+        const auto tw = out.command.points.front().twist;
+        if (std::abs(tw.vx) > 1e-3)
+        {
+            const double curv = tw.omega / tw.vx;
+            if (havePrev)
+            {
+                maxDCurv = std::max(maxDCurv, std::abs(curv - prevCurv));
+            }
+            prevCurv = curv;
+            havePrev = true;
+        }
+        else
+        {
+            // Near-zero speed: curvature is not observable from omega/v, and
+            // across a run of such cycles the limiter may legitimately step
+            // it by several allowed increments -- only compare consecutive
+            // driving cycles.
+            havePrev = false;
+        }
+        robot = integrate(robot, tw.vx, tw.omega, dt);
+        v     = tw.vx;
+    }
+    ASSERT_TRUE(havePrev);
+    EXPECT_LE(maxDCurv, allowedStep)
+        << "commanded curvature stepped faster than max_curvature_rate";
+}
+
+// Closed loop with a *jittery* localization (deterministic multi-sine noise
+// with the amplitude/frequency content measured on the real system) and a
+// smooth odometry: the anchor low-pass + divergence bound + lookahead floor
+// + curvature rate limit together must keep the TRUE trajectory close to
+// the reference, with no limit-cycle weave (bounded omega sign flips).
+TEST(TrajectoryFollower, NoisyLocalizationDoesNotLimitCycle)
+{
+    const auto              pts = rowTransitionArcPts();
+    mpp::TrajectoryFollower f;
+    applyAccuracyTunedParams(f);
+    f.setTrajectory(polyToTraj(pts, 0.3));
+
+    // odom frame: fixed offset from map (smooth wheel odometry).
+    const TPose2D odomFromMap{2.0, -1.0, mrpt::DEG2RAD(20.0)};
+    auto          toOdom = [&](const TPose2D& pm)
+    {
+        return (mrpt::poses::CPose2D(odomFromMap) + mrpt::poses::CPose2D(pm))
+            .asTPose();
+    };
+
+    TPose2D      mapPose{0, 0, 0};  // true robot pose
+    double       v         = 0;
+    const double dt        = f.params.control_period;
+    double       t         = 0;
+    double       maxCross  = 0;
+    double       sumSqE    = 0;
+    int          nE        = 0;
+    int          omegaFlips = 0;
+    int          lastSign   = 0;
+    bool         reached    = false;
+    for (int k = 0; k < 12000; k++)
+    {
+        t += dt;
+        // Deterministic localization jitter: ~10 cm lateral-ish + ~3 deg yaw
+        // at sub-Hz frequencies (the measured character of the real feed).
+        TPose2D locMap = mapPose;
+        locMap.x += 0.07 * std::sin(2 * M_PI * 0.45 * t + 0.3) +
+                    0.03 * std::sin(2 * M_PI * 1.3 * t);
+        locMap.y += 0.10 * std::sin(2 * M_PI * 0.55 * t) +
+                    0.04 * std::sin(2 * M_PI * 1.7 * t + 1.1);
+        locMap.phi += mrpt::DEG2RAD(3.0) * std::sin(2 * M_PI * 0.6 * t + 0.5);
+
+        const auto out = f.step(mkLoc(locMap), mkOdo(toOdom(mapPose), v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal)
+        {
+            reached = true;
+            break;
+        }
+        if (out.command.points.empty()) break;
+        const auto tw = out.command.points.front().twist;
+
+        // Omega sign flips (with hysteresis) = the limit-cycle signature.
+        const int sgn = tw.omega > 0.03 ? 1 : (tw.omega < -0.03 ? -1 : 0);
+        if (sgn != 0 && lastSign != 0 && sgn != lastSign) omegaFlips++;
+        if (sgn != 0) lastSign = sgn;
+
+        mapPose = integrate(mapPose, tw.vx, tw.omega, dt);
+        v       = tw.vx;
+
+        const double e = distToPolyline(pts, {mapPose.x, mapPose.y});
+        maxCross       = std::max(maxCross, e);
+        sumSqE += e * e;
+        nE++;
+    }
+    const double rmsE = std::sqrt(sumSqE / std::max(1, nE));
+    EXPECT_TRUE(reached);
+    EXPECT_LT(rmsE, 0.10) << "true-pose cross-track RMS too large under "
+                             "localization jitter";
+    EXPECT_LT(maxCross, 0.30);
+    // A limit cycle flips the commanded turn direction every couple of
+    // seconds for the whole run; tracking the (one-bend) reference needs
+    // only a handful of sign changes.
+    EXPECT_LT(omegaFlips, 12)
+        << "commanded omega oscillates (limit-cycle weave)";
+}
+
+// The anchor complementary filter must *attenuate* localization jitter, not
+// amplify it: the control-pose cross-track the follower steers on must be
+// smoother than the raw injected jitter (on the real system the un-filtered
+// anchor slew made the control pose 2x WORSE than the raw localization).
+TEST(TrajectoryFollower, AnchorFilterAttenuatesLocalizationJitter)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {12, 0}};
+    mpp::TrajectoryFollower     f;
+    applyAccuracyTunedParams(f);
+    f.setTrajectory(polyToTraj(pts, 0.3));
+
+    const TPose2D odomFromMap{1.0, 2.0, mrpt::DEG2RAD(-15.0)};
+    auto          toOdom = [&](const TPose2D& pm)
+    {
+        return (mrpt::poses::CPose2D(odomFromMap) + mrpt::poses::CPose2D(pm))
+            .asTPose();
+    };
+
+    TPose2D          mapPose{0, 0, 0};
+    double           v          = 0;
+    const double     dt         = f.params.control_period;
+    double           t          = 0;
+    constexpr double kJitterAmp = 0.15;  // [m] pure lateral sine
+    double           sumSqCtrl  = 0;
+    int              n          = 0;
+    double           maxTrueE   = 0;
+    for (int k = 0; k < 6000; k++)
+    {
+        t += dt;
+        TPose2D locMap = mapPose;
+        locMap.y += kJitterAmp * std::sin(2 * M_PI * 0.7 * t);
+
+        const auto out = f.step(mkLoc(locMap), mkOdo(toOdom(mapPose), v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal) break;
+        if (out.command.points.empty()) break;
+
+        // Steady state only (skip the initial anchor convergence).
+        if (k > 100)
+        {
+            sumSqCtrl += out.cross_track_err * out.cross_track_err;
+            n++;
+        }
+        const auto tw = out.command.points.front().twist;
+        mapPose       = integrate(mapPose, tw.vx, tw.omega, dt);
+        v             = tw.vx;
+        maxTrueE      = std::max(
+                 maxTrueE, distToPolyline(pts, {mapPose.x, mapPose.y}));
+    }
+    ASSERT_GT(n, 500);
+    const double ctrlStd   = std::sqrt(sumSqCtrl / n);
+    const double jitterStd = kJitterAmp / std::sqrt(2.0);
+    EXPECT_LT(ctrlStd, 0.6 * jitterStd)
+        << "control-pose cross-track (std " << ctrlStd
+        << " m) is not attenuated vs the raw jitter (std " << jitterStd
+        << " m)";
+    EXPECT_LT(maxTrueE, 0.20)
+        << "true trajectory deviates too much under pure localization jitter";
+}
+
+// Approaching a cusp, the lookahead arc-length window collapses (it may not
+// cross the cusp), which used to collapse the *Euclidean* lookahead distance
+// with it -- full-authority steering on centimeter errors right where the
+// vehicle is slowing to reverse. The floor must hold there too, by
+// extrapolating along the incoming tangent past the cusp.
+TEST(TrajectoryFollower, CuspApproachKeepsLookaheadDistance)
+{
+    // Forward to (2,0), cusp, then back-and-left to (1,1).
+    const std::vector<TPoint2D> pts = {
+        {0, 0}, {0.5, 0}, {1.0, 0}, {1.5, 0}, {2.0, 0},
+        {1.8, 0.2}, {1.6, 0.4}, {1.4, 0.6}, {1.2, 0.8}, {1.0, 1.0}};
+    mpp::TrajectoryFollower f;
+    applyAccuracyTunedParams(f);
+    f.setTrajectory(polyToTraj(pts, 0.3));
+
+    // Robot on-path, 0.15 m short of the cusp.
+    const TPose2D robot{1.85, 0.0, 0.0};
+    const auto    out = f.step(mkLoc(robot), mkOdo(robot, 0.2));
+    const double  Ld  = std::hypot(
+         out.lookahead_point.x - robot.x, out.lookahead_point.y - robot.y);
+    const double minLd =
+        std::max(f.params.min_lookahead_dist, f.params.min_turn_radius);
+    EXPECT_GE(Ld, minLd - 1e-6)
+        << "lookahead distance collapsed approaching the cusp";
+}
+
+// A transient localization spike must not abort the mission: with
+// off_path_min_duration set, OffPathExceeded fires only after the
+// cross-track has stayed over the limit continuously for that long.
+TEST(TrajectoryFollower, OffPathDebounceSuppressesTransientSpike)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {8, 0}};
+    mpp::TrajectoryFollower     f;
+    applyAccuracyTunedParams(f);
+    f.params.max_cross_track       = 0.6;
+    f.params.off_path_min_duration = 1.0;
+    f.setTrajectory(polyToTraj(pts, 0.3));
+
+    const auto t0 = mrpt::Clock::now();
+
+    // A 2 m spike: immediately over the limit, but too fresh to latch.
+    auto locSpike      = mkLoc({1.0, 2.0, 0.0});
+    locSpike.timestamp = t0;
+    auto out = f.step(locSpike, mkOdo({1.0, 2.0, 0.0}, 0.3));
+    EXPECT_NE(out.status, mpp::FollowerStatus::OffPathExceeded)
+        << "a single-cycle spike must not trip the fault";
+
+    // Back on the path 0.3 s later: the debounce window resets.
+    auto locOk      = mkLoc({1.1, 0.0, 0.0});
+    locOk.timestamp = t0 + std::chrono::milliseconds(300);
+    out             = f.step(locOk, mkOdo({1.1, 0.0, 0.0}, 0.3));
+    EXPECT_EQ(out.status, mpp::FollowerStatus::Running);
+
+    // Sustained deviation: over the limit continuously for > 1 s -> fault.
+    for (int i = 0; i <= 12; i++)
+    {
+        auto locOff      = mkLoc({1.2, 2.0, 0.0});
+        locOff.timestamp = t0 + std::chrono::milliseconds(400 + i * 100);
+        out              = f.step(locOff, mkOdo({1.2, 2.0, 0.0}, 0.3));
+    }
+    EXPECT_EQ(out.status, mpp::FollowerStatus::OffPathExceeded)
+        << "a sustained deviation must still trip the fault";
 }

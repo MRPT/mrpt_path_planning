@@ -58,12 +58,20 @@ void TrajectoryFollower::Parameters::load_from_yaml(
     MCP_LOAD_OPT(c, max_lateral_accel);
     MCP_LOAD_OPT(c, min_turn_radius);
     MCP_LOAD_OPT(c, max_omega_rate);
+    MCP_LOAD_OPT(c, max_curvature_rate);
     MCP_LOAD_OPT(c, lookahead_max);
     MCP_LOAD_OPT_DEG(c, lookahead_bend);
+    MCP_LOAD_OPT(c, min_lookahead_arc);
     MCP_LOAD_OPT(c, min_lookahead_dist);
     MCP_LOAD_OPT(c, goal_dist_tol);
     MCP_LOAD_OPT_DEG(c, goal_ang_tol);
     MCP_LOAD_OPT(c, max_cross_track);
+    MCP_LOAD_OPT(c, off_path_min_duration);
+    MCP_LOAD_OPT(c, anchor_time_constant);
+    MCP_LOAD_OPT(c, anchor_max_lin_rate);
+    MCP_LOAD_OPT(c, anchor_max_ang_rate);
+    MCP_LOAD_OPT(c, anchor_max_lin_divergence);
+    MCP_LOAD_OPT(c, anchor_max_ang_divergence);
     MCP_LOAD_OPT(c, arrival_radius);
     MCP_LOAD_OPT(c, control_period);
     MCP_LOAD_OPT(c, horizon);
@@ -88,12 +96,20 @@ mrpt::containers::yaml TrajectoryFollower::Parameters::as_yaml() const
     MCP_SAVE(c, max_lateral_accel);
     MCP_SAVE(c, min_turn_radius);
     MCP_SAVE(c, max_omega_rate);
+    MCP_SAVE(c, max_curvature_rate);
     MCP_SAVE(c, lookahead_max);
     MCP_SAVE_DEG(c, lookahead_bend);
+    MCP_SAVE(c, min_lookahead_arc);
     MCP_SAVE(c, min_lookahead_dist);
     MCP_SAVE(c, goal_dist_tol);
     MCP_SAVE_DEG(c, goal_ang_tol);
     MCP_SAVE(c, max_cross_track);
+    MCP_SAVE(c, off_path_min_duration);
+    MCP_SAVE(c, anchor_time_constant);
+    MCP_SAVE(c, anchor_max_lin_rate);
+    MCP_SAVE(c, anchor_max_ang_rate);
+    MCP_SAVE(c, anchor_max_lin_divergence);
+    MCP_SAVE(c, anchor_max_ang_divergence);
     MCP_SAVE(c, arrival_radius);
     MCP_SAVE(c, control_period);
     MCP_SAVE(c, horizon);
@@ -133,8 +149,10 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
     currentInterval_    = 0;
     lastCommandedSpeed_ = 0;
     lastCommandedOmega_ = 0;
+    lastCommandedCurv_  = 0;
     stopped_            = false;
     stoppedSince_       = INVALID_TIMESTAMP;
+    offPathSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
     anchorInit_         = false;
@@ -238,8 +256,10 @@ void TrajectoryFollower::reset()
     lastS_              = 0;
     lastCommandedSpeed_ = 0;
     lastCommandedOmega_ = 0;
+    lastCommandedCurv_  = 0;
     stopped_            = false;
     stoppedSince_       = INVALID_TIMESTAMP;
+    offPathSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
     anchorInit_         = false;
@@ -357,12 +377,14 @@ double TrajectoryFollower::speedCapAt(double s) const
 
 double TrajectoryFollower::adaptiveLookaheadS(double sStart, double capS) const
 {
-    // Numerical floor so the lookahead never collapses onto the robot; with an
-    // arbitrarily short lookahead the pure-pursuit curvature diverges. The
+    // Arc-length floor so the lookahead never collapses onto the robot; with
+    // an arbitrarily short lookahead the pure-pursuit curvature diverges. The
     // min_turn_radius clamp and this floor together bound the commanded turn.
-    constexpr double kFloor = 0.3;  // [m]
-    const double     total  = totalLength();
-    const double     sFloor = sStart + kFloor;
+    const double kFloor = params.min_lookahead_arc > 0
+                              ? params.min_lookahead_arc
+                              : 0.3;  // [m]
+    const double total  = totalLength();
+    const double sFloor = sStart + kFloor;
     if (capS <= sFloor) return std::min(std::max(capS, sStart), total);
 
     // Segment tangent (heading of segment [k, k+1]).
@@ -403,7 +425,8 @@ double TrajectoryFollower::adaptiveLookaheadS(double sStart, double capS) const
 // ------------------------------------------------------------------- pursuit
 TrajectoryFollower::Command TrajectoryFollower::pursuit(
     const mrpt::math::TPose2D& fromPose, double currentV, double currentOmega,
-    double sHint, double dt, double gear, double speedScale) const
+    double currentCurv, double sHint, double dt, double gear,
+    double speedScale) const
 {
     Command          out;
     const Projection proj = projectToPath({fromPose.x, fromPose.y}, sHint);
@@ -424,7 +447,7 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     // Curvature-adaptive lookahead within the [proj.s, cap] arc-length window,
     // where the cap is the shorter of the max travel and the next cusp.
     const double capS = std::min(proj.s + params.lookahead_max, nextCuspS);
-    const double lookaheadS = adaptiveLookaheadS(proj.s, capS);
+    double       lookaheadS = adaptiveLookaheadS(proj.s, capS);
     out.lookahead           = pointAtArc(lookaheadS);
 
     // Lookahead in robot frame.
@@ -439,27 +462,39 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     mrpt::math::TPoint2D lr = toRobotFrame(out.lookahead);
     double               Ld = lr.norm();
 
-    // Once the lookahead has pinned to the very end of the path (true
-    // whenever the remaining path is shorter than lookahead_max and roughly
-    // straight, which eventually happens near every goal), Ld collapses
-    // toward zero as the vehicle closes in and pure-pursuit curvature
-    // (~ yr/Ld^2) diverges on any residual lateral/heading error; if Ld ends
-    // up inside the vehicle's own (clamped) minimum turning circle the point
-    // becomes geometrically unreachable by turning at all. Guard both by
-    // never chasing a target nearer than the vehicle can meaningfully steer
-    // toward: extrapolate the lookahead past the goal along a smoothed
-    // trailing-chord direction (robust to a few noisy terminal knots, unlike
-    // the raw last-segment secant) until Ld reaches the floor.
-    const bool atGoal = lookaheadS >= totalLength() - 1e-6;
-    if (atGoal && params.min_lookahead_dist > 0.0)
+    // Euclidean lookahead floor (enforced everywhere along the path, not
+    // only at the goal). The pure-pursuit correction gain scales as ~2/Ld^2,
+    // so a collapsed Euclidean lookahead turns centimeter-level localization
+    // noise into full-authority steering swings (a collapsed Ld also swings
+    // the *bearing* to the target far more per unit of Cartesian
+    // perturbation); and if Ld ends up inside the vehicle's own (clamped)
+    // minimum turning circle the point becomes geometrically unreachable by
+    // turning at all. Two stages:
+    //  1. advance the lookahead further along the path (past the bend cap,
+    //     still bounded by capS = max travel / next cusp);
+    //  2. if pinned at capS and still too close (closing on the goal or a
+    //     cusp, or a path curling back on itself), extrapolate past the pin
+    //     along a smoothed trailing-chord direction (robust to a few noisy
+    //     terminal knots, unlike the raw last-segment secant).
+    if (params.min_lookahead_dist > 0.0)
     {
         const double minLd =
             std::max(params.min_lookahead_dist, params.min_turn_radius);
+        while (Ld < minLd && lookaheadS + 1e-6 < capS)
+        {
+            lookaheadS    = std::min(capS, lookaheadS + 0.1);
+            out.lookahead = pointAtArc(lookaheadS);
+            lr            = toRobotFrame(out.lookahead);
+            Ld            = lr.norm();
+        }
         if (Ld < minLd)
         {
-            constexpr double           kEndWindow = 0.5;  // [m]
-            const double               w = std::min(totalLength(), kEndWindow);
-            const mrpt::math::TPoint2D pEndA = pointAtArc(totalLength() - w);
+            // Pinned at capS (goal, cusp, or max travel) and still inside
+            // the floor circle: extrapolate along the trailing chord.
+            const double     sPin       = std::min(capS, totalLength());
+            constexpr double kEndWindow = 0.5;  // [m]
+            const double     w          = std::min(sPin, kEndWindow);
+            const mrpt::math::TPoint2D pEndA = pointAtArc(sPin - w);
             double                     ex    = out.lookahead.x - pEndA.x;
             double                     ey    = out.lookahead.y - pEndA.y;
             const double               eLen  = std::hypot(ex, ey);
@@ -470,18 +505,22 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
             }
             else
             {
-                const double endHeading = traj_.back().pose.phi;
-                ex                      = std::cos(endHeading);
-                ey                      = std::sin(endHeading);
+                // Degenerate trailing chord: fall back to the path tangent
+                // just before the pin (the reference's own final heading may
+                // be opposite the travel direction on a reverse approach).
+                const double pinHeading =
+                    poseAtArc(std::max(0.0, sPin - 1e-3)).phi;
+                ex = std::cos(pinHeading);
+                ey = std::sin(pinHeading);
             }
-            // Solve for the travel `t` along the ray (goal + t*dir) that puts
+            // Solve for the travel `t` along the ray (pin + t*dir) that puts
             // it exactly `minLd` from the vehicle (a ray-circle intersection),
             // rather than just adding `minLd - Ld` along the direction -- that
             // naive offset only grows Ld 1:1 when the direction points
             // straight away from the vehicle, which is not generally true
-            // here. `e` = vehicle->goal; solve |e + t*dir|^2 = minLd^2 (dir is
+            // here. `e` = vehicle->pin; solve |e + t*dir|^2 = minLd^2 (dir is
             // unit length) and take the positive root (there is exactly one,
-            // since |e| = Ld < minLd means the goal is already inside the
+            // since |e| = Ld < minLd means the pin is already inside the
             // target circle).
             const double ex0  = out.lookahead.x - fromPose.x;
             const double ey0  = out.lookahead.y - fromPose.y;
@@ -518,6 +557,20 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
         const double maxCurv = 1.0 / params.min_turn_radius;
         curv                 = std::clamp(curv, -maxCurv, maxCurv);
     }
+
+    // Rate-limit the commanded curvature itself (finite steering slew): the
+    // curvature-domain counterpart of the omega rate limit below, preferred
+    // for steered platforms since it keeps (v, omega) on one consistent
+    // circle while the speed profile changes v, and does not slew the
+    // legitimate instantaneous omega sign flip at a cusp (constant
+    // curvature, v reversing).
+    if (params.max_curvature_rate > 0.0)
+    {
+        const double maxDCurv = params.max_curvature_rate * dt;
+        curv                  = std::clamp(
+                             curv, currentCurv - maxDCurv, currentCurv + maxDCurv);
+    }
+    out.curv = curv;
 
     // Speed caps (magnitude): profile, curvature (lateral accel),
     // decel-to-goal/decel-to-next-cusp. Both use the straight-line distance to
@@ -633,12 +686,13 @@ double TrajectoryFollower::footprintClearance(
 
 double TrajectoryFollower::forecastContactDistance(
     const mrpt::math::TPose2D& startPose, double startV, double startOmega,
-    double startS, double gear) const
+    double startCurv, double startS, double gear) const
 {
     double              L  = 0;
     mrpt::math::TPose2D p  = startPose;
     double              v  = startV;  // signed (reverse forecasts back up)
     double              om = startOmega;
+    double              cv = startCurv;
     double              s  = startS;
 
     const int nSteps = std::max(
@@ -650,7 +704,7 @@ double TrajectoryFollower::forecastContactDistance(
         if (footprintClearance(p) <= params.safety_margin) return L;
 
         const Command cmd =
-            pursuit(p, v, om, s, params.sample_period, gear, 1.0);
+            pursuit(p, v, om, cv, s, params.sample_period, gear, 1.0);
         const mrpt::math::TPose2D pNext =
             integrateUnicycle(p, cmd.v, cmd.omega, params.sample_period);
 
@@ -658,6 +712,7 @@ double TrajectoryFollower::forecastContactDistance(
         p  = pNext;
         v  = cmd.v;
         om = cmd.omega;
+        cv = cmd.curv;
         s  = projectToPath({p.x, p.y}, s).s;
 
         if (totalLength() - s <= params.goal_dist_tol) break;
@@ -708,29 +763,95 @@ mrpt::math::TPose2D TrajectoryFollower::controlPose(
     }
     else
     {
-        // Rate-limited slew of the anchor toward the localization-implied value
-        // (a complementary filter: wheel odometry is trusted for short-term
-        // motion, localization corrects the anchor slowly). Between
-        // relocalizations the implied anchor is constant, so the slew is a
-        // no-op and the control pose equals the localization exactly; only a
-        // genuine correction (a relocalization jump) is spread over several
-        // cycles, so the commanded curvature never lurches.
-        constexpr double kLinRate = 0.5;  // [m/s] max anchor translation slew
-        constexpr double kAngRate = 1.0;  // [rad/s] max anchor rotation slew
+        // Complementary filter of the anchor toward the localization-implied
+        // value: wheel odometry is trusted for short-term motion,
+        // localization corrects the anchor slowly. Three stages:
+        //  1. First-order low-pass (anchor_time_constant): with a jittery
+        //     localization the implied anchor moves every cycle; the
+        //     low-pass averages the jitter out instead of letting the
+        //     control pose chase it. A pure slew limiter is the wrong filter
+        //     for sustained jitter: once the implied anchor moves faster
+        //     than the slew rate, it saturates into a heavy nonlinear lag
+        //     (the phase shift that turns noise into a closed-loop weave).
+        //  2. Rate clamp (anchor_max_lin/ang_rate): bounds how fast a
+        //     genuine one-shot relocalization jump is absorbed, so the
+        //     commanded curvature never lurches.
+        //  3. Divergence bound (anchor_max_lin/ang_divergence): hard cap on
+        //     how far the anchor-derived control pose may stray from the
+        //     raw localization, so a sustained fast-moving implied anchor
+        //     can never leave the vehicle steering on a stale pose far from
+        //     anywhere the localization believes it is.
+        // Between relocalizations with a clean localization the implied
+        // anchor is constant, all three stages are no-ops, and the control
+        // pose equals the localization exactly.
         const mrpt::math::TPose2D d =
             (mrpt::poses::CPose2D() - odomToMap_ + implied).asTPose();
-        const double        maxLin = kLinRate * params.control_period;
-        const double        maxAng = kAngRate * params.control_period;
-        mrpt::math::TPose2D step   = d;
-        const double        lin    = std::hypot(d.x, d.y);
+        const double dt    = params.control_period;
+        const double alpha = params.anchor_time_constant > 0
+                                 ? 1.0 - std::exp(-dt / params.anchor_time_constant)
+                                 : 1.0;
+
+        mrpt::math::TPose2D step;
+        step.x   = d.x * alpha;
+        step.y   = d.y * alpha;
+        step.phi = mrpt::math::wrapToPi(d.phi) * alpha;
+
+        const double maxLin = params.anchor_max_lin_rate * dt;
+        const double maxAng = params.anchor_max_ang_rate * dt;
+        const double lin    = std::hypot(step.x, step.y);
         if (lin > maxLin)
         {
             const double s = maxLin / lin;
-            step.x         = d.x * s;
-            step.y         = d.y * s;
+            step.x         = step.x * s;
+            step.y         = step.y * s;
         }
-        step.phi   = std::clamp(mrpt::math::wrapToPi(d.phi), -maxAng, maxAng);
+        step.phi   = std::clamp(step.phi, -maxAng, maxAng);
         odomToMap_ = odomToMap_ + mrpt::poses::CPose2D(step);
+
+        if (params.anchor_max_lin_divergence > 0.0 ||
+            params.anchor_max_ang_divergence > 0.0)
+        {
+            // Evaluated in the composed control-pose space, not on the
+            // anchor's own local residual: a rotational anchor residual
+            // displaces the composed pose by a lever arm proportional to the
+            // odometry pose's distance from the odom origin, so the local
+            // residual under-represents the real divergence on long runs.
+            const mrpt::poses::CPose2D ctrl = odomToMap_ + odoP;
+
+            // Excess yaw: rotate the anchor about the control position (the
+            // composed position stays fixed, only its heading changes).
+            const double dyaw =
+                mrpt::math::wrapToPi(loc.pose.phi - ctrl.phi());
+            if (params.anchor_max_ang_divergence > 0.0 &&
+                std::abs(dyaw) > params.anchor_max_ang_divergence)
+            {
+                const double e =
+                    dyaw -
+                    std::copysign(params.anchor_max_ang_divergence, dyaw);
+                const double ce = std::cos(e);
+                const double se = std::sin(e);
+                const double ax = odomToMap_.x() - ctrl.x();
+                const double ay = odomToMap_.y() - ctrl.y();
+                odomToMap_      = mrpt::poses::CPose2D(
+                         ctrl.x() + ce * ax - se * ay,
+                         ctrl.y() + se * ax + ce * ay, odomToMap_.phi() + e);
+            }
+
+            // Excess translation: shifting the anchor's map-frame position
+            // shifts the composed pose 1:1.
+            const double dx   = loc.pose.x - ctrl.x();
+            const double dy   = loc.pose.y - ctrl.y();
+            const double dpos = std::hypot(dx, dy);
+            if (params.anchor_max_lin_divergence > 0.0 &&
+                dpos > params.anchor_max_lin_divergence)
+            {
+                const double s =
+                    (dpos - params.anchor_max_lin_divergence) / dpos;
+                odomToMap_ = mrpt::poses::CPose2D(
+                    odomToMap_.x() + dx * s, odomToMap_.y() + dy * s,
+                    odomToMap_.phi());
+            }
+        }
     }
     return (odomToMap_ + odoP).asTPose();
 }
@@ -835,15 +956,37 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     // deviation still trips it; a brief localization glitch is left for the
     // caller to debounce. In the identity/static map->odom case (unit tests)
     // ctrlPose == loc.pose, so this is a no-op there.
+    const auto nowStamp =
+        loc.timestamp != INVALID_TIMESTAMP ? loc.timestamp : mrpt::Clock::now();
+
     double offPathCross = proj.cross_track;
     if (loc.valid)
     {
         offPathCross =
             projectToPath({loc.pose.x, loc.pose.y}, proj.s).cross_track;
     }
-    out.status = std::abs(offPathCross) > params.max_cross_track
-                     ? FollowerStatus::OffPathExceeded
-                     : FollowerStatus::Running;
+    // Debounced fault: the raw-localization cross-track can spike
+    // transiently (localization jitter), so OffPathExceeded only fires once
+    // it has stayed over the limit for off_path_min_duration continuously.
+    const bool offPathNow = std::abs(offPathCross) > params.max_cross_track;
+    if (offPathNow)
+    {
+        if (offPathSince_ == INVALID_TIMESTAMP)
+        {
+            offPathSince_ = nowStamp;
+        }
+    }
+    else
+    {
+        offPathSince_ = INVALID_TIMESTAMP;
+    }
+    const bool offPathLatched =
+        offPathNow &&
+        (params.off_path_min_duration <= 0.0 ||
+         mrpt::system::timeDifference(offPathSince_, nowStamp) >=
+             params.off_path_min_duration);
+    out.status = offPathLatched ? FollowerStatus::OffPathExceeded
+                                : FollowerStatus::Running;
 
     // Seed the speed ramp from the follower's own last commanded speed (a
     // feedforward integrator), not the measured odometry velocity: the profile
@@ -852,9 +995,11 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     // watchdog, not by throttling the ramp to measured velocity.
     // Signed: reverse maneuvers ramp toward a negative speed.
     double predV = lastCommandedSpeed_;
-    // Likewise seeds the omega rate limiter (Parameters::max_omega_rate) from
-    // the follower's own last commanded value, mirroring predV above.
+    // Likewise seeds the omega/curvature rate limiters
+    // (Parameters::max_omega_rate / max_curvature_rate) from the follower's
+    // own last commanded values, mirroring predV above.
     double predOmega = lastCommandedOmega_;
+    double predCurv  = lastCommandedCurv_;
 
     // Predictive safety: sweep the footprint over the command forecast and the
     // reference path ahead, and scale the commanded speed toward a stop before
@@ -863,15 +1008,12 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     double scale = 1.0;
     if (!obstacles_.empty())
     {
-        const double dFwd =
-            forecastContactDistance(ctrlPose, predV, predOmega, proj.s, gear);
+        const double dFwd = forecastContactDistance(
+            ctrlPose, predV, predOmega, predCurv, proj.s, gear);
         const double dRef = referenceContactDistance(proj.s);
         scale             = std::min(
                         contactDistanceToScale(dFwd), contactDistanceToScale(dRef));
     }
-
-    const auto nowStamp =
-        loc.timestamp != INVALID_TIMESTAMP ? loc.timestamp : mrpt::Clock::now();
     if (stopped_)
     {
         if (scale >= params.resume_scale)
@@ -932,9 +1074,17 @@ TrajectoryFollower::Output TrajectoryFollower::step(
 
     for (int k = 0; k <= nSamples; k++)
     {
+        // The k==0 sample is the command actually executed until the next
+        // control cycle, so its accel/omega/curvature rate-limit step must
+        // use control_period; later samples are forecast at sample_period.
+        // Otherwise, with control_period < sample_period, every executed
+        // command would be allowed sample_period-sized steps at
+        // control_period cadence -- all rate limits would effectively run at
+        // (sample_period / control_period) times their configured rate.
+        const double dtK = k == 0 ? params.control_period
+                                  : params.sample_period;
         const Command cmd = pursuit(
-            predPose, predV, predOmega, predS, params.sample_period, gear,
-            scale);
+            predPose, predV, predOmega, predCurv, predS, dtK, gear, scale);
 
         TrajSample smp;
         smp.t = k * params.sample_period;
@@ -952,6 +1102,7 @@ TrajectoryFollower::Output TrajectoryFollower::step(
             // Persist for the next cycle's feedforward ramp seed.
             lastCommandedSpeed_ = cmd.v;
             lastCommandedOmega_ = cmd.omega;
+            lastCommandedCurv_  = cmd.curv;
         }
 
         // Advance the forecast.
@@ -959,6 +1110,7 @@ TrajectoryFollower::Output TrajectoryFollower::step(
             integrateUnicycle(predPose, cmd.v, cmd.omega, params.sample_period);
         predV     = cmd.v;
         predOmega = cmd.omega;
+        predCurv  = cmd.curv;
         predS     = projectToPath({predPose.x, predPose.y}, predS).s;
 
         if (totalLength() - predS <= params.goal_dist_tol) break;
