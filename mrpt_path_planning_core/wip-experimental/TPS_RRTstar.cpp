@@ -11,8 +11,8 @@
 #include <mpp/algos/within_bbox.h>
 #include <mrpt/maps/COccupancyGridMap2D.h>
 #include <mrpt/maps/CSimplePointsMap.h>
-#include <mrpt/opengl/COpenGLScene.h>
 #include <mrpt/random/RandomGenerators.h>
+#include <mrpt/viz/Scene.h>
 
 #include <iostream>
 
@@ -493,12 +493,11 @@ PlannerOutput TPS_RRTstar::plan(const PlannerInput& in)
         {
             RenderOptions ro;
             ro.highlight_path_to_node_id = newNodeId;
-            mrpt::opengl::COpenGLScene scene;
+            mrpt::viz::Scene scene;
             scene.insert(render_tree(tree, in, ro));
-            scene.saveToFile(
-                mrpt::format(
-                    "debug_rrtstar_%05u.3Dscene",
-                    static_cast<unsigned int>(rrtIter)));
+            scene.saveToFile(mrpt::format(
+                "debug_rrtstar_%05u.3Dscene",
+                static_cast<unsigned int>(rrtIter)));
         }
 
     }  // for each rrtIter
@@ -645,13 +644,12 @@ TPS_RRTstar::draw_pose_return_t TPS_RRTstar::draw_random_tps(
             // Bias towards goal:
             const auto relGoalPose =
                 p.pi_.stateGoal.asSE2KinState().pose - node.pose;
-            int    relTrg_k;
-            double relTrg_d;
-            if (ptg->inverseMap_WS2TP(
-                    relGoalPose.x, relGoalPose.y, relTrg_k, relTrg_d))
+            const auto trgInvMap =
+                ptg->inverseMap_WS2TP(relGoalPose.x, relGoalPose.y);
+            if (trgInvMap.has_value())
             {
                 // valid:
-                trajIdx = relTrg_k;
+                trajIdx = trgInvMap->first;
             }
         }
 

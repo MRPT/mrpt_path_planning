@@ -9,27 +9,28 @@
 #include <mpp/algos/NavEngine.h>
 #include <mpp/algos/TPS_Astar.h>
 #include <mpp/data/Waypoints.h>
-#include "MVSIM_VehicleInterface.h"
 #include <mpp/interfaces/VehicleMotionInterface.h>
-#include <mrpt/3rdparty/tclap/CmdLine.h>
 #include <mrpt/config/CConfigFile.h>
 #include <mrpt/core/exceptions.h>
 #include <mrpt/core/lock_helper.h>
 #include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/math/TLine3D.h>
 #include <mrpt/math/TObject3D.h>
-#include <mrpt/opengl/CDisk.h>
 #include <mrpt/system/CRateTimer.h>
 #include <mrpt/system/os.h>  // plugins
 #include <mrpt/version.h>
+#include <mrpt/viz/CDisk.h>
 #include <mvsim/Comms/Server.h>
 #include <mvsim/World.h>
 #include <mvsim/WorldElements/OccupancyGridMap.h>
 #include <mvsim/WorldElements/PointCloud.h>
 #include <mvsim/mvsim_version.h>
 
+#include <CLI/CLI.hpp>
 #include <thread>
 #include <type_traits>
+
+#include "MVSIM_VehicleInterface.h"
 namespace compat
 {
 // 1. Primary template: The "Fallback" branch
@@ -52,73 +53,31 @@ struct gui_event_picker<T, std::void_t<typename T::GUIKeyEvent>>
 using GUIKeyEvent = typename gui_event_picker<mvsim::World>::type;
 }  // namespace compat
 
-TCLAP::CmdLine cmd(
-    "selfdriving-simulator-gui", ' ', "version", false /* no --help */);
+static CLI::App app{"selfdriving-simulator-gui"};
 
-TCLAP::ValueArg<std::string> argVerbosity(
-    "v", "verbose", "Verbosity level for path planner", false, "INFO",
-    "ERROR|WARN|INFO|DEBUG", cmd);
-
-TCLAP::ValueArg<std::string> argVerbosityMVSIM(
-    "", "verbose-mvsim", "Verbosity level for the mvsim subsystem", false,
-    "INFO", "ERROR|WARN|INFO|DEBUG", cmd);
-
-TCLAP::ValueArg<std::string> arg_config_file_section(
-    "", "config-section",
-    "If loading from an INI file, the name of the section to load", false,
-    "SelfDriving", "SelfDriving", cmd);
-
-TCLAP::ValueArg<std::string> argMvsimFile(
-    "s", "simul-file", "MVSIM XML file", true, "xxx.xml", "World XML file",
-    cmd);
-
-TCLAP::ValueArg<std::string> argVehicleInterface(
-    "", "vehicle-interface-class",
-    "Class name to use (Default: 'mpp::MVSIM_VehicleInterface')", false,
-    "mpp::MVSIM_VehicleInterface", "Class name to use for vehicle interface",
-    cmd);
-
-TCLAP::ValueArg<std::string> argTargetApproachController(
-    "", "approach-controller-class",
-    "Class name to use as target approach controller (Default: none)", false,
-    "", "Class name to use for approach controller", cmd);
-
-TCLAP::ValueArg<std::string> arg_ptgs_file(
-    "p", "ptg-config", "Input .ini file with PTG definitions.", true, "",
-    "ptgs.ini", cmd);
-
-TCLAP::ValueArg<std::string> arg_planner_yaml_file(
-    "", "planner-parameters", "Input .yaml file with planner parameters", false,
-    "", "tps-astar.yaml", cmd);
-
-TCLAP::ValueArg<std::string> arg_cost_prefer_waypoints_yaml_file(
-    "", "prefer-waypoints-parameters",
-    "Input .yaml file with costmap parameters", false, "",
-    "cost-prefer-waypoints.yaml", cmd);
-
-TCLAP::ValueArg<std::string> arg_cost_global_yaml_file(
-    "", "global-costmap-parameters",
-    "Input .yaml file with global obstacle points costmap parameters", false,
-    "", "points-costmap.yaml", cmd);
-
-TCLAP::ValueArg<std::string> arg_cost_local_yaml_file(
-    "", "local-costmap-parameters",
-    "Input .yaml file with local obstacle points costmap parameters", false, "",
-    "points-costmap.yaml", cmd);
-
-TCLAP::ValueArg<std::string> arg_nav_engine_yaml_file(
-    "", "nav-engine-parameters",
-    "Input .yaml file with parameters for NavEngine", false, "",
-    "nav-engine.yaml", cmd);
-
-TCLAP::ValueArg<std::string> arg_waypoints_yaml_file(
-    "", "waypoints", "Input .yaml file with waypoints", false, "",
-    "waypoints.yaml", cmd);
-
-TCLAP::ValueArg<std::string> arg_plugins(
-    "", "plugins",
-    "Optional plug-in libraries to load, for externally-defined PTGs", false,
-    "", "mylib.so", cmd);
+static std::string argVerbosity{"INFO"};
+static std::string argVerbosityMVSIM{"INFO"};
+static std::string arg_config_file_section{"SelfDriving"};
+static std::string argMvsimFile;
+static std::string argVehicleInterface{"mpp::MVSIM_VehicleInterface"};
+static bool        argVehicleInterface_set{false};
+static std::string argTargetApproachController;
+static bool        argTargetApproachController_set{false};
+static std::string arg_ptgs_file;
+static std::string arg_planner_yaml_file;
+static bool        arg_planner_yaml_file_set{false};
+static std::string arg_cost_prefer_waypoints_yaml_file;
+static bool        arg_cost_prefer_waypoints_yaml_file_set{false};
+static std::string arg_cost_global_yaml_file;
+static bool        arg_cost_global_yaml_file_set{false};
+static std::string arg_cost_local_yaml_file;
+static bool        arg_cost_local_yaml_file_set{false};
+static std::string arg_nav_engine_yaml_file;
+static bool        arg_nav_engine_yaml_file_set{false};
+static std::string arg_waypoints_yaml_file;
+static bool        arg_waypoints_yaml_file_set{false};
+static std::string arg_plugins;
+static bool        arg_plugins_set{false};
 
 std::shared_ptr<mvsim::Server> server;
 
@@ -131,7 +90,7 @@ void commonLaunchServer()
 
     server->setMinLoggingLevel(
         mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
-            argVerbosityMVSIM.getValue()));
+            argVerbosityMVSIM));
 
     server->start();
 }
@@ -253,13 +212,13 @@ void prepare_selfdriving(mvsim::World& world)
 
     sd->navigator.setMinLoggingLevel(
         mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
-            argVerbosity.getValue()));
+            argVerbosity));
 
     // Load PTGs:
     {
-        mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
+        mrpt::config::CConfigFile cfg(arg_ptgs_file);
         sd->navigator.config_.ptgs.initFromConfigFile(
-            cfg, arg_config_file_section.getValue());
+            cfg, arg_config_file_section);
     }
 
     // Obstacle source:
@@ -274,9 +233,9 @@ void prepare_selfdriving(mvsim::World& world)
         static_cast<unsigned int>(obsPts->size()));
 
     // Vehicle interface:
-    if (argVehicleInterface.isSet())
+    if (argVehicleInterface_set)
     {
-        const auto name = argVehicleInterface.getValue();
+        const auto name = argVehicleInterface;
         auto       obj  = mrpt::rtti::classFactory(name);
         ASSERTMSG_(
             obj, mrpt::format("Unregistered class name '%s'", name.c_str()));
@@ -307,9 +266,9 @@ void prepare_selfdriving(mvsim::World& world)
     }
 
     // target approach controller:
-    if (argTargetApproachController.isSet())
+    if (argTargetApproachController_set)
     {
-        const auto name = argTargetApproachController.getValue();
+        const auto name = argTargetApproachController;
         auto       obj  = mrpt::rtti::classFactory(name);
         ASSERTMSG_(
             obj, mrpt::format("Unregistered class name '%s'", name.c_str()));
@@ -327,43 +286,39 @@ void prepare_selfdriving(mvsim::World& world)
             sd->navigator.getMinLoggingLevel());
     }
 
-    if (arg_planner_yaml_file.isSet())
+    if (arg_planner_yaml_file_set)
     {
         sd->navigator.config_.plannerParams =
             mpp::TPS_Astar_Parameters::FromYAML(
-                mrpt::containers::yaml::FromFile(
-                    arg_planner_yaml_file.getValue()));
+                mrpt::containers::yaml::FromFile(arg_planner_yaml_file));
     }
 
-    if (arg_cost_global_yaml_file.isSet())
+    if (arg_cost_global_yaml_file_set)
     {
         sd->navigator.config_.globalCostParameters =
             mpp::CostEvaluatorCostMap::Parameters::FromYAML(
-                mrpt::containers::yaml::FromFile(
-                    arg_cost_global_yaml_file.getValue()));
+                mrpt::containers::yaml::FromFile(arg_cost_global_yaml_file));
     }
 
-    if (arg_cost_local_yaml_file.isSet())
+    if (arg_cost_local_yaml_file_set)
     {
         sd->navigator.config_.localCostParameters =
             mpp::CostEvaluatorCostMap::Parameters::FromYAML(
-                mrpt::containers::yaml::FromFile(
-                    arg_cost_local_yaml_file.getValue()));
+                mrpt::containers::yaml::FromFile(arg_cost_local_yaml_file));
     }
 
-    if (arg_cost_prefer_waypoints_yaml_file.isSet())
+    if (arg_cost_prefer_waypoints_yaml_file_set)
     {
         sd->navigator.config_.preferWaypointsParameters =
             mpp::CostEvaluatorPreferredWaypoint::Parameters::FromYAML(
                 mrpt::containers::yaml::FromFile(
-                    arg_cost_prefer_waypoints_yaml_file.getValue()));
+                    arg_cost_prefer_waypoints_yaml_file));
     }
 
-    if (arg_nav_engine_yaml_file.isSet())
+    if (arg_nav_engine_yaml_file_set)
     {
         sd->navigator.config_.loadFrom(
-            mrpt::containers::yaml::FromFile(
-                arg_nav_engine_yaml_file.getValue()));
+            mrpt::containers::yaml::FromFile(arg_nav_engine_yaml_file));
     }
 
     // all mandaroty fields filled in now:
@@ -374,11 +329,10 @@ void prepare_selfdriving(mvsim::World& world)
 
     // Load example/test waypoints?
     // --------------------------------------------------------
-    if (arg_waypoints_yaml_file.isSet())
+    if (arg_waypoints_yaml_file_set)
     {
         sd->waypts = mpp::WaypointSequence::FromYAML(
-            mrpt::containers::yaml::FromFile(
-                arg_waypoints_yaml_file.getValue()));
+            mrpt::containers::yaml::FromFile(arg_waypoints_yaml_file));
     }
 }
 
@@ -388,7 +342,7 @@ int launchSimulation()
 
     sd = std::make_shared<SelfDrivingStatus>();
 
-    const auto sXMLfilename = argMvsimFile.getValue();
+    const auto sXMLfilename = argMvsimFile;
 
     // Start network server:
     commonLaunchServer();
@@ -397,7 +351,7 @@ int launchSimulation()
 
     world->setMinLoggingLevel(
         mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
-            argVerbosityMVSIM.getValue()));
+            argVerbosityMVSIM));
 
     // Load from XML:
     world->load_from_XML_file(sXMLfilename);
@@ -579,7 +533,7 @@ void prepare_selfdriving_window(
     // prepare custom gl objects for selfdriving lib:
     {
         auto lckgui               = mrpt::lockHelper(world->guiUserObjectsMtx_);
-        world->guiUserObjectsViz_ = mrpt::opengl::CSetOfObjects::Create();
+        world->guiUserObjectsViz_ = mrpt::viz::CSetOfObjects::Create();
         world->guiUserObjectsViz_->setName("gui_user_objects_viz");
 
         sd->navigator.config_.vizSceneToModify = world->guiUserObjectsViz_;
@@ -639,13 +593,12 @@ void prepare_selfdriving_window(
         auto pnNav        = wrappers.at(0);
         auto lbWaypsCount = pnNav->add<nanogui::Label>("");
 
-        lbWaypsCount->setCaption(
-            mrpt::format(
-                "Number of wps: %u",
-                static_cast<unsigned int>(sd->waypts.waypoints.size())));
+        lbWaypsCount->setCaption(mrpt::format(
+            "Number of wps: %u",
+            static_cast<unsigned int>(sd->waypts.waypoints.size())));
 
         // custom 3D objects
-        auto glWaypoints = mrpt::opengl::CSetOfObjects::Create();
+        auto glWaypoints = mrpt::viz::CSetOfObjects::Create();
         glWaypoints->setLocation(0, 0, 0.01);
         glWaypoints->setName("glWaypoints");
         mpp::WaypointsRenderingParams rp;
@@ -684,11 +637,10 @@ void prepare_selfdriving_window(
     const auto lambdaUpdateNavStatus = [lbNavStatus]()
     {
         const auto state = sd->navigator.current_status();
-        lbNavStatus->setCaption(
-            mrpt::format(
-                "Nav status: %s",
-                mrpt::typemeta::TEnumType<mpp::NavStatus>::value2name(state)
-                    .c_str()));
+        lbNavStatus->setCaption(mrpt::format(
+            "Nav status: %s",
+            mrpt::typemeta::TEnumType<mpp::NavStatus>::value2name(state)
+                .c_str()));
     };
 
     // -------------------------------
@@ -709,7 +661,7 @@ void prepare_selfdriving_window(
         edStateStartVel->setEditable(true);
 
         // custom 3D objects
-        auto glTargetSign = mrpt::opengl::CDisk::Create(1.0, 0.8);
+        auto glTargetSign = mrpt::viz::CDisk::Create(1.0, 0.8);
         glTargetSign->setColor_u8(0xff, 0x00, 0x00, 0xa0);
         glTargetSign->setName("glTargetSign");
         glTargetSign->setVisibility(false);
@@ -895,8 +847,7 @@ void mvsim_server_thread_update_GUI(GUI_ThreadParams& tp)
         if (firstTime && tp.world->gui_window())
         {
             tp.world->enqueue_task_to_run_in_gui_thread(
-                [&]()
-                {
+                [&]() {
                     prepare_selfdriving_window(
                         tp.world->gui_window(), tp.world);
                 });
@@ -964,7 +915,7 @@ void on_do_single_path_planning(
     {
         const auto bboxMargin = mrpt::math::TPoint3Df(1.0, 1.0, .0);
         const auto ptStart    = mrpt::math::TPoint3Df(
-            pi.stateStart.pose.x, pi.stateStart.pose.y, 0);
+               pi.stateStart.pose.x, pi.stateStart.pose.y, 0);
         const auto ptGoal = mrpt::math::TPoint3Df(
             pi.stateGoal.asSE2KinState().pose.x,
             pi.stateGoal.asSE2KinState().pose.y, 0);
@@ -1021,10 +972,10 @@ void on_do_single_path_planning(
     }
 
     // Set planner required params:
-    if (arg_planner_yaml_file.isSet())
+    if (arg_planner_yaml_file_set)
     {
-        const auto sFile = arg_planner_yaml_file.getValue();
-        const auto c     = mrpt::containers::yaml::FromFile(sFile);
+        const auto& sFile = arg_planner_yaml_file;
+        const auto  c     = mrpt::containers::yaml::FromFile(sFile);
         planner.params_.load_from_yaml(c);
         std::cout << "Loaded these planner params:\n";
         planner.params_.as_yaml().printAsYAML();
@@ -1034,8 +985,8 @@ void on_do_single_path_planning(
     planner.setMinLoggingLevel(mrpt::system::LVL_DEBUG);
 
     // PTGs config file:
-    mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
-    pi.ptgs.initFromConfigFile(cfg, arg_config_file_section.getValue());
+    mrpt::config::CConfigFile cfg(arg_ptgs_file);
+    pi.ptgs.initFromConfigFile(cfg, arg_config_file_section);
 
     const mpp::PlannerOutput plan = planner.plan(pi);
 
@@ -1055,13 +1006,70 @@ int main(int argc, char** argv)
 {
     try
     {
-        if (!cmd.parse(argc, argv)) return 1;
+        app.add_option(
+            "-v,--verbose", argVerbosity, "Verbosity level for path planner.");
+        app.add_option(
+            "--verbose-mvsim", argVerbosityMVSIM,
+            "Verbosity level for the mvsim subsystem.");
+        app.add_option(
+            "--config-section", arg_config_file_section,
+            "If loading from an INI file, the name of the section to load.");
+        app.add_option("-s,--simul-file", argMvsimFile, "MVSIM XML file.")
+            ->required();
+        app.add_option(
+            "--vehicle-interface-class", argVehicleInterface,
+            "Class name to use (Default: 'mpp::MVSIM_VehicleInterface').");
+        app.add_option(
+            "--approach-controller-class", argTargetApproachController,
+            "Class name to use as target approach controller (Default: none).");
+        app.add_option(
+               "-p,--ptg-config", arg_ptgs_file,
+               "Input .ini file with PTG definitions.")
+            ->required();
+        app.add_option(
+            "--planner-parameters", arg_planner_yaml_file,
+            "Input .yaml file with planner parameters.");
+        app.add_option(
+            "--prefer-waypoints-parameters",
+            arg_cost_prefer_waypoints_yaml_file,
+            "Input .yaml file with costmap parameters.");
+        app.add_option(
+            "--global-costmap-parameters", arg_cost_global_yaml_file,
+            "Input .yaml file with global obstacle points costmap parameters.");
+        app.add_option(
+            "--local-costmap-parameters", arg_cost_local_yaml_file,
+            "Input .yaml file with local obstacle points costmap parameters.");
+        app.add_option(
+            "--nav-engine-parameters", arg_nav_engine_yaml_file,
+            "Input .yaml file with parameters for NavEngine.");
+        app.add_option(
+            "--waypoints", arg_waypoints_yaml_file,
+            "Input .yaml file with waypoints.");
+        app.add_option(
+            "--plugins", arg_plugins,
+            "Optional plug-in libraries to load, for externally-defined PTGs.");
 
-        if (arg_plugins.isSet())
+        CLI11_PARSE(app, argc, argv);
+
+        argVehicleInterface_set = (app.count("--vehicle-interface-class") > 0);
+        argTargetApproachController_set =
+            (app.count("--approach-controller-class") > 0);
+        arg_planner_yaml_file_set = (app.count("--planner-parameters") > 0);
+        arg_cost_prefer_waypoints_yaml_file_set =
+            (app.count("--prefer-waypoints-parameters") > 0);
+        arg_cost_global_yaml_file_set =
+            (app.count("--global-costmap-parameters") > 0);
+        arg_cost_local_yaml_file_set =
+            (app.count("--local-costmap-parameters") > 0);
+        arg_nav_engine_yaml_file_set =
+            (app.count("--nav-engine-parameters") > 0);
+        arg_waypoints_yaml_file_set = (app.count("--waypoints") > 0);
+        arg_plugins_set             = (app.count("--plugins") > 0);
+
+        if (arg_plugins_set)
         {
             std::string loadErrors;
-            if (!mrpt::system::loadPluginModules(
-                    arg_plugins.getValue(), loadErrors))
+            if (!mrpt::system::loadPluginModules(arg_plugins, loadErrors))
             {
                 std::cerr << "Could not load plugins, error: " << loadErrors;
                 return 1;

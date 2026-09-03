@@ -5,13 +5,13 @@
  * ------------------------------------------------------------------------- */
 
 #include <mpp/algos/render_vehicle.h>
-#include <mrpt/opengl/CSetOfLines.h>
+#include <mrpt/viz/CSetOfLines.h>
 
 using namespace mpp;
 
 /** Generates a polygon for the vehicle shape */
 auto mpp::render_vehicle(
-    const RobotShape& rs, mrpt::opengl::CSetOfLines& outPolygon,
+    const RobotShape& rs, mrpt::viz::CSetOfLines& outPolygon,
     const RenderVehicleParams& rvp) -> RenderVehicleExtraResults
 {
     RenderVehicleExtraResults res;
@@ -48,10 +48,7 @@ auto mpp::render_vehicle(
 
         mrpt::keep_max(res.maxVehicleShapeRadius, R);
     }
-    else
-    {
-        THROW_EXCEPTION("Invalid vehicle shape variant<> type.");
-    }
+    else { THROW_EXCEPTION("Invalid vehicle shape variant<> type."); }
 
     return res;
 }

@@ -79,7 +79,7 @@ class CostEvaluatorCostMap : public CostEvaluator
     /** Evaluate cost of move-tree edge */
     double operator()(const MoveEdgeSE2_TPS& edge) const override;
 
-    mrpt::opengl::CSetOfObjects::Ptr get_visualization() const override;
+    mrpt::viz::CSetOfObjects::Ptr get_visualization() const override;
 
     // Used for ROS visualization interface
     std::shared_ptr<mrpt::maps::COccupancyGridMap2D> get_visualization_as_grid()

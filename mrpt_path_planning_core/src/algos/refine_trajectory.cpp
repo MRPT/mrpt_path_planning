@@ -49,16 +49,13 @@ void mpp::refine_trajectory(
         // Should never happen, except in buggy callers:
         if (deltaNodes.x == 0 && deltaNodes.y == 0) continue;
 
-        int                   newK        = -1;
-        normalized_distance_t newNormDist = 0;
-
-        const bool ok = ptg->inverseMap_WS2TP(
-            deltaNodes.x, deltaNodes.y, newK, newNormDist, ptg_tolerance_dist);
-        if (!ok)
+        const auto invMap = ptg->inverseMap_WS2TP(
+            deltaNodes.x, deltaNodes.y, ptg_tolerance_dist);
+        if (!invMap.has_value())
         {
             std::stringstream ss;
             ss << "Assert failed: ptg->inverseMap_WS2TP() => returned "
-                  "ok=false. More info:\n";
+                  "nullopt. More info:\n";
             ss << " - PTG: " << ptg->getDescription() << "\n";
             ss << " - deltaNodes: " << deltaNodes.asString() << "\n";
             ss << " - edge: " << edge.asString() << "\n";
@@ -69,10 +66,13 @@ void mpp::refine_trajectory(
         }
         else
         {
+            const int                   newK        = invMap->first;
+            const normalized_distance_t newNormDist = invMap->second;
             distance_t newDist = newNormDist * ptg->getRefDistance();
 
             uint32_t   newPtgStep = 0;
-            const bool stepOk = ptg->getPathStepForDist(newK, newDist, newPtgStep);
+            const bool stepOk =
+                ptg->getPathStepForDist(newK, newDist, newPtgStep);
             if (!stepOk)
             {
                 // The distance returned by inverseMap_WS2TP() (normalized

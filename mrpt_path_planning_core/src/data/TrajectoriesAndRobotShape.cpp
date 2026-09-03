@@ -35,7 +35,7 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
         for (size_t i = 0; i < xs.size(); i++)
         {
             poly.emplace_back(xs[i], ys[i]);
-            robShape.AddVertex(xs[i], ys[i]);
+            robShape.add_vertex(xs[i], ys[i]);
         }
     }
 

@@ -12,8 +12,8 @@
 #include <mrpt/img/TColor.h>
 #include <mrpt/math/TPoint2D.h>
 #include <mrpt/math/TPose2D.h>
-#include <mrpt/opengl/opengl_frwds.h>
 #include <mrpt/system/datetime.h>
+#include <mrpt/viz/viz_frwds.h>
 
 #include <optional>
 #include <string>
@@ -157,7 +157,7 @@ struct WaypointSequence
     /** Renders the sequence of waypoints (previous contents of `obj` are
      * cleared) */
     void getAsOpenglVisualization(
-        mrpt::opengl::CSetOfObjects&    obj,
+        mrpt::viz::CSetOfObjects&       obj,
         const WaypointsRenderingParams& params = {}) const;
 
     /** Save waypoints as YAML */
@@ -232,7 +232,7 @@ struct WaypointStatusSequence
     /** Renders the sequence of waypoints (previous contents of `obj` are
      * cleared) */
     void getAsOpenglVisualization(
-        mrpt::opengl::CSetOfObjects&    obj,
+        mrpt::viz::CSetOfObjects&       obj,
         const WaypointsRenderingParams& params = {}) const;
 };
 }  // namespace mpp

@@ -172,9 +172,9 @@ class NavEngine : public mrpt::system::COutputLogger
         /**  \name Visualization callbacks and methods
          *   @{ */
 
-        std::function<void(void)>                    on_viz_pre_modify;
-        std::shared_ptr<mrpt::opengl::CSetOfObjects> vizSceneToModify;
-        std::function<void(void)>                    on_viz_post_modify;
+        std::function<void(void)>                 on_viz_pre_modify;
+        std::shared_ptr<mrpt::viz::CSetOfObjects> vizSceneToModify;
+        std::function<void(void)>                 on_viz_post_modify;
 
         /** @} */
     };
@@ -477,8 +477,8 @@ class NavEngine : public mrpt::system::COutputLogger
          *  @{ */
         /** Copy of sent-out cmd, for the log record */
         mrpt::kinematics::CVehicleVelCmd::Ptr sentOutCmdInThisIteration;
-        mrpt::opengl::CSetOfObjects::Ptr      planVizForNavLog;
-        mrpt::opengl::CSetOfObjects::Ptr      stateVizForNavLog;
+        mrpt::viz::CSetOfObjects::Ptr         planVizForNavLog;
+        mrpt::viz::CSetOfObjects::Ptr         stateVizForNavLog;
         std::vector<std::string>              navlogDebugMessages;
 
         std::optional<double> lastNavigationStepEndTime;

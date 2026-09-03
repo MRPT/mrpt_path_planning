@@ -22,6 +22,8 @@
 #include <mrpt/system/CTimeLogger.h>
 
 #include <iostream>  // debug only, remove!
+#include <optional>
+#include <utility>
 
 using namespace mrpt::nav;
 using namespace mpp::ptg;
@@ -168,15 +170,9 @@ double HolonomicBlend::calc_trans_distance_t_below_Tramp(
             const double int_t = sqrt(a) * (t * t) * 0.5;
             return int_t;  // Definite integral [0,t]
         }
-        else
-        {
-            return calc_trans_distance_t_below_Tramp_abc(t, a, b, c);
-        }
+        else { return calc_trans_distance_t_below_Tramp_abc(t, a, b, c); }
     }
-    else
-    {
-        return std::sqrt(c) * t;
-    }
+    else { return std::sqrt(c) * t; }
 }
 
 void HolonomicBlend::onNewNavDynamicState()
@@ -298,12 +294,16 @@ void    HolonomicBlend::serializeTo(mrpt::serialization::CArchive& out) const
     out << expr_V << expr_W << expr_T_ramp;
 }
 
-bool HolonomicBlend::inverseMap_WS2TP(
-    double x, double y, int& out_k, double& out_d,
-    [[maybe_unused]] double tolerance_dist) const
+std::optional<std::pair<int, double>> HolonomicBlend::inverseMap_WS2TP(
+    double x, double y, [[maybe_unused]] double tolerance_dist) const
 {
-    double dummy_T_ramp;
-    return inverseMap_WS2TP_with_Tramp(x, y, out_k, out_d, dummy_T_ramp);
+    int        out_k;
+    double     out_d;
+    double     dummy_T_ramp;
+    const bool ok =
+        inverseMap_WS2TP_with_Tramp(x, y, out_k, out_d, dummy_T_ramp);
+    if (!ok) { return std::nullopt; }
+    return std::make_pair(out_k, out_d);
 }
 
 bool HolonomicBlend::inverseMap_WS2TP_with_Tramp(
@@ -478,17 +478,12 @@ bool HolonomicBlend::inverseMap_WS2TP_with_Tramp(
 
         return true;
     }
-    else
-    {
-        return false;
-    }
+    else { return false; }
 }
 
 bool HolonomicBlend::PTG_IsIntoDomain(double x, double y) const
 {
-    int    k;
-    double d;
-    return inverseMap_WS2TP(x, y, k, d);
+    return inverseMap_WS2TP(x, y).has_value();
 }
 
 void HolonomicBlend::internal_deinitialize()
@@ -775,10 +770,7 @@ void HolonomicBlend::updateTPObstacleSingle(
             roots[0]      = (-d + sqrt(discr)) / (2 * c);
             roots[1]      = (-d - sqrt(discr)) / (2 * c);
         }
-        else
-        {
-            num_real_sols = 0;
-        }
+        else { num_real_sols = 0; }
     }
 
     for (int i = 0; i < num_real_sols; i++)

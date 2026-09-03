@@ -13,10 +13,10 @@ IMPLEMENTS_VIRTUAL_MRPT_OBJECT(CostEvaluator, mrpt::rtti::CObject, mpp)
 
 CostEvaluator::~CostEvaluator() = default;
 
-mrpt::opengl::CSetOfObjects::Ptr CostEvaluator::get_visualization() const
+mrpt::viz::CSetOfObjects::Ptr CostEvaluator::get_visualization() const
 {
     // Default: empty viz
-    auto glObj = mrpt::opengl::CSetOfObjects::Create();
+    auto glObj = mrpt::viz::CSetOfObjects::Create();
     glObj->setName("CostEvaluator.default");
     return glObj;
 }

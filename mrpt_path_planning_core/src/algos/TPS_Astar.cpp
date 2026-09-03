@@ -13,8 +13,8 @@
 #include <mpp/data/MotionPrimitivesTree.h>
 #include <mpp/ptgs/SpeedTrimmablePTG.h>
 #include <mrpt/math/wrap2pi.h>
-#include <mrpt/opengl/COpenGLScene.h>
 #include <mrpt/version.h>
+#include <mrpt/viz/Scene.h>
 
 #include <cmath>
 #include <iostream>
@@ -173,7 +173,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         tree.root = n.id.value();
         tree.insert_root_node(tree.root, n.state);
 
-        n.gScore           = 0;
+        n.gScore = 0;
         n.fScore = params_.heuristic_epsilon * heuristic(n.state, in.stateGoal);
         n.pendingInOpenSet = true;
 
@@ -207,19 +207,19 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     double tLastCallback = planInitTime;
 
     // Analytic goal expansion (deferred, optimality-preserving): when a
-    // collision-free edge lands in the goal cell we remember it as a *candidate*
-    // solution instead of terminating immediately. Stopping on the first such
-    // edge is greedy and can produce grossly suboptimal paths: with an SE(2)
-    // goal, a node that arrived at the goal xy but a couple of yaw cells off can
-    // only re-enter the exact goal cell through a near-full-circle PTG arc (with
-    // a tight turning radius), so that first edge is a ~360 deg loop (see
-    // fig:cases in the paper). We instead keep the cheapest goal-landing
-    // candidate and only commit once its actual cost is provably (eps-)optimal,
-    // i.e. <= the minimum fScore still pending in the open set (committed at the
-    // top of the loop). This preserves the early-termination speed-up without
-    // accepting the loop, and is a no-op for R(2) point goals (verified
-    // identical on the 300-world BARN sweep).
-    Node*  bestGoalCandidate = nullptr;
+    // collision-free edge lands in the goal cell we remember it as a
+    // *candidate* solution instead of terminating immediately. Stopping on the
+    // first such edge is greedy and can produce grossly suboptimal paths: with
+    // an SE(2) goal, a node that arrived at the goal xy but a couple of yaw
+    // cells off can only re-enter the exact goal cell through a
+    // near-full-circle PTG arc (with a tight turning radius), so that first
+    // edge is a ~360 deg loop (see fig:cases in the paper). We instead keep the
+    // cheapest goal-landing candidate and only commit once its actual cost is
+    // provably (eps-)optimal, i.e. <= the minimum fScore still pending in the
+    // open set (committed at the top of the loop). This preserves the
+    // early-termination speed-up without accepting the loop, and is a no-op for
+    // R(2) point goals (verified identical on the 300-world BARN sweep).
+    Node*  bestGoalCandidate  = nullptr;
     cost_t bestGoalCandidateG = std::numeric_limits<cost_t>::max();
 
     // Defer building per-edge interpolated paths during the search: it is a
@@ -494,8 +494,8 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // Analytic expansion: this accepted edge connects (collision-free)
             // into the goal cell. Remember it as a candidate solution (keeping
             // the cheapest); we only commit to it once it is provably optimal,
-            // at the top of the while loop. See the note where bestGoalCandidate
-            // is declared.
+            // at the top of the while loop. See the note where
+            // bestGoalCandidate is declared.
             if (params_.use_analytic_expansion &&
                 edge.neighborNodeCoords.sameLocation(goalCellIndices) &&
                 neighborNode.gScore < bestGoalCandidateG)
@@ -519,7 +519,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             RenderOptions ro;
             ro.highlight_path_to_node_id = current.id.value();
             ro.showEdgeCosts = params_.debugVisualizationShowEdgeCosts;
-            mrpt::opengl::COpenGLScene scene;
+            mrpt::viz::Scene scene;
             scene.insert(render_tree(tree, in, ro));
             scene.saveToFile(mrpt::format("debug_astar_%05u.3Dscene", nIter));
         }
@@ -768,13 +768,14 @@ TPS_Astar::list_paths_to_neighbors_t
         // make sure of including the trajectory towards the target, if we
         // are close enough, plus its immediate neighboring paths:
         {
-            int                   relTrg_k       = 0;
-            normalized_distance_t relTrg_d       = 0;
-            const double          queryTolerance = params_.grid_resolution_xy;
-            if (ptg->inverseMap_WS2TP(
-                    relGoal.x, relGoal.y, relTrg_k, relTrg_d, queryTolerance))
+            const double queryTolerance = params_.grid_resolution_xy;
+            const auto   trgInvMap =
+                ptg->inverseMap_WS2TP(relGoal.x, relGoal.y, queryTolerance);
+            if (trgInvMap.has_value())
             {
-                ptg_step_t relTrg_step = 0;
+                const int                   relTrg_k    = trgInvMap->first;
+                const normalized_distance_t relTrg_d    = trgInvMap->second;
+                ptg_step_t                  relTrg_step = 0;
                 if (ptg->getPathStepForDist(relTrg_k, relTrg_d, relTrg_step))
                 {
                     // Add direct path to target, and keep a copy of its value:

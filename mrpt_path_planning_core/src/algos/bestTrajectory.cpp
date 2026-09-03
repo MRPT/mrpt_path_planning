@@ -39,9 +39,8 @@ bool mpp::bestTrajectory(
         ptg->updateNavDynamicState(newDyn);
 
         // Inverse map of relative pose:
-        int    ptg_k;
-        double ptg_norm_dist;
-        if (!ptg->inverseMap_WS2TP(relPose.x, relPose.y, ptg_k, ptg_norm_dist))
+        const auto invMap = ptg->inverseMap_WS2TP(relPose.x, relPose.y);
+        if (!invMap.has_value())
         {
             if (logger)
             {
@@ -52,6 +51,8 @@ bool mpp::bestTrajectory(
             // Out of PTG range. Cannot do anything here.
             continue;
         }
+        const int    ptg_k         = invMap->first;
+        const double ptg_norm_dist = invMap->second;
 
         const double ptg_dist = ptg_norm_dist * ptg->getRefDistance();
 

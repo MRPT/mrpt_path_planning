@@ -5,7 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <mpp/algos/CostEvaluatorPreferredWaypoint.h>
-#include <mrpt/opengl/CDisk.h>
+#include <mrpt/viz/CDisk.h>
 
 using namespace mpp;
 
@@ -120,10 +120,10 @@ double CostEvaluatorPreferredWaypoint::eval_single_pose(
     return std::max(.0, cost);
 }
 
-mrpt::opengl::CSetOfObjects::Ptr
+mrpt::viz::CSetOfObjects::Ptr
     CostEvaluatorPreferredWaypoint::get_visualization() const
 {
-    auto glObjs = mrpt::opengl::CSetOfObjects::Create();
+    auto glObjs = mrpt::viz::CSetOfObjects::Create();
     glObjs->setName("CostEvaluatorPreferredWaypoint");
 
     for (size_t i = 0; i < waypoints_.size(); i++)
@@ -131,7 +131,7 @@ mrpt::opengl::CSetOfObjects::Ptr
         float x, y;
         waypoints_.getPoint(i, x, y);
 
-        auto glDisk = mrpt::opengl::CDisk::Create();
+        auto glDisk = mrpt::viz::CDisk::Create();
         glDisk->setColor_u8(0x20, 0x20, 0xff, 0x20);
         glDisk->setDiskRadius(
             params_.waypointInfluenceRadius,

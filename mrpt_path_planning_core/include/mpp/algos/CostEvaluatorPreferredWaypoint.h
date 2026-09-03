@@ -53,7 +53,7 @@ class CostEvaluatorPreferredWaypoint : public CostEvaluator
     /** Evaluate cost of move-tree edge */
     double operator()(const MoveEdgeSE2_TPS& edge) const override;
 
-    mrpt::opengl::CSetOfObjects::Ptr get_visualization() const override;
+    mrpt::viz::CSetOfObjects::Ptr get_visualization() const override;
 
     const Parameters& params() const { return params_; }
 

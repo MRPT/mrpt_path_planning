@@ -13,6 +13,9 @@
 #include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
 #include <mrpt/typemeta/TEnumType.h>
 
+#include <optional>
+#include <utility>
+
 namespace mpp::ptg
 {
 struct TCPoint
@@ -66,9 +69,8 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
      * exist.
      * See full docs in base class
      * CParameterizedTrajectoryGenerator::inverseMap_WS2TP() */
-    bool inverseMap_WS2TP(
-        double x, double y, int& out_k, double& out_d,
-        double tolerance_dist = 0.10) const override;
+    [[nodiscard]] std::optional<std::pair<int, double>> inverseMap_WS2TP(
+        double x, double y, double tolerance_dist = 0.10) const override;
 
     /** In this class, `out_action_cmd` contains: [0]: linear velocity (m/s),
      * [1]: angular velocity (rad/s).

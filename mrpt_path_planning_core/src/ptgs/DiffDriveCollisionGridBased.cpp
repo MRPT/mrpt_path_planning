@@ -17,6 +17,8 @@
 #include <mrpt/system/CTicTac.h>
 
 #include <iostream>
+#include <optional>
+#include <utility>
 
 using namespace mpp::ptg;
 using mrpt::d2f;
@@ -467,8 +469,9 @@ bool DiffDriveCollisionGridBased::CCollisionGrid::loadFromFile(
     }
 }
 
-bool DiffDriveCollisionGridBased::inverseMap_WS2TP(
-    double x, double y, int& out_k, double& out_d, double tolerance_dist) const
+std::optional<std::pair<int, double>>
+    DiffDriveCollisionGridBased::inverseMap_WS2TP(
+        double x, double y, double tolerance_dist) const
 {
     using mrpt::square;
 
@@ -522,7 +525,7 @@ bool DiffDriveCollisionGridBased::inverseMap_WS2TP(
     // Try to find a closest point to the paths:
     // ----------------------------------------------
     int   selected_k    = -1;
-    float selected_d    = 0;
+    float selected_d    = 0.0f;
     float selected_dist = std::numeric_limits<float>::max();
 
     if (at_least_one)  // Otherwise, don't even lose time checking...
@@ -550,9 +553,12 @@ bool DiffDriveCollisionGridBased::inverseMap_WS2TP(
 
     if (selected_k != -1)
     {
-        out_k = selected_k;
-        out_d = selected_d / refDistance;
-        return (selected_dist <= square(tolerance_dist));
+        const double out_d = selected_d / refDistance;
+        if (selected_dist <= square(tolerance_dist))
+        {
+            return std::make_pair(selected_k, out_d);
+        }
+        return std::nullopt;
     }
 
     // If not found, compute an extrapolation:
@@ -580,15 +586,16 @@ bool DiffDriveCollisionGridBased::inverseMap_WS2TP(
 
     selected_d = std::sqrt(selected_d);
 
-    out_k = selected_k;
-    out_d = selected_d / refDistance;
-
-    // If the target dist. > refDistance, then it's normal that we had to
-    // extrapolate.
-    // Otherwise, it may actually mean that the target is not reachable by this
-    // set of paths:
+    // If the target dist. > refDistance, it's normal that we had to
+    // extrapolate. Otherwise, the target may not be reachable by this set of
+    // paths:
     const float target_dist = std::sqrt(x * x + y * y);
-    return (target_dist > target_dist);
+    if (target_dist > refDistance)
+    {
+        return std::make_pair(
+            selected_k, static_cast<double>(selected_d / refDistance));
+    }
+    return std::nullopt;
 }
 
 void DiffDriveCollisionGridBased::setRefDistance(const double refDist)
@@ -678,7 +685,7 @@ void DiffDriveCollisionGridBased::internal_initialize(
         const int    grid_cy_max = m_collisionGrid.getSizeY() - 1;
         const double half_cell   = m_collisionGrid.getResolution() * 0.5;
 
-        const size_t                      nVerts = m_robotShape.verticesCount();
+        const size_t                      nVerts = m_robotShape.size();
         std::vector<mrpt::math::TPoint2D> transf_shape(
             nVerts);  // The robot shape at each location
 
@@ -703,11 +710,11 @@ void DiffDriveCollisionGridBased::internal_initialize(
                 for (size_t m = 0; m < nVerts; m++)
                 {
                     transf_shape[m].x =
-                        p.x + cos(p.phi) * m_robotShape.GetVertex_x(m) -
-                        sin(p.phi) * m_robotShape.GetVertex_y(m);
+                        p.x + cos(p.phi) * m_robotShape.get_vertex_x(m) -
+                        sin(p.phi) * m_robotShape.get_vertex_y(m);
                     transf_shape[m].y =
-                        p.y + sin(p.phi) * m_robotShape.GetVertex_x(m) +
-                        cos(p.phi) * m_robotShape.GetVertex_y(m);
+                        p.y + sin(p.phi) * m_robotShape.get_vertex_x(m) +
+                        cos(p.phi) * m_robotShape.get_vertex_y(m);
                     mrpt::keep_max(bb_max.x, transf_shape[m].x);
                     mrpt::keep_max(bb_max.y, transf_shape[m].y);
                     mrpt::keep_min(bb_min.x, transf_shape[m].x);

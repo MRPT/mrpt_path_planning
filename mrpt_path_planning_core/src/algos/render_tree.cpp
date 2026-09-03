@@ -6,26 +6,26 @@
 
 #include <mpp/algos/render_tree.h>
 #include <mpp/algos/render_vehicle.h>
-#include <mrpt/opengl/CArrow.h>
-#include <mrpt/opengl/CDisk.h>
-#include <mrpt/opengl/CGridPlaneXY.h>
-#include <mrpt/opengl/COpenGLScene.h>
-#include <mrpt/opengl/CPointCloud.h>
-#include <mrpt/opengl/CSetOfLines.h>
-#include <mrpt/opengl/CSetOfObjects.h>
-#include <mrpt/opengl/CText3D.h>
-#include <mrpt/opengl/stock_objects.h>
+#include <mrpt/viz/CArrow.h>
+#include <mrpt/viz/CDisk.h>
+#include <mrpt/viz/CGridPlaneXY.h>
+#include <mrpt/viz/CPointCloud.h>
+#include <mrpt/viz/CSetOfLines.h>
+#include <mrpt/viz/CSetOfObjects.h>
+#include <mrpt/viz/CText3D.h>
+#include <mrpt/viz/Scene.h>
+#include <mrpt/viz/stock_objects.h>
 
 using namespace mpp;
 
 auto mpp::render_tree(
     const MotionPrimitivesTreeSE2& tree, const PlannerInput& pi,
-    const RenderOptions& ro) -> std::shared_ptr<mrpt::opengl::CSetOfObjects>
+    const RenderOptions& ro) -> std::shared_ptr<mrpt::viz::CSetOfObjects>
 {
-    using mrpt::opengl::stock_objects::CornerXYZ;
-    using mrpt::opengl::stock_objects::CornerXYZSimple;
+    using mrpt::viz::stock_objects::CornerXYZ;
+    using mrpt::viz::stock_objects::CornerXYZSimple;
 
-    auto ret = mrpt::opengl::CSetOfObjects::Create();
+    auto ret = mrpt::viz::CSetOfObjects::Create();
     ret->setName("render_tree");
     auto& scene = *ret;
 
@@ -53,7 +53,7 @@ auto mpp::render_tree(
     };
 
     // Build a model of the vehicle shape:
-    mrpt::opengl::CSetOfLines gl_veh_shape;
+    mrpt::viz::CSetOfLines gl_veh_shape;
 
     double xyzcorners_scale;
     {
@@ -85,7 +85,7 @@ auto mpp::render_tree(
                 gridSpacing = 1.0;
         }
 
-        auto obj = mrpt::opengl::CGridPlaneXY::Create(
+        auto obj = mrpt::viz::CGridPlaneXY::Create(
             pi.worldBboxMin.x, pi.worldBboxMax.x, pi.worldBboxMin.y,
             pi.worldBboxMax.y, 0 /*z*/, gridSpacing);
         obj->setColor_u8(ro.color_ground_xy_grid);
@@ -160,7 +160,7 @@ auto mpp::render_tree(
     // The starting pose vehicle shape must be inserted independently, because
     // the rest are edges and we draw the END pose of each edge:
     {
-        auto vehShape  = mrpt::opengl::CSetOfLines::Create(gl_veh_shape);
+        auto vehShape  = mrpt::viz::CSetOfLines::Create(gl_veh_shape);
         auto shapePose = mrpt::math::TPose3D(pi.stateStart.pose);
         shapePose.z += ro.vehicle_shape_z;
         vehShape->setPose(poseHeightT(shapePose));
@@ -211,7 +211,7 @@ auto mpp::render_tree(
             // Insert vehicle shapes along optimal path:
             if (isBestPathAndDrawShape)
             {
-                auto vehShape = mrpt::opengl::CSetOfLines::Create(gl_veh_shape);
+                auto vehShape  = mrpt::viz::CSetOfLines::Create(gl_veh_shape);
                 auto shapePose = mrpt::math::TPose3D(poseNode);
                 shapePose.z += ro.vehicle_shape_z;
                 vehShape->setPose(poseHeightT(shapePose));
@@ -222,7 +222,7 @@ auto mpp::render_tree(
                 // Draw twist:
                 if (node.vel.vx != 0 || node.vel.vy != 0)
                 {
-                    auto glLinVel = mrpt::opengl::CArrow::Create();
+                    auto glLinVel = mrpt::viz::CArrow::Create();
                     glLinVel->setArrowEnds(
                         0, 0, 0, node.vel.vx * ro.linVelScale,
                         node.vel.vy * ro.linVelScale, .0);
@@ -236,7 +236,7 @@ auto mpp::render_tree(
 
                 if (node.vel.omega != 0)
                 {
-                    auto glAngVel = mrpt::opengl::CArrow::Create();
+                    auto glAngVel = mrpt::viz::CArrow::Create();
                     glAngVel->setArrowEnds(
                         0, 0, 0, 0, 0, node.vel.omega * ro.angVelScale);
                     glAngVel->setSmallRadius(ro.twistArrowsRadius);
@@ -253,7 +253,7 @@ auto mpp::render_tree(
         if (etp && !etp->interpolatedPath.empty())
         {
             // Create the path shape, in relative coords to the parent node:
-            auto obj = mrpt::opengl::CSetOfLines::Create();
+            auto obj = mrpt::viz::CSetOfLines::Create();
             obj->setPose(poseHeight(mrpt::poses::CPose3D(poseParent)));
 
             // Use stored interpolated path to avoid having to update PTG's
@@ -290,19 +290,18 @@ auto mpp::render_tree(
 
             if (ro.showEdgeCosts && obj->getLineWidth() > 0)
             {
-                auto objLb = mrpt::opengl::CText3D::Create();
+                auto objLb = mrpt::viz::CText3D::Create();
 
                 // Place the label by the midpoint of the path:
                 const auto relPose = ip.rbegin()->second;
 
                 objLb->setPose(obj->getPose() + relPose);
                 objLb->setScale(ro.edgeCostLabelSize);
-                objLb->setString(
-                    mrpt::format(
-                        "c=%.02f d=%.02f", etp->cost,
-                        etp->ptgDist != std::numeric_limits<double>::max()
-                            ? etp->ptgDist
-                            : .0));
+                objLb->setString(mrpt::format(
+                    "c=%.02f d=%.02f", etp->cost,
+                    etp->ptgDist != std::numeric_limits<double>::max()
+                        ? etp->ptgDist
+                        : .0));
                 scene.insert(objLb);
             }
 
@@ -325,7 +324,7 @@ auto mpp::render_tree(
     {
         for (const auto& os : pi.obstacles)
         {
-            auto obj = mrpt::opengl::CPointCloud::Create();
+            auto obj = mrpt::viz::CPointCloud::Create();
 
             const auto obs = os->obstacles();
 
@@ -342,8 +341,7 @@ auto mpp::render_tree(
     if (ro.draw_obstacles && ro.local_obs_from_nearest_pose &&
         ro.x_nearest_pose)
     {
-        mrpt::opengl::CPointCloud::Ptr obj =
-            mrpt::opengl::CPointCloud::Create();
+        mrpt::viz::CPointCloud::Ptr obj = mrpt::viz::CPointCloud::Create();
 
         obj->loadFromPointsMap(ro.local_obs_from_nearest_pose.value());
         obj->setPose(*ro.x_nearest_pose);
@@ -375,7 +373,7 @@ auto mpp::render_tree(
     }
     else if (pi.stateGoal.state.isPoint())
     {
-        auto obj = mrpt::opengl::CDisk::Create();
+        auto obj = mrpt::viz::CDisk::Create();
         obj->setDiskRadius(xyzcorners_scale * 1.5, xyzcorners_scale * 1.25);
         obj->setName("GOAL");
         obj->enableShowName();
@@ -383,16 +381,13 @@ auto mpp::render_tree(
         obj->setLocation(mrpt::math::TPoint3D(pi.stateGoal.state.point()));
         scene.insert(obj);
     }
-    else
-    {
-        THROW_EXCEPTION("Unknown type for goal.state");
-    }
+    else { THROW_EXCEPTION("Unknown type for goal.state"); }
 
     // Log msg:
     if (!ro.log_msg.empty())
     {
         auto gl_txt =
-            mrpt::opengl::CText3D::Create(ro.log_msg, "sans", ro.log_msg_scale);
+            mrpt::viz::CText3D::Create(ro.log_msg, "sans", ro.log_msg_scale);
         gl_txt->setLocation(ro.log_msg_position);
         scene.insert(gl_txt);
     }

@@ -11,7 +11,7 @@ selfdriving_add_executable(
     selfdriving-simulator-gui.cpp
     MVSIM_VehicleInterface.h
   LINK_LIBRARIES
-    mrpt::tclap
+    CLI11::CLI11
     mpp::mrpt_path_planning
     mvsim::mvsim-simulator
     mvsim::mvsim-comms

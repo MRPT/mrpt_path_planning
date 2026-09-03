@@ -4,23 +4,22 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-#include <mpp/algos/viz.h>
-
 #include <mpp/algos/render_tree.h>
 #include <mpp/algos/trajectories.h>
+#include <mpp/algos/viz.h>
 #include <mrpt/gui/CDisplayWindow3D.h>
 #include <mrpt/math/TLine3D.h>
 #include <mrpt/math/TObject3D.h>
 #include <mrpt/math/TPlane.h>
 #include <mrpt/math/geometry.h>
-#include <mrpt/opengl/CCylinder.h>
-#include <mrpt/opengl/CGridPlaneXY.h>
-#include <mrpt/opengl/COpenGLScene.h>
-#include <mrpt/opengl/CSetOfLines.h>
-#include <mrpt/opengl/CSetOfObjects.h>
-#include <mrpt/opengl/stock_objects.h>
 #include <mrpt/poses/CPose2DInterpolator.h>
 #include <mrpt/system/CTicTac.h>
+#include <mrpt/viz/CCylinder.h>
+#include <mrpt/viz/CGridPlaneXY.h>
+#include <mrpt/viz/CSetOfLines.h>
+#include <mrpt/viz/CSetOfObjects.h>
+#include <mrpt/viz/Scene.h>
+#include <mrpt/viz/stock_objects.h>
 
 #include <thread>
 
@@ -46,22 +45,19 @@ void updateMouseCoordinatesTextMessage(mrpt::gui::CDisplayWindow3D& win)
     win.sendFunctionToRunOnGUIThread(
         [&win]()
         {
-            int mouseX = 0;
-            int mouseY = 0;
-            if (!win.getLastMousePosition(mouseX, mouseY)) return;
+            const auto mousePos = win.getLastMousePosition();
+            if (!mousePos.has_value()) return;
 
-            mrpt::opengl::COpenGLScene::Ptr scene;
-            mrpt::math::TLine3D             mouseRay;
-            bool                            validRay = false;
+            mrpt::viz::Scene::Ptr              scene;
+            std::optional<mrpt::math::TLine3D> mouseRay;
             {
                 mrpt::gui::CDisplayWindow3DLocker dwl(win, scene);
                 if (auto vp = scene->getViewport("main"); vp)
                 {
-                    vp->get3DRayForPixelCoord(mouseX, mouseY, mouseRay);
-                    validRay = true;
+                    mouseRay = vp->get3DRayForPixelCoord(*mousePos);
                 }
             }
-            if (!validRay) return;
+            if (!mouseRay.has_value()) return;
 
             // Intersection of the mouse ray with the ground plane Z=0:
             using mrpt::math::TPoint3D;
@@ -69,7 +65,7 @@ void updateMouseCoordinatesTextMessage(mrpt::gui::CDisplayWindow3D& win)
                 TPoint3D(0, 0, 0), TPoint3D(1, 0, 0), TPoint3D(0, 1, 0));
 
             mrpt::math::TObject3D inters;
-            mrpt::math::intersect(mouseRay, groundPlane, inters);
+            mrpt::math::intersect(*mouseRay, groundPlane, inters);
 
             mrpt::math::TPoint3D pt;
             if (!inters.getPoint(pt)) return;
@@ -103,14 +99,11 @@ void mpp::viz_nav_plan(
         {
             nonmodal_win = mrpt::gui::CDisplayWindow3D::Create(title, 800, 600);
         }
-        else
-        {
-            nonmodal_win->setWindowTitle(title);
-        }
+        else { nonmodal_win->setWindowTitle(title); }
         win = nonmodal_win;
     }
 
-    mrpt::opengl::COpenGLScene::Ptr scene;
+    mrpt::viz::Scene::Ptr scene;
 
     // Build opengl scene (replacing any previous contents, if this window is
     // being reused across calls):
@@ -132,7 +125,7 @@ void mpp::viz_nav_plan(
     // Camera:
     win->setCameraAzimuthDeg(-90);
     win->setCameraElevationDeg(90);
-    win->setCameraProjective(false);
+    win->setProjectiveModel(false);
 
     // Look at path start:
     const auto& start = plan.originalInput.stateStart.pose;
@@ -182,17 +175,17 @@ void mpp::viz_nav_plan_animation(
     // Create UI:
     auto win = mrpt::gui::CDisplayWindow3D::Create("Path plan viz", 800, 600);
 
-    mrpt::opengl::COpenGLScene::Ptr scene;
+    mrpt::viz::Scene::Ptr scene;
 
-    auto glVehFrame = mrpt::opengl::CSetOfObjects::Create();
-    auto glVeh      = mrpt::opengl::CSetOfObjects::Create();
+    auto glVehFrame = mrpt::viz::CSetOfObjects::Create();
+    auto glVeh      = mrpt::viz::CSetOfObjects::Create();
 
-    auto glRobotShape = mrpt::opengl::CSetOfLines::Create();
+    auto glRobotShape = mrpt::viz::CSetOfLines::Create();
     plan.originalInput.ptgs.ptgs.front()->add_robotShape_to_setOfLines(
         *glRobotShape);
     glRobotShape->setColor_u8(0xff, 0x00, 0x00, 0xff);  // RGB+A
     glVeh->insert(glRobotShape);
-    auto glVehCorner = mrpt::opengl::stock_objects::CornerXYZ(0.3);
+    auto glVehCorner = mrpt::viz::stock_objects::CornerXYZ(0.3);
     glVeh->insert(glVehCorner);
 
     glVehFrame->insert(glVeh);
@@ -215,7 +208,7 @@ void mpp::viz_nav_plan_animation(
     // Camera:
     win->setCameraAzimuthDeg(-90);
     win->setCameraElevationDeg(90);
-    win->setCameraProjective(false);
+    win->setProjectiveModel(false);
     // Look at path start:
     const auto& start = plan.originalInput.stateStart.pose;
     win->setCameraPointingToPoint(start.x, start.y, .0f);

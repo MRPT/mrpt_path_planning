@@ -11,6 +11,9 @@
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/serialization/CArchive.h>
 
+#include <optional>
+#include <utility>
+
 using namespace mrpt;
 using namespace mrpt::nav;
 using namespace mrpt::system;
@@ -85,11 +88,12 @@ bool DiffDrive_C::PTG_IsIntoDomain(
     return true;
 }
 
-bool DiffDrive_C::inverseMap_WS2TP(
-    double x, double y, int& k_out, double& d_out,
-    [[maybe_unused]] double tolerance_dist) const
+std::optional<std::pair<int, double>> DiffDrive_C::inverseMap_WS2TP(
+    double x, double y, [[maybe_unused]] double tolerance_dist) const
 {
-    bool is_exact = true;
+    int    k_out;
+    double d_out;
+    bool   is_exact = true;
     if (y != 0)
     {
         double       R    = (x * x + y * y) / (2 * y);
@@ -99,20 +103,16 @@ bool DiffDrive_C::inverseMap_WS2TP(
 
         if (K > 0)
         {
-            if (y > 0)
-                theta = atan2((double)x, fabs(R) - y);
-            else
-                theta = atan2((double)x, y + fabs(R));
+            if (y > 0) { theta = atan2((double)x, fabs(R) - y); }
+            else { theta = atan2((double)x, y + fabs(R)); }
         }
         else
         {
-            if (y > 0)
-                theta = atan2(-(double)x, fabs(R) - y);
-            else
-                theta = atan2(-(double)x, y + fabs(R));
+            if (y > 0) { theta = atan2(-(double)x, fabs(R) - y); }
+            else { theta = atan2(-(double)x, y + fabs(R)); }
         }
 
-        // Arc length must be possitive [0,2*pi]
+        // Arc length must be positive [0,2*pi]
         mrpt::math::wrapTo2PiInPlace(theta);
 
         // Distance thru arc:
@@ -150,7 +150,8 @@ bool DiffDrive_C::inverseMap_WS2TP(
     ASSERT_GE_(k_out, 0);
     ASSERT_LT_(k_out, m_alphaValuesCount);
 
-    return is_exact;
+    if (!is_exact) { return std::nullopt; }
+    return std::make_pair(k_out, d_out);
 }
 
 void DiffDrive_C::loadDefaultParams()
