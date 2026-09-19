@@ -512,13 +512,14 @@ size_t HolonomicBlend::getPathStepCount(uint16_t k) const
     if (m_pathStepCountCache.size() > k && m_pathStepCountCache[k] > 0)
         return m_pathStepCountCache[k];
 
-    uint32_t step;
-    if (!getPathStepForDist(k, this->refDistance, step))
+    const auto stepOpt = getPathStepForDist(k, this->refDistance);
+    if (!stepOpt)
     {
         THROW_EXCEPTION_FMT(
             "Could not solve closed-form distance for k=%u",
             static_cast<unsigned>(k));
     }
+    const uint32_t step = *stepOpt;
     ASSERT_(step > 0);
     if (m_pathStepCountCache.size() != m_alphaValuesCount)
     {
@@ -618,8 +619,8 @@ double HolonomicBlend::internal_getPathDist(
     }
 }
 
-bool HolonomicBlend::getPathStepForDist(
-    uint16_t k, double dist, uint32_t& out_step) const
+std::optional<uint32_t> HolonomicBlend::getPathStepForDist(
+    uint16_t k, double dist) const
 {
     PERFORMANCE_BENCHMARK;
 
@@ -705,11 +706,9 @@ bool HolonomicBlend::getPathStepForDist(
     }
     if (t_solved >= 0)
     {
-        out_step = mrpt::round(t_solved / PATH_TIME_STEP);
-        return true;
+        return static_cast<uint32_t>(mrpt::round(t_solved / PATH_TIME_STEP));
     }
-    else
-        return false;
+    return std::nullopt;
 }
 
 void HolonomicBlend::updateTPObstacleSingle(

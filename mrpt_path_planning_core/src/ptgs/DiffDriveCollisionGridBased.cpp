@@ -561,40 +561,8 @@ std::optional<std::pair<int, double>>
         return std::nullopt;
     }
 
-    // If not found, compute an extrapolation:
-
-    // ------------------------------------------------------------------------------------
-    // Given a point (x,y), compute the "k_closest" whose extrapolation
-    //  is closest to the point, and the associated "d_closest" distance,
-    //  which can be normalized by "1/refDistance" to get TP-Space distances.
-    // ------------------------------------------------------------------------------------
-    selected_dist = std::numeric_limits<float>::max();
-    for (uint16_t k = 0; k < m_alphaValuesCount; k++)
-    {
-        const int   n            = int(m_trajectory[k].size()) - 1;
-        const float dist_a_punto = square(m_trajectory[k][n].dist) +
-                                   square(m_trajectory[k][n].x - x) +
-                                   square(m_trajectory[k][n].y - y);
-
-        if (dist_a_punto < selected_dist)
-        {
-            selected_dist = dist_a_punto;
-            selected_k    = k;
-            selected_d    = dist_a_punto;
-        }
-    }
-
-    selected_d = std::sqrt(selected_d);
-
-    // If the target dist. > refDistance, it's normal that we had to
-    // extrapolate. Otherwise, the target may not be reachable by this set of
-    // paths:
-    const float target_dist = std::sqrt(x * x + y * y);
-    if (target_dist > refDistance)
-    {
-        return std::make_pair(
-            selected_k, static_cast<double>(selected_d / refDistance));
-    }
+    // Not found within the simulated paths: report as not reachable by this
+    // set of trajectories.
     return std::nullopt;
 }
 
@@ -796,8 +764,8 @@ double DiffDriveCollisionGridBased::getPathDist(uint16_t k, uint32_t step) const
     return m_trajectory[k][step].dist;
 }
 
-bool DiffDriveCollisionGridBased::getPathStepForDist(
-    uint16_t k, double dist, uint32_t& out_step) const
+std::optional<uint32_t> DiffDriveCollisionGridBased::getPathStepForDist(
+    uint16_t k, double dist) const
 {
     ASSERT_(k < m_trajectory.size());
     const size_t numPoints = m_trajectory[k].size();
@@ -808,13 +776,11 @@ bool DiffDriveCollisionGridBased::getPathStepForDist(
     {
         if (m_trajectory[k][n + 1].dist >= dist)
         {
-            out_step = n;
-            return true;
+            return static_cast<uint32_t>(n);
         }
     }
 
-    out_step = numPoints - 1;
-    return false;
+    return std::nullopt;
 }
 
 void DiffDriveCollisionGridBased::updateTPObstacle(

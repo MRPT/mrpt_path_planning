@@ -2,6 +2,21 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+2.0.0 (unreleased)
+-------------------
+* Port to MRPT 3.x. Breaking changes for downstream users:
+
+  * Visualization types moved from ``mrpt::opengl`` to ``mrpt::viz``
+    (``CSetOfObjects``, ``CSetOfLines``, etc.), affecting the public
+    signatures of ``render_tree()``, ``render_vehicle()``, and related
+    ``CostEvaluator`` APIs.
+  * ``DiffDriveCollisionGridBased::inverseMap_WS2TP()`` and
+    ``HolonomicBlend::inverseMap_WS2TP()`` now return
+    ``std::optional<std::pair<int, double>>`` instead of taking
+    ``int& out_k, double& out_d`` output references and returning ``bool``.
+    A missing mapping is now ``std::nullopt``.
+* Contributors: Jose Luis Blanco-Claraco
+
 1.0.1 (2026-07-04)
 ------------------
 * feat: bidirectional TP-Space A* solver (TPS_Astar_Bidir) (`#32 <https://github.com/MRPT/mrpt_path_planning/issues/32>`_)
