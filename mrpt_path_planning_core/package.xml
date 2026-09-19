@@ -16,11 +16,10 @@
   <license>BSD</license>
 
   <!-- Deps required by user code (they are in public headers or built as ROS (vs system) packages -->
-  <depend>mrpt_libmaps</depend>
-  <depend>mrpt_libnav</depend>
-  <depend>mrpt_libgraphs</depend>
-  <depend>mrpt_libcontainers</depend>
-  <depend>mrpt_libtclap</depend>
+  <depend>mrpt_maps</depend>
+  <depend>mrpt_nav</depend>
+  <depend>mrpt_graphs</depend>
+  <depend>mrpt_containers</depend>
 
   <test_depend>libgtest-dev</test_depend>
 

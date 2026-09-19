@@ -19,6 +19,8 @@
 #include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
 
 #include <mutex>
+#include <optional>
+#include <utility>
 
 namespace mpp::ptg
 {
@@ -53,9 +55,8 @@ class HolonomicBlend : public SpeedTrimmablePTG,
     double maxTimeInVelCmdNOP(int path_k) const override;
 
     std::string getDescription() const override;
-    bool        inverseMap_WS2TP(
-               double x, double y, int& out_k, double& out_d,
-               double tolerance_dist = 0.10) const override;
+    [[nodiscard]] std::optional<std::pair<int, double>> inverseMap_WS2TP(
+        double x, double y, double tolerance_dist = 0.10) const override;
     bool PTG_IsIntoDomain(double x, double y) const override;
     void onNewNavDynamicState() override;
 
@@ -74,8 +75,8 @@ class HolonomicBlend : public SpeedTrimmablePTG,
     size_t              getPathStepCount(uint16_t k) const override;
     mrpt::math::TPose2D getPathPose(uint16_t k, uint32_t step) const override;
     double              getPathDist(uint16_t k, uint32_t step) const override;
-    bool                getPathStepForDist(
-                       uint16_t k, double dist, uint32_t& out_step) const override;
+    std::optional<uint32_t> getPathStepForDist(
+        uint16_t k, double dist) const override;
     double getPathStepDuration() const override;
     double getMaxLinVel() const override { return V_MAX; }
     double getMaxAngVel() const override { return W_MAX; }

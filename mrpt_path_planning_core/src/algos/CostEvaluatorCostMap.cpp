@@ -8,7 +8,7 @@
 #include <mpp/data/robot_shape_sampling.h>
 #include <mrpt/img/color_maps.h>
 #include <mrpt/maps/COccupancyGridMap2D.h>
-#include <mrpt/opengl/CTexturedPlane.h>
+#include <mrpt/viz/CTexturedPlane.h>
 
 #include <algorithm>
 #include <cmath>
@@ -204,14 +204,14 @@ double CostEvaluatorCostMap::eval_single_pose(
     return maxCost;
 }
 
-mrpt::opengl::CSetOfObjects::Ptr CostEvaluatorCostMap::get_visualization() const
+mrpt::viz::CSetOfObjects::Ptr CostEvaluatorCostMap::get_visualization() const
 {
     const uint8_t COST_TRANSPARENCY_ALPHA = 0x80;
     const double  MIN_COST_TO_TRANSPARENT = 0.02;
 
-    auto glObjs = mrpt::opengl::CSetOfObjects::Create();
+    auto glObjs = mrpt::viz::CSetOfObjects::Create();
     glObjs->setName("CostEvaluatorCostMap");
-    auto glPlane = mrpt::opengl::CTexturedPlane::Create();
+    auto glPlane = mrpt::viz::CTexturedPlane::Create();
     glObjs->insert(glPlane);
 
     glPlane->setPlaneCorners(
@@ -224,9 +224,13 @@ mrpt::opengl::CSetOfObjects::Ptr CostEvaluatorCostMap::get_visualization() const
     mrpt::img::CImage gridALPHA(nCols, nRows, mrpt::img::CH_GRAY);
 
     gridRGB.filledRectangle(
-        0, 0, nCols - 1, nRows - 1, mrpt::img::TColor::black());
+        mrpt::img::TPixelCoord(0, 0),
+        mrpt::img::TPixelCoord(nCols - 1, nRows - 1),
+        mrpt::img::TColor::black());
     gridALPHA.filledRectangle(
-        0, 0, nCols - 1, nRows - 1, mrpt::img::TColor::black());
+        mrpt::img::TPixelCoord(0, 0),
+        mrpt::img::TPixelCoord(nCols - 1, nRows - 1),
+        mrpt::img::TColor::black());
 
     for (size_t icy = 0; icy < nRows; icy++)
     {
@@ -235,18 +239,21 @@ mrpt::opengl::CSetOfObjects::Ptr CostEvaluatorCostMap::get_visualization() const
             const double* c = costmap_.cellByIndex(icx, icy);
             if (!c) continue;
             const double val = *c;
+            const auto   col = static_cast<int32_t>(icx);
+            const auto   row = static_cast<int32_t>(icy);
             if (val < MIN_COST_TO_TRANSPARENT)
             {
-                *gridALPHA(icx, icy) = 0x00;  // 100% transparent
+                gridALPHA.at<uint8_t>(col, row) = 0x00;  // 100% transparent
             }
             else
             {
-                *gridALPHA(icx, icy) = COST_TRANSPARENCY_ALPHA;
+                gridALPHA.at<uint8_t>(col, row) = COST_TRANSPARENCY_ALPHA;
 
-                const mrpt::img::TColor cellColor = mrpt::img::colormap(
-                    mrpt::img::cmJET, val / params_.maxCost);
+                const mrpt::img::TColor cellColor =
+                    mrpt::img::colormap(mrpt::img::cmJET, val / params_.maxCost)
+                        .asTColor();
 
-                uint8_t* bgr = gridRGB(icx, icy);
+                uint8_t* bgr = gridRGB.ptr<uint8_t>(col, row);
                 bgr[0]       = cellColor.B;
                 bgr[1]       = cellColor.G;
                 bgr[2]       = cellColor.R;

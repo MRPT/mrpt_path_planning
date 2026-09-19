@@ -11,9 +11,9 @@ selfdriving_add_library(
 		include/mpp/algos/viz.h
 		src/algos/viz.cpp
 	PUBLIC_LINK_LIBRARIES
-		mrpt::gui
+		mrpt::mrpt_gui
 		mpp::mrpt_path_planning
 	CMAKE_DEPENDENCIES
-		mrpt-gui
+		mrpt_gui
 		mrpt_path_planning
 )

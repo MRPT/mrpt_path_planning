@@ -12,7 +12,6 @@
 #include <mpp/algos/viz.h>
 #include <mpp/algos/viz_svg.h>
 #include <mpp/data/Waypoints.h>
-#include <mrpt/3rdparty/tclap/CmdLine.h>
 #include <mrpt/config/CConfigFile.h>
 #include <mrpt/core/exceptions.h>  // exception_to_str()
 #include <mrpt/io/CFileGZInputStream.h>
@@ -25,156 +24,55 @@
 #include <mrpt/system/os.h>  // plugins
 #include <mrpt/version.h>
 
+#include <CLI/CLI.hpp>
 #include <fstream>
 #include <iostream>
 
-TCLAP::CmdLine cmd("path-planner-cli");
-
-TCLAP::ValueArg<std::string> arg_obs_file(
-    "o", "obstacles",
-    "Input obstacles: either (1) a .txt file with obstacle points (one 'x y' "
-    "pair per line), or (2) a .gridmap file, or (3) a ROS MAP YAML file, or a "
-    "(4) png file with an gray-scale occupancy grid (*.png, *.bmp)",
-    true, "", "obs.txt", cmd);
-
-TCLAP::ValueArg<std::string> argPlanner(
-    "p", "planner", "Planner C++ class name to use", false, "mpp::TPS_Astar",
-    "mpp::TPS_Astar", cmd);
-
-TCLAP::ValueArg<std::string> argVerbosity(
-    "v", "verbose", "Verbosity level for path planner", false, "INFO",
-    "ERROR|WARN|INFO|DEBUG", cmd);
-
-TCLAP::ValueArg<float> argObstaclesGridResolution(
-    "", "obstacles-gridimage-resolution",
-    "Only if --obstacles points to an image file, this sets the length of each "
-    "pixel in meters.",
-    false, 0.05, "0.05", cmd);
-
-TCLAP::ValueArg<float> arg_interpolation_period(
-    "", "interpolarion-period",
-    "Interpolation (and animation) time step between keyframes [s].", false,
-    0.25, "0.25", cmd);
-
-TCLAP::ValueArg<std::string> arg_ptgs_file(
-    "c", "ptg-config", "Input .ini file with PTG definitions.", true, "",
-    "ptgs.ini", cmd);
-
-TCLAP::ValueArg<std::string> argPlanner_yaml_file(
-    "", "planner-parameters", "Input .yaml file with planner parameters", false,
-    "", "tps-astar.yaml", cmd);
-
-TCLAP::ValueArg<std::string> argPlanner_yaml_output_file(
-    "", "write-planner-parameters",
-    "If defined, it will save default planner params to a .yaml file and exit.",
-    false, "", "tps-astar.yaml", cmd);
-
-TCLAP::ValueArg<std::string> arg_config_file_section(
-    "", "config-section",
-    "If loading from an INI file, the name of the section to load", false,
-    "SelfDriving", "SelfDriving", cmd);
-
-TCLAP::ValueArg<std::string> arg_start_pose(
-    "s", "start-pose", "Start 2D pose", true, "", "\"[x y phi_deg]\"", cmd);
-
-TCLAP::ValueArg<std::string> arg_start_vel(
-    "", "start-vel", "Start 2D velocity", false, "[0 0 0]",
-    "\"[vx vy omega_deg]\"", cmd);
-
-TCLAP::ValueArg<std::string> arg_goal_pose(
-    "g", "goal-pose", "Goal 2D pose or point", true, "[0 0 0]",
-    "\"[x y phi_deg]\" or \"[x y]\"", cmd);
-
-TCLAP::ValueArg<double> argBBoxMargin(
-    "", "bbox-margin", "Margin to add to the start-goal bbox poses", false, 2.0,
-    "A distance [meters]", cmd);
-
-TCLAP::ValueArg<std::string> arg_goal_vel(
-    "", "goal-vel", "Goal 2D velocity", false, "", "\"[vx vy omega_deg]\"",
-    cmd);
-
-TCLAP::ValueArg<unsigned int> argRandomSeed(
-    "", "random-seed", "Pseudorandom generator seed (default: from time)",
-    false, 0, "0", cmd);
-
-TCLAP::ValueArg<std::string> arg_plugins(
-    "", "plugins",
-    "Optional plug-in libraries to load, for externally-defined PTGs", false,
-    "", "mylib.so", cmd);
-
-TCLAP::ValueArg<std::string> arg_costMap(
-    "", "costmap-obstacles",
-    "Creates a costmap from obstacle point clouds with the given parameters "
-    "from a YAML file.",
-    false, "costmap.yaml", "costmap.yaml", cmd);
-
-TCLAP::ValueArg<std::string> arg_waypoints(
-    "", "waypoints",
-    "This creates a preferred-waypoints costlayer, from the waypoint list in a "
-    "given YAML file.",
-    false, "waypoints.yaml", "waypoints.yaml", cmd);
-
-TCLAP::ValueArg<std::string> arg_waypointsParams(
-    "", "waypoints-parameters",
-    "If --waypoints is also set, this loads the preferred waypoints costlayer "
-    "parameters from a YAML file.",
-    false, "waypoints-parameters.yaml", "waypoints-parameters.yaml", cmd);
-
-TCLAP::SwitchArg arg_showTree(
-    "", "show-tree",
-    "Shows the whole search tree instead of just the best path", cmd);
-
-TCLAP::SwitchArg arg_ignoreObstaclesBbox(
-    "", "ignore-obstacles-bbox",
-    "Ignore obstacles for estimating the problem world bounding box", cmd);
-
-TCLAP::SwitchArg arg_noRefine(
-    "", "no-refine", "Skips the post-plan refine stage", cmd);
-
-TCLAP::SwitchArg arg_showEdgeWeights(
-    "", "show-edge-weights", "Shows the weight of path edges", cmd);
-
-TCLAP::SwitchArg arg_printPathEdges(
-    "", "print-path-edges", "Prints details on the found planned path edges",
-    cmd);
-
-TCLAP::ValueArg<std::string> arg_InterpolatePath(
-    "", "save-interpolated-path",
-    "Interpolates the path and saves it into a .csv file", false, "path.csv",
-    "path.csv", cmd);
-
-TCLAP::ValueArg<std::string> arg_save_svg(
-    "", "save-svg",
-    "Saves a 2D SVG plot of the plan (obstacles, tree, path, robot shapes) for "
-    "debugging / paper figures",
-    false, "", "plan.svg", cmd);
-
-TCLAP::SwitchArg arg_playAnimation(
-    "", "play-animation",
-    "Shows the GUI with an animation of the vehicle moving along the path",
-    cmd);
-
-TCLAP::SwitchArg arg_noGui(
-    "", "no-gui",
-    "Do not open any GUI window (for headless/batch use, e.g. mass figure "
-    "export). The process exits without waiting for a window to be closed.",
-    cmd);
-
-TCLAP::ValueArg<size_t> arg_svg_tree_decimation(
-    "", "svg-tree-decimation",
-    "When exporting SVG, draw only one motion-tree edge out of every N. Use a "
-    "larger value to thin out very dense (e.g. failed-query) trees.",
-    false, 1, "1", cmd);
-
-TCLAP::SwitchArg arg_svg_no_tree(
-    "", "svg-no-tree", "When exporting SVG, omit the motion tree entirely.",
-    cmd);
+// CLI globals (populated in main before helper functions are called):
+static std::string  arg_obs_file;
+static std::string  argPlanner{"mpp::TPS_Astar"};
+static std::string  argVerbosity{"INFO"};
+static float        argObstaclesGridResolution{0.05f};
+static float        arg_interpolation_period{0.25f};
+static std::string  arg_ptgs_file;
+static std::string  argPlanner_yaml_file;
+static std::string  argPlanner_yaml_output_file;
+static std::string  arg_config_file_section{"SelfDriving"};
+static std::string  arg_start_pose;
+static std::string  arg_start_vel{"[0 0 0]"};
+static bool         arg_start_vel_set{false};
+static std::string  arg_goal_pose{"[0 0 0]"};
+static double       argBBoxMargin{2.0};
+static std::string  arg_goal_vel;
+static bool         arg_goal_vel_set{false};
+static unsigned int argRandomSeed{0};
+static bool         argRandomSeed_set{false};
+static std::string  arg_plugins;
+static std::string  arg_costMap;
+static bool         arg_costMap_set{false};
+static std::string  arg_waypoints;
+static bool         arg_waypoints_set{false};
+static std::string  arg_waypointsParams;
+static bool         arg_waypointsParams_set{false};
+static bool         arg_showTree{false};
+static bool         arg_ignoreObstaclesBbox{false};
+static bool         arg_noRefine{false};
+static bool         arg_showEdgeWeights{false};
+static bool         arg_printPathEdges{false};
+static std::string  arg_InterpolatePath;
+static bool         arg_InterpolatePath_set{false};
+static std::string  arg_save_svg;
+static bool         arg_save_svg_set{false};
+static bool         arg_playAnimation{false};
+static bool         arg_noGui{false};
+static size_t       arg_svg_tree_decimation{1};
+static bool         arg_svg_no_tree{false};
 
 static mrpt::maps::CPointsMap::Ptr load_obstacles()
 {
     auto obsPts = mrpt::maps::CSimplePointsMap::Create();
 
-    const auto sFile = arg_obs_file.getValue();
+    const auto& sFile = arg_obs_file;
     ASSERT_FILE_EXISTS_(sFile);
 
     const auto sExt =
@@ -184,9 +82,11 @@ static mrpt::maps::CPointsMap::Ptr load_obstacles()
         mrpt::system::strCmpI(sExt, "pts"))
     {
         if (!obsPts->load2D_from_text_file(sFile))
+        {
             THROW_EXCEPTION_FMT(
                 "Cannot read obstacle point cloud from: `%s`",
-                arg_obs_file.getValue().c_str());
+                arg_obs_file.c_str());
+        }
     }
     else if (mrpt::system::strCmpI(sExt, "yaml"))
     {
@@ -213,7 +113,7 @@ static mrpt::maps::CPointsMap::Ptr load_obstacles()
         mrpt::system::strCmpI(sExt, "bmp"))
     {
         mrpt::maps::COccupancyGridMap2D grid;
-        grid.loadFromBitmapFile(sFile, argObstaclesGridResolution.getValue());
+        grid.loadFromBitmapFile(sFile, argObstaclesGridResolution);
         grid.getAsPointCloud(*obsPts);
     }
 
@@ -229,22 +129,17 @@ static void do_plan_path()
     // Prepare planner input data:
     mpp::PlannerInput pi;
 
-    pi.stateStart.pose.fromString(arg_start_pose.getValue());
-    if (arg_start_vel.isSet())
-        pi.stateStart.vel.fromString(arg_start_vel.getValue());
+    pi.stateStart.pose.fromString(arg_start_pose);
+    if (arg_start_vel_set) { pi.stateStart.vel.fromString(arg_start_vel); }
 
-    pi.stateGoal.state = mpp::PoseOrPoint::FromString(arg_goal_pose.getValue());
-    if (arg_goal_vel.isSet())
-        pi.stateGoal.vel.fromString(arg_goal_vel.getValue());
+    pi.stateGoal.state = mpp::PoseOrPoint::FromString(arg_goal_pose);
+    if (arg_goal_vel_set) { pi.stateGoal.vel.fromString(arg_goal_vel); }
 
     pi.obstacles.emplace_back(obs);
 
     mrpt::math::TBoundingBoxf bbox;
 
-    if (!arg_ignoreObstaclesBbox.isSet())
-    {
-        bbox = obs->obstacles()->boundingBox();
-    }
+    if (!arg_ignoreObstaclesBbox) { bbox = obs->obstacles()->boundingBox(); }
     else
     {
         // This will ensure the next updateWithPoint() will set the bbox:
@@ -253,8 +148,8 @@ static void do_plan_path()
 
     // Make sure goal and start are within bbox:
     {
-        const auto bboxMargin = mrpt::math::TPoint3Df(
-            argBBoxMargin.getValue(), argBBoxMargin.getValue(), .0);
+        const auto bboxMargin =
+            mrpt::math::TPoint3Df(argBBoxMargin, argBBoxMargin, .0);
         const auto ptStart = mrpt::math::TPoint3Df(
             pi.stateStart.pose.x, pi.stateStart.pose.y, 0);
         const auto ptGoal = mrpt::math::TPoint3Df(
@@ -275,16 +170,16 @@ static void do_plan_path()
     std::cout << "World bbox : " << pi.worldBboxMin.asString() << " - "
               << pi.worldBboxMax.asString() << "\n";
 
-    // Do the path planning :
+    // Do the path planning:
     mpp::Planner::Ptr planner = std::dynamic_pointer_cast<mpp::Planner>(
-        mrpt::rtti::classFactory(argPlanner.getValue()));
+        mrpt::rtti::classFactory(argPlanner));
 
     if (!planner)
     {
         THROW_EXCEPTION_FMT(
             "Given classname '%s' does not seem to be a known C++ class "
             "implementing `Planner",
-            argPlanner.getValue().c_str());
+            argPlanner.c_str());
     }
 
     // Enable time profiler:
@@ -294,17 +189,17 @@ static void do_plan_path()
     // available to make the costmap footprint-aware):
     std::cout << "[PTGs] Initializing PTGs..." << std::endl;
 
-    mrpt::config::CConfigFile cfg(arg_ptgs_file.getValue());
-    pi.ptgs.initFromConfigFile(cfg, arg_config_file_section.getValue());
+    mrpt::config::CConfigFile cfg(arg_ptgs_file);
+    pi.ptgs.initFromConfigFile(cfg, arg_config_file_section);
 
     std::cout << "[PTGs] Done." << std::endl;
 
-    if (arg_costMap.isSet())
+    if (arg_costMap_set)
     {
         // cost map:
         const auto costMapParams =
             mpp::CostEvaluatorCostMap::Parameters::FromYAML(
-                mrpt::containers::yaml::FromFile(arg_costMap.getValue()));
+                mrpt::containers::yaml::FromFile(arg_costMap));
 
         auto costmap = mpp::CostEvaluatorCostMap::FromStaticPointObstacles(
             *obsPts, costMapParams, pi.stateStart.pose, pi.ptgs.robotShape);
@@ -314,19 +209,19 @@ static void do_plan_path()
 
     // Preferred waypoints:
     auto wpParams = mpp::CostEvaluatorPreferredWaypoint::Parameters();
-    if (arg_waypointsParams.isSet())
+    if (arg_waypointsParams_set)
     {
         wpParams = mpp::CostEvaluatorPreferredWaypoint::Parameters::FromYAML(
-            mrpt::containers::yaml::FromFile(arg_waypointsParams.getValue()));
+            mrpt::containers::yaml::FromFile(arg_waypointsParams));
     }
 
-    if (arg_waypoints.isSet())
+    if (arg_waypoints_set)
     {
         const auto wps = mpp::WaypointSequence::FromYAML(
-            mrpt::containers::yaml::FromFile(arg_waypoints.getValue()));
+            mrpt::containers::yaml::FromFile(arg_waypoints));
 
         std::vector<mrpt::math::TPoint2D> lstPts;
-        for (const auto& wp : wps.waypoints) lstPts.emplace_back(wp.target);
+        for (const auto& wp : wps.waypoints) { lstPts.emplace_back(wp.target); }
 
         auto costEval     = mpp::CostEvaluatorPreferredWaypoint::Create();
         costEval->params_ = wpParams;
@@ -337,12 +232,12 @@ static void do_plan_path()
     // verbosity level:
     planner->setMinLoggingLevel(
         mrpt::typemeta::TEnumType<mrpt::system::VerbosityLevel>::name2value(
-            argVerbosity.getValue()));
+            argVerbosity));
 
     // Set planner required params:
-    if (argPlanner_yaml_file.isSet())
+    if (!argPlanner_yaml_file.empty())
     {
-        const auto sFile = argPlanner_yaml_file.getValue();
+        const auto& sFile = argPlanner_yaml_file;
         ASSERT_FILE_EXISTS_(sFile);
         const auto c = mrpt::containers::yaml::FromFile(sFile);
         planner->params_from_yaml(c);
@@ -370,16 +265,16 @@ static void do_plan_path()
               << " overall edges, " << plan.motionTree.nodes().size()
               << " nodes\n";
 
-    if (arg_save_svg.isSet())
+    if (arg_save_svg_set)
     {
         mpp::SvgExportOptions svgOpts;
-        svgOpts.draw_tree      = !arg_svg_no_tree.isSet();
-        svgOpts.tree_decimation = arg_svg_tree_decimation.getValue();
-        if (mpp::save_plan_to_svg(plan, arg_save_svg.getValue(), svgOpts))
-            std::cout << "Saved SVG plot: " << arg_save_svg.getValue() << "\n";
-        else
-            std::cerr << "Could not write SVG: " << arg_save_svg.getValue()
-                      << "\n";
+        svgOpts.draw_tree       = !arg_svg_no_tree;
+        svgOpts.tree_decimation = arg_svg_tree_decimation;
+        if (mpp::save_plan_to_svg(plan, arg_save_svg, svgOpts))
+        {
+            std::cout << "Saved SVG plot: " << arg_save_svg << "\n";
+        }
+        else { std::cerr << "Could not write SVG: " << arg_save_svg << "\n"; }
     }
 
     if (!plan.bestNodeId.has_value())
@@ -392,7 +287,7 @@ static void do_plan_path()
     auto [plannedPath, pathEdges] =
         plan.motionTree.backtrack_path(*plan.bestNodeId);
 
-    if (!arg_noRefine.isSet())
+    if (!arg_noRefine)
     {
         // refine:
         mpp::refine_trajectory(plannedPath, pathEdges, pi.ptgs);
@@ -404,28 +299,31 @@ static void do_plan_path()
     vizOpts.renderOptions.highlight_path_to_node_id = plan.bestNodeId;
     vizOpts.renderOptions.color_normal_edge         = {0xb0b0b0, 0x20};  // RGBA
 
-    vizOpts.renderOptions.showEdgeCosts = arg_showEdgeWeights.isSet();
+    vizOpts.renderOptions.showEdgeCosts = arg_showEdgeWeights;
 
     // Hide regular tree edges and only show best path?
-    if (!arg_showTree.isSet()) vizOpts.renderOptions.width_normal_edge = 0;
+    if (!arg_showTree) { vizOpts.renderOptions.width_normal_edge = 0; }
 
     std::optional<mpp::trajectory_t> traj;  // interpolated path
 
     if (plan.success)
     {
         // generate path sequence:
-        if (arg_printPathEdges.isSet())
+        if (arg_printPathEdges)
         {
             std::cout << "Planned path edges:\n";
-            for (const auto& edge : pathEdges) std::cout << edge->asString();
+            for (const auto& edge : pathEdges)
+            {
+                std::cout << edge->asString();
+            }
         }
 
         // interpolate path:
-        if (arg_InterpolatePath.isSet() || arg_playAnimation.isSet())
+        if (arg_InterpolatePath_set || arg_playAnimation)
         {
             const auto t0 = mrpt::Clock::nowDouble();
 
-            const double interpPeriod = arg_interpolation_period.getValue();
+            const double interpPeriod = arg_interpolation_period;
 
             traj = mpp::plan_to_trajectory(pathEdges, pi.ptgs, interpPeriod);
 
@@ -435,25 +333,27 @@ static void do_plan_path()
             // frame:
             const auto& startPose = plan.originalInput.stateStart.pose;
             for (auto& kv : *traj)
+            {
                 kv.second.state.pose = startPose + kv.second.state.pose;
+            }
 
             const auto dt = mrpt::Clock::nowDouble() - t0;
 
             std::cout << "Interpolated path done in "
                       << mrpt::system::intervalFormat(dt) << ".\n";
 
-            if (arg_InterpolatePath.isSet())
+            if (arg_InterpolatePath_set)
             {
-                std::cout << "Saving path to " << arg_InterpolatePath.getValue()
+                std::cout << "Saving path to " << arg_InterpolatePath
                           << std::endl;
-                mpp::save_to_txt(*traj, arg_InterpolatePath.getValue());
+                mpp::save_to_txt(*traj, arg_InterpolatePath);
             }
         }
     }
 
     // GUI (skipped entirely in headless/batch mode):
-    if (arg_noGui.isSet()) return;
-    if (!arg_playAnimation.isSet() || !traj.has_value())
+    if (arg_noGui) return;
+    if (!arg_playAnimation || !traj.has_value())
     {
         // regular UI:
         mpp::viz_nav_plan(plan, vizOpts, planner->costEvaluators_);
@@ -470,37 +370,150 @@ int main(int argc, char** argv)
 {
     try
     {
-        bool cmdsOk = cmd.parse(argc, argv);
+        CLI::App app{"path-planner-cli"};
 
-        if (argPlanner_yaml_output_file.isSet())
+        app.add_option(
+               "-o,--obstacles", arg_obs_file,
+               "Input obstacles: either (1) a .txt file with obstacle points "
+               "(one 'x y' "
+               "pair per line), or (2) a .gridmap file, or (3) a ROS MAP YAML "
+               "file, or a "
+               "(4) png file with an gray-scale occupancy grid (*.png, *.bmp)")
+            ->required();
+        app.add_option(
+            "-p,--planner", argPlanner, "Planner C++ class name to use.");
+        app.add_option(
+            "-v,--verbose", argVerbosity, "Verbosity level for path planner.");
+        app.add_option(
+            "--obstacles-gridimage-resolution", argObstaclesGridResolution,
+            "Only if --obstacles points to an image file, this sets the length "
+            "of each pixel in "
+            "meters.");
+        app.add_option(
+            "--interpolarion-period", arg_interpolation_period,
+            "Interpolation (and animation) time step between keyframes [s].");
+        app.add_option(
+               "-c,--ptg-config", arg_ptgs_file,
+               "Input .ini file with PTG definitions.")
+            ->required();
+        app.add_option(
+            "--planner-parameters", argPlanner_yaml_file,
+            "Input .yaml file with planner parameters.");
+        app.add_option(
+            "--write-planner-parameters", argPlanner_yaml_output_file,
+            "If defined, it will save default planner params to a .yaml file "
+            "and exit.");
+        app.add_option(
+            "--config-section", arg_config_file_section,
+            "If loading from an INI file, the name of the section to load.");
+        app.add_option("-s,--start-pose", arg_start_pose, "Start 2D pose.")
+            ->required();
+        app.add_option("--start-vel", arg_start_vel, "Start 2D velocity.");
+        app.add_option(
+            "-g,--goal-pose", arg_goal_pose, "Goal 2D pose or point.");
+        app.add_option(
+            "--bbox-margin", argBBoxMargin,
+            "Margin to add to the start-goal bbox poses.");
+        app.add_option("--goal-vel", arg_goal_vel, "Goal 2D velocity.");
+        app.add_option(
+            "--random-seed", argRandomSeed,
+            "Pseudorandom generator seed (default: from time).");
+        app.add_option(
+            "--plugins", arg_plugins,
+            "Optional plug-in libraries to load, for externally-defined PTGs.");
+        app.add_option(
+            "--costmap-obstacles", arg_costMap,
+            "Creates a costmap from obstacle point clouds with the given "
+            "parameters from a YAML "
+            "file.");
+        app.add_option(
+            "--waypoints", arg_waypoints,
+            "This creates a preferred-waypoints costlayer, from the waypoint "
+            "list in a given "
+            "YAML file.");
+        app.add_option(
+            "--waypoints-parameters", arg_waypointsParams,
+            "If --waypoints is also set, this loads the preferred waypoints "
+            "costlayer "
+            "parameters from a YAML file.");
+        app.add_flag(
+            "--show-tree", arg_showTree,
+            "Shows the whole search tree instead of just the best path.");
+        app.add_flag(
+            "--ignore-obstacles-bbox", arg_ignoreObstaclesBbox,
+            "Ignore obstacles for estimating the problem world bounding box.");
+        app.add_flag(
+            "--no-refine", arg_noRefine, "Skips the post-plan refine stage.");
+        app.add_flag(
+            "--show-edge-weights", arg_showEdgeWeights,
+            "Shows the weight of path edges.");
+        app.add_flag(
+            "--print-path-edges", arg_printPathEdges,
+            "Prints details on the found planned path edges.");
+        app.add_option(
+            "--save-interpolated-path", arg_InterpolatePath,
+            "Interpolates the path and saves it into a .csv file.");
+        app.add_option(
+            "--save-svg", arg_save_svg,
+            "Saves a 2D SVG plot of the plan (obstacles, tree, path, robot "
+            "shapes) for "
+            "debugging / paper figures.");
+        app.add_flag(
+            "--play-animation", arg_playAnimation,
+            "Shows the GUI with an animation of the vehicle moving along the "
+            "path.");
+        app.add_flag(
+            "--no-gui", arg_noGui,
+            "Do not open any GUI window (for headless/batch use, e.g. mass "
+            "figure "
+            "export). The process exits without waiting for a window to be "
+            "closed.");
+        app.add_option(
+            "--svg-tree-decimation", arg_svg_tree_decimation,
+            "When exporting SVG, draw only one motion-tree edge out of every "
+            "N. Use a "
+            "larger value to thin out very dense (e.g. failed-query) trees.");
+        app.add_flag(
+            "--svg-no-tree", arg_svg_no_tree,
+            "When exporting SVG, omit the motion tree entirely.");
+
+        CLI11_PARSE(app, argc, argv);
+
+        // Detect which optional string options were actually provided:
+        arg_start_vel_set       = (app.count("--start-vel") > 0);
+        arg_goal_vel_set        = (app.count("--goal-vel") > 0);
+        argRandomSeed_set       = (app.count("--random-seed") > 0);
+        arg_costMap_set         = (app.count("--costmap-obstacles") > 0);
+        arg_waypoints_set       = (app.count("--waypoints") > 0);
+        arg_waypointsParams_set = (app.count("--waypoints-parameters") > 0);
+        arg_InterpolatePath_set = (app.count("--save-interpolated-path") > 0);
+        arg_save_svg_set        = (app.count("--save-svg") > 0);
+
+        if (!argPlanner_yaml_output_file.empty())
         {
             mpp::TPS_Astar_Parameters defaults;
-            const auto                c = defaults.as_yaml();
-            const auto    sFile = argPlanner_yaml_output_file.getValue();
-            std::ofstream fileYaml(sFile);
+            const auto                c     = defaults.as_yaml();
+            const auto&               sFile = argPlanner_yaml_output_file;
+            std::ofstream             fileYaml(sFile);
             ASSERT_(fileYaml.is_open());
             c.printAsYAML(fileYaml);
             std::cout << "Wrote file: " << sFile << std::endl;
             return 0;
         }
 
-        if (!cmdsOk) return 1;
-
-        if (arg_plugins.isSet())
+        if (!arg_plugins.empty())
         {
             std::string loadErrors;
-            if (!mrpt::system::loadPluginModules(
-                    arg_plugins.getValue(), loadErrors))
+            if (!mrpt::system::loadPluginModules(arg_plugins, loadErrors))
             {
                 std::cerr << "Could not load plugins, error: " << loadErrors;
                 return 1;
             }
         }
 
-        if (argRandomSeed.isSet())
+        if (argRandomSeed_set)
         {
-            mrpt::random::getRandomGenerator().randomize(
-                argRandomSeed.getValue());
+            mrpt::random::getRandomGenerator().randomize(argRandomSeed);
         }
 
         do_plan_path();

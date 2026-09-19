@@ -337,8 +337,11 @@ struct PoseDistanceMetric_TPS<SE2_KinState>
 
         ptg_.updateNavDynamicState(dynState);
 
-        bool tp_point_is_exact =
-            ptg_.inverseMap_WS2TP(relPose.x, relPose.y, k, normDist);
+        const auto invMap = ptg_.inverseMap_WS2TP(relPose.x, relPose.y);
+        bool       tp_point_is_exact = invMap.has_value();
+
+        k        = tp_point_is_exact ? invMap->first : 0;
+        normDist = tp_point_is_exact ? invMap->second : 0.0;
 
         distance_t d = normDist * ptg_.getRefDistance();
 
@@ -349,9 +352,8 @@ struct PoseDistanceMetric_TPS<SE2_KinState>
             const auto   reconsRelPose = ptg_.getPathPose(k, ptg_step);
             const double headingError =
                 ignoreDstHeading ? .0
-                                 : std::abs(
-                                       mrpt::math::angDistance(
-                                           reconsRelPose.phi, relPose.phi));
+                                 : std::abs(mrpt::math::angDistance(
+                                       reconsRelPose.phi, relPose.phi));
 
             if (headingError > headingTolerance_) tp_point_is_exact = false;
         }

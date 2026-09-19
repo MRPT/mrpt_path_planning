@@ -7,9 +7,9 @@
 #pragma once
 
 #include <mpp/data/MoveEdgeSE2_TPS.h>
-#include <mrpt/opengl/CSetOfObjects.h>
 #include <mrpt/rtti/CObject.h>
 #include <mrpt/version.h>
+#include <mrpt/viz/CSetOfObjects.h>
 
 // fwd decl:
 namespace mrpt::maps
@@ -35,7 +35,7 @@ class CostEvaluator : public mrpt::rtti::CObject
     virtual double operator()(const MoveEdgeSE2_TPS& edge) const = 0;
 
     // Default: empty viz
-    virtual mrpt::opengl::CSetOfObjects::Ptr get_visualization() const;
+    virtual mrpt::viz::CSetOfObjects::Ptr get_visualization() const;
 
     // Default: empty grid. Used mostly for ROS visualization interface
     virtual std::shared_ptr<mrpt::maps::COccupancyGridMap2D>

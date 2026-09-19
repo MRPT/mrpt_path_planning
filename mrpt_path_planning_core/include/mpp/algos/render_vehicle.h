@@ -7,7 +7,7 @@
 #pragma once
 
 #include <mpp/data/TrajectoriesAndRobotShape.h>
-#include <mrpt/opengl/opengl_frwds.h>
+#include <mrpt/viz/viz_frwds.h>
 
 #include <memory>
 
@@ -29,7 +29,7 @@ struct RenderVehicleExtraResults
 
 /** Generates a polygon for the vehicle shape */
 auto render_vehicle(
-    const RobotShape& rs, mrpt::opengl::CSetOfLines& outPolygon,
+    const RobotShape& rs, mrpt::viz::CSetOfLines& outPolygon,
     const RenderVehicleParams& rvp = {}) -> RenderVehicleExtraResults;
 
 }  // namespace mpp

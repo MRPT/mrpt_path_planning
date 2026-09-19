@@ -9,7 +9,7 @@
 #include <mpp/data/MotionPrimitivesTree.h>
 #include <mpp/data/PlannerInput.h>
 #include <mpp/data/RenderOptions.h>
-#include <mrpt/opengl/opengl_frwds.h>
+#include <mrpt/viz/viz_frwds.h>
 
 #include <memory>
 
@@ -18,6 +18,6 @@ namespace mpp
 /** Gets a CSetOfObjects::Ptr visual representation of a motion tree */
 auto render_tree(
     const MotionPrimitivesTreeSE2& tree, const PlannerInput& pi,
-    const RenderOptions& ro) -> std::shared_ptr<mrpt::opengl::CSetOfObjects>;
+    const RenderOptions& ro) -> std::shared_ptr<mrpt::viz::CSetOfObjects>;
 
 }  // namespace mpp

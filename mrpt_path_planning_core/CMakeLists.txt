@@ -38,11 +38,10 @@ endif()
 # NOTE: mrpt-gui and mvsim are intentionally NOT requested here, so this
 # package (and everything that depends on it) has no GUI/display dependency.
 # See mrpt_path_planning_apps for the CLI/GUI applications.
-find_package(mrpt-tclap REQUIRED)
-find_package(mrpt-containers REQUIRED)
-find_package(mrpt-graphs REQUIRED)
-find_package(mrpt-nav REQUIRED)
-find_package(mrpt-maps REQUIRED)
+find_package(mrpt_containers REQUIRED)
+find_package(mrpt_graphs REQUIRED)
+find_package(mrpt_nav REQUIRED)
+find_package(mrpt_maps REQUIRED)
 
 # Explicit source/header lists (kept in sync by hand rather than globbed, so
 # that adding/removing a file is a visible, reviewable change and reliably
@@ -137,10 +136,10 @@ selfdriving_add_library(
 	SOURCES
 		${LIB_SRCS} ${LIB_PUBLIC_HDRS}
 	PUBLIC_LINK_LIBRARIES
-		mrpt::nav mrpt::graphs mrpt::containers mrpt::maps
+		mrpt::mrpt_nav mrpt::mrpt_graphs mrpt::mrpt_containers mrpt::mrpt_maps
 #	[PRIVATE_LINK_LIBRARIES lib3 lib4]
 	CMAKE_DEPENDENCIES
-		mrpt-containers mrpt-graphs mrpt-nav mrpt-maps
+		mrpt_containers mrpt_graphs mrpt_nav mrpt_maps
 )
 
 option(MRPT_PATH_PLANNING_BUILD_TESTS "Build mrpt_path_planning unit tests" ON)

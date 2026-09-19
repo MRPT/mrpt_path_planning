@@ -15,11 +15,11 @@
 #include <mrpt/core/lock_helper.h>
 #include <mrpt/math/TSegment2D.h>
 #include <mrpt/nav/reactive/CLogFileRecord.h>
-#include <mrpt/opengl/COpenGLScene.h>
-#include <mrpt/opengl/stock_objects.h>
 #include <mrpt/serialization/CArchive.h>
 #include <mrpt/system/filesystem.h>
 #include <mrpt/version.h>
+#include <mrpt/viz/Scene.h>
+#include <mrpt/viz/stock_objects.h>
 
 using namespace mpp;
 
@@ -355,8 +355,8 @@ void NavEngine::update_robot_kinematic_state()
             navigationStatus_          = NavStatus::NAV_ERROR;
             navErrorReason_.error_code = NavError::EMERGENCY_STOP;
             navErrorReason_.error_msg  = std::string(
-                "ERROR: get_localization() failed, stopping robot "
-                 "and finishing navigation");
+                 "ERROR: get_localization() failed, stopping robot "
+                  "and finishing navigation");
             try
             {
                 config_.vehicleMotionInterface->stop(STOP_TYPE::EMERGENCY);
@@ -743,8 +743,8 @@ NavEngine::PathPlannerOutput NavEngine::path_planner_function(
         {
             planner.costEvaluators_.push_back(
                 mpp::CostEvaluatorCostMap::FromStaticPointObstacles(
-                    *obs, config_.globalCostParameters,
-                    ppi.pi.stateStart.pose, config_.ptgs.robotShape));
+                    *obs, config_.globalCostParameters, ppi.pi.stateStart.pose,
+                    config_.ptgs.robotShape));
         }
     }
 
@@ -1176,7 +1176,7 @@ void NavEngine::send_next_motion_cmd_or_nop()
         {
             uint32_t stepEnd = 0, stepAfter = 0;
             bool     ok1 = ptg->getPathStepForDist(
-                edge.ptgPathIndex, edge.ptgDist, stepEnd);
+                    edge.ptgPathIndex, edge.ptgDist, stepEnd);
             bool ok2 = ptg->getPathStepForDist(
                 edge.ptgPathIndex,
                 edge.ptgDist + config_.enqueuedActionsToleranceXY, stepAfter);
@@ -1314,7 +1314,7 @@ void NavEngine::send_planner_output_to_viz(const PathPlannerOutput& ppo)
     ro.ground_xy_grid_frequency  = 0;  // disabled
     ro.phi2z_scale               = 0;
 
-    mrpt::opengl::CSetOfObjects::Ptr planViz =
+    mrpt::viz::CSetOfObjects::Ptr planViz =
         render_tree(ppo.po.motionTree, ppo.po.originalInput, ro);
     planViz->setName("astar_plan_result");
 
@@ -1324,7 +1324,7 @@ void NavEngine::send_planner_output_to_viz(const PathPlannerOutput& ppo)
     // ----------------------------------
     if (!ppo.costEvaluators.empty())
     {
-        auto glCostMaps = mrpt::opengl::CSetOfObjects::Create();
+        auto glCostMaps = mrpt::viz::CSetOfObjects::Create();
         glCostMaps->setName("glCostMaps");
 
         float zOffset = 0.01f;  // to help visualize several costmaps at once
@@ -1354,14 +1354,11 @@ void NavEngine::send_planner_output_to_viz(const PathPlannerOutput& ppo)
             glObj)
         {
             auto glContainer =
-                std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
+                std::dynamic_pointer_cast<mrpt::viz::CSetOfObjects>(glObj);
             ASSERT_(glContainer);
             *glContainer = *planViz;
         }
-        else
-        {
-            config_.vizSceneToModify->insert(planViz);
-        }
+        else { config_.vizSceneToModify->insert(planViz); }
 
         // unlock:
         if (config_.on_viz_post_modify) config_.on_viz_post_modify();
@@ -1372,7 +1369,7 @@ void NavEngine::send_planner_output_to_viz(const PathPlannerOutput& ppo)
     {
         // Create object wrapper to fix coordinate origin, since the navlog
         // custom visuals are relative to the robot position, not global:
-        auto glGlobalWrtRobot = mrpt::opengl::CSetOfObjects::Create();
+        auto glGlobalWrtRobot = mrpt::viz::CSetOfObjects::Create();
         glGlobalWrtRobot->insert(planViz);
         glGlobalWrtRobot->setPose(-lastVehicleLocalization_.pose);
         innerState_.planVizForNavLog = glGlobalWrtRobot;
@@ -1394,7 +1391,7 @@ void NavEngine::send_path_to_viz_and_navlog(
     ro.ground_xy_grid_frequency  = 0;  // disabled
     ro.phi2z_scale               = 0;
 
-    mrpt::opengl::CSetOfObjects::Ptr planViz =
+    mrpt::viz::CSetOfObjects::Ptr planViz =
         render_tree(tree, originalPlanInput, ro);
     planViz->setName("astar_plan_result");
 
@@ -1404,7 +1401,7 @@ void NavEngine::send_path_to_viz_and_navlog(
     // ----------------------------------
     if (!costEvaluators.empty())
     {
-        auto glCostMaps = mrpt::opengl::CSetOfObjects::Create();
+        auto glCostMaps = mrpt::viz::CSetOfObjects::Create();
         glCostMaps->setName("glCostMaps");
 
         float zOffset = 0.01f;  // to help visualize several costmaps at once
@@ -1434,14 +1431,11 @@ void NavEngine::send_path_to_viz_and_navlog(
             glObj)
         {
             auto glContainer =
-                std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
+                std::dynamic_pointer_cast<mrpt::viz::CSetOfObjects>(glObj);
             ASSERT_(glContainer);
             *glContainer = *planViz;
         }
-        else
-        {
-            config_.vizSceneToModify->insert(planViz);
-        }
+        else { config_.vizSceneToModify->insert(planViz); }
 
         // unlock:
         if (config_.on_viz_post_modify) config_.on_viz_post_modify();
@@ -1452,7 +1446,7 @@ void NavEngine::send_path_to_viz_and_navlog(
     {
         // Create object wrapper to fix coordinate origin, since the navlog
         // custom visuals are relative to the robot position, not global:
-        auto glGlobalWrtRobot = mrpt::opengl::CSetOfObjects::Create();
+        auto glGlobalWrtRobot = mrpt::viz::CSetOfObjects::Create();
         glGlobalWrtRobot->insert(planViz);
         glGlobalWrtRobot->setPose(-lastVehicleLocalization_.pose);
         innerState_.planVizForNavLog = glGlobalWrtRobot;
@@ -1465,14 +1459,14 @@ void NavEngine::send_current_state_to_viz_and_navlog()
 
     const auto& _ = innerState_;
 
-    auto glStateDetails = mrpt::opengl::CSetOfObjects::Create();
+    auto glStateDetails = mrpt::viz::CSetOfObjects::Create();
     glStateDetails->setName("glStateDetails");
     glStateDetails->setLocation(0, 0, 0.02);  // to easy the vis wrt the ground
 
     // last poses track:
     if (const auto& poses = _.latestPoses; !poses.empty())
     {
-        auto glRobotPath = mrpt::opengl::CSetOfLines::Create();
+        auto glRobotPath = mrpt::viz::CSetOfLines::Create();
         glRobotPath->setColor_u8(0x80, 0x80, 0x80, 0x80);
         const auto p0 = poses.begin()->second;
         glRobotPath->appendLine(p0.x, p0.y, 0, p0.x, p0.y, 0);
@@ -1480,8 +1474,7 @@ void NavEngine::send_current_state_to_viz_and_navlog()
         {
             glRobotPath->appendLineStrip(p.second.x, p.second.y, 0);
 
-            auto glCorner =
-                mrpt::opengl::stock_objects::CornerXYSimple(0.1, 1.0);
+            auto glCorner = mrpt::viz::stock_objects::CornerXYSimple(0.1, 1.0);
             glCorner->setPose(p.second);
             glStateDetails->insert(glCorner);
         }
@@ -1501,7 +1494,7 @@ void NavEngine::send_current_state_to_viz_and_navlog()
         const mrpt::math::TPose2D p1 = {
             p.x + tol.x, p.y + tol.y, p.phi + tol.phi};
 
-        auto glCondPoly = mrpt::opengl::CSetOfLines::Create();
+        auto glCondPoly = mrpt::viz::CSetOfLines::Create();
         glCondPoly->setColor_u8(0xf0, 0xf0, 0xf0, 0xa0);
 
         glCondPoly->appendLine(p0.x, p0.y, 0, p1.x, p0.y, 0);
@@ -1512,14 +1505,12 @@ void NavEngine::send_current_state_to_viz_and_navlog()
         glStateDetails->insert(glCondPoly);
 
         {
-            auto glCorner =
-                mrpt::opengl::stock_objects::CornerXYSimple(0.15, 1.0);
+            auto glCorner = mrpt::viz::stock_objects::CornerXYSimple(0.15, 1.0);
             glCorner->setPose(p0);
             glStateDetails->insert(glCorner);
         }
         {
-            auto glCorner =
-                mrpt::opengl::stock_objects::CornerXYSimple(0.15, 1.0);
+            auto glCorner = mrpt::viz::stock_objects::CornerXYSimple(0.15, 1.0);
             glCorner->setPose(p1);
             glStateDetails->insert(glCorner);
         }
@@ -1529,7 +1520,7 @@ void NavEngine::send_current_state_to_viz_and_navlog()
         triggOdom.has_value() && !_.activePlanPath.empty() &&
         _.activePlanInitOdometry.has_value())
     {
-        auto glCorner = mrpt::opengl::stock_objects::CornerXYZ(0.15);
+        auto glCorner = mrpt::viz::stock_objects::CornerXYZ(0.15);
         glCorner->setPose(
             _.activePlanPath.at(0).pose +
             (triggOdom.value().odometry - _.activePlanInitOdometry.value()));
@@ -1539,7 +1530,7 @@ void NavEngine::send_current_state_to_viz_and_navlog()
     if (const auto& predPose = _.collisionCheckingPosePrediction;
         predPose.has_value())
     {
-        auto glVehShape = mrpt::opengl::CSetOfLines::Create();
+        auto glVehShape = mrpt::viz::CSetOfLines::Create();
 
         glVehShape->setLineWidth(1);
         glVehShape->setColor_u8(0x40, 0x40, 0x40, 0x80);
@@ -1563,14 +1554,11 @@ void NavEngine::send_current_state_to_viz_and_navlog()
             glObj)
         {
             auto glContainer =
-                std::dynamic_pointer_cast<mrpt::opengl::CSetOfObjects>(glObj);
+                std::dynamic_pointer_cast<mrpt::viz::CSetOfObjects>(glObj);
             ASSERT_(glContainer);
             *glContainer = *glStateDetails;
         }
-        else
-        {
-            config_.vizSceneToModify->insert(glStateDetails);
-        }
+        else { config_.vizSceneToModify->insert(glStateDetails); }
 
         // unlock:
         if (config_.on_viz_post_modify) config_.on_viz_post_modify();
@@ -1581,7 +1569,7 @@ void NavEngine::send_current_state_to_viz_and_navlog()
     {
         // Create object wrapper to fix coordinate origin, since the navlog
         // custom visuals are relative to the robot position, not global:
-        auto glGlobalWrtRobot = mrpt::opengl::CSetOfObjects::Create();
+        auto glGlobalWrtRobot = mrpt::viz::CSetOfObjects::Create();
         glGlobalWrtRobot->insert(glStateDetails);
         glGlobalWrtRobot->setPose(-lastVehicleLocalization_.pose);
         innerState_.stateVizForNavLog = glGlobalWrtRobot;

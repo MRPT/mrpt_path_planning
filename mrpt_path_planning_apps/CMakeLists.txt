@@ -31,9 +31,9 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 # installed first by colcon), plus GUI/simulator libs that mrpt_path_planning_core
 # deliberately does not depend on.
 find_package(mrpt_path_planning REQUIRED)
-find_package(mrpt-gui REQUIRED)
-find_package(mrpt-nav REQUIRED)
-find_package(mrpt-tclap REQUIRED)
+find_package(mrpt_gui REQUIRED)
+find_package(mrpt_nav REQUIRED)
+find_package(CLI11 REQUIRED)
 
 # mvsim is optional: selfdriving-simulator-gui silently skips itself if absent.
 find_package(mvsim-simulator QUIET)

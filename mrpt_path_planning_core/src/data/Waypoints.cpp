@@ -8,9 +8,9 @@
    +------------------------------------------------------------------------+ */
 
 #include <mpp/data/Waypoints.h>
-#include <mrpt/opengl/CArrow.h>
-#include <mrpt/opengl/CDisk.h>
-#include <mrpt/opengl/CSetOfObjects.h>
+#include <mrpt/viz/CArrow.h>
+#include <mrpt/viz/CDisk.h>
+#include <mrpt/viz/CSetOfObjects.h>
 
 using namespace mpp;
 
@@ -165,14 +165,13 @@ WaypointsRenderingParams::WaypointsRenderingParams()
 }
 
 void WaypointSequence::getAsOpenglVisualization(
-    mrpt::opengl::CSetOfObjects&    obj,
-    const WaypointsRenderingParams& params) const
+    mrpt::viz::CSetOfObjects& obj, const WaypointsRenderingParams& params) const
 {
     obj.clear();
     unsigned int idx = 0;
     for (const auto& p : waypoints)
     {
-        auto gl_pt = mrpt::opengl::CDisk::Create(
+        auto gl_pt = mrpt::viz::CDisk::Create(
             p.allowSkip ? params.outter_radius
                         : params.outter_radius_non_skippable,
             p.allowSkip ? params.inner_radius
@@ -189,8 +188,10 @@ void WaypointSequence::getAsOpenglVisualization(
 
         if (p.targetHeading.has_value())
         {
-            auto o = mrpt::opengl::CArrow::Create(
-                0, 0, 0, params.heading_arrow_len, 0.0f, 0.0f);
+            auto o = mrpt::viz::CArrow::Create(
+                mrpt::math::TPoint3Df{0, 0, 0},
+                mrpt::math::TPoint3Df{
+                    static_cast<float>(params.heading_arrow_len), 0, 0});
             o->setPose(mrpt::poses::CPose3D(
                 p.target.x, p.target.y, 0.02, p.targetHeading.value(), 0, 0));
             obj.insert(o);
@@ -200,8 +201,7 @@ void WaypointSequence::getAsOpenglVisualization(
 }
 
 void WaypointStatusSequence::getAsOpenglVisualization(
-    mrpt::opengl::CSetOfObjects&    obj,
-    const WaypointsRenderingParams& params) const
+    mrpt::viz::CSetOfObjects& obj, const WaypointsRenderingParams& params) const
 {
     obj.clear();
     {
@@ -210,7 +210,7 @@ void WaypointStatusSequence::getAsOpenglVisualization(
         {
             const bool is_cur_goal = (int(idx) == waypoint_index_current_goal);
 
-            mrpt::opengl::CDisk::Ptr gl_pt = mrpt::opengl::CDisk::Create(
+            mrpt::viz::CDisk::Ptr gl_pt = mrpt::viz::CDisk::Create(
                 p.reached ? params.outter_radius_reached
                           : (p.allowSkip ? params.outter_radius
                                          : params.outter_radius_non_skippable),
@@ -233,8 +233,10 @@ void WaypointStatusSequence::getAsOpenglVisualization(
 
             if (p.targetHeading.has_value())
             {
-                auto o = mrpt::opengl::CArrow::Create(
-                    0, 0, 0, params.heading_arrow_len, 0.0f, 0.0f);
+                auto o = mrpt::viz::CArrow::Create(
+                    mrpt::math::TPoint3Df{0, 0, 0},
+                    mrpt::math::TPoint3Df{
+                        static_cast<float>(params.heading_arrow_len), 0, 0});
                 o->setPose(mrpt::poses::CPose3D(
                     p.target.x, p.target.y, 0.02, p.targetHeading.value(), 0,
                     0));
@@ -247,9 +249,12 @@ void WaypointStatusSequence::getAsOpenglVisualization(
 
 mrpt::containers::yaml WaypointSequence::asYAML() const
 {
-    auto n = mrpt::containers::yaml::Sequence();
+    mrpt::containers::yaml n = mrpt::containers::yaml::Sequence({});
 
-    for (const auto& wp : waypoints) n.asSequence().emplace_back(wp.asYAML());
+    for (const auto& wp : waypoints)
+    {
+        n.asSequence().emplace_back(wp.asYAML().node());
+    }
 
     return n;
 }
