@@ -168,6 +168,10 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
     std::vector<TCPointVector> m_trajectory;
     double                     m_resolution{0.05};
     double                     m_clearance{0.0};
+    double                     m_robotRadius{0.0};  //!< set at initialize()
+
+    /** Whether an obstacle point (vehicle frame) is inside the footprint. */
+    bool isObstacleInsideShape(double ox, double oy) const;
     double                     m_stepTimeDuration{0.01};
 
     void internal_readFromStream(mrpt::serialization::CArchive& in) override;

@@ -724,6 +724,15 @@ void DiffDriveCollisionGridBased::internal_initialize(
     ASSERT_(W_MAX > 0);
     ASSERT_(m_resolution > 0);
 
+    m_robotRadius = 0;
+    for (size_t m = 0; m < m_robotShape.size(); m++)
+    {
+        mrpt::keep_max(
+            m_robotRadius,
+            std::hypot(
+                m_robotShape.get_vertex_x(m), m_robotShape.get_vertex_y(m)));
+    }
+
     mrpt::system::CTicTac tictac;
     tictac.Tic();
 
@@ -862,6 +871,26 @@ void DiffDriveCollisionGridBased::internal_initialize(
                     {
                         const double cy = m_collisionGrid.idx2y(iy);
 
+                        // Farther than any footprint point plus the margin?
+                        const double reach =
+                            robotRadius + margin + half_cell * M_SQRT2;
+                        if (mrpt::square(cx - p.x) + mrpt::square(cy - p.y) >
+                            reach * reach)
+                        {
+                            continue;
+                        }
+
+                        // Samples are visited in increasing distance, so an
+                        // existing entry for "k" is already the minimum:
+                        if (const auto* c = m_collisionGrid.cellByIndex(ix, iy);
+                            c != nullptr &&
+                            std::any_of(
+                                c->begin(), c->end(),
+                                [k](const auto& e) { return e.first == k; }))
+                        {
+                            continue;
+                        }
+
                         const Box2D cellBox{
                             cx - half_cell, cx + half_cell, cy - half_cell,
                             cy + half_cell};
@@ -949,16 +978,39 @@ std::optional<uint32_t> DiffDriveCollisionGridBased::getPathStepForDist(
     return std::nullopt;
 }
 
+bool DiffDriveCollisionGridBased::isObstacleInsideShape(
+    double ox, double oy) const
+{
+    // O(1) rejection first: only points within the circumscribed radius can
+    // be inside the polygon, so the O(V) test is rarely needed.
+    if (m_robotRadius > 0 && ox * ox + oy * oy > m_robotRadius * m_robotRadius)
+    {
+        return false;
+    }
+    return isPointInsideRobotShape(ox, oy);
+}
+
 void DiffDriveCollisionGridBased::updateTPObstacle(
     double ox, double oy, std::vector<double>& tp_obstacles) const
 {
     ASSERTMSG_(!m_trajectory.empty(), "PTG has not been initialized!");
     const TCollisionCell& cell = m_collisionGrid.getTPObstacle(ox, oy);
+    if (cell.empty()) { return; }
+
+    if (isObstacleInsideShape(ox, oy))
+    {
+        // Rare case: apply the collision-behavior policy per entry.
+        for (const auto& i : cell)
+        {
+            internal_TPObsDistancePostprocess(
+                ox, oy, i.second, tp_obstacles[i.first]);
+        }
+        return;
+    }
     // Keep the minimum distance:
     for (const auto& i : cell)
     {
-        const double dist = i.second;
-        internal_TPObsDistancePostprocess(ox, oy, dist, tp_obstacles[i.first]);
+        mrpt::keep_min(tp_obstacles[i.first], static_cast<double>(i.second));
     }
 }
 
@@ -969,11 +1021,14 @@ void DiffDriveCollisionGridBased::updateTPObstacleSingle(
     const TCollisionCell& cell = m_collisionGrid.getTPObstacle(ox, oy);
     // Keep the minimum distance:
     for (const auto& i : cell)
-        if (i.first == k)
+    {
+        if (i.first != k) { continue; }
+        if (isObstacleInsideShape(ox, oy))
         {
-            const double dist = i.second;
-            internal_TPObsDistancePostprocess(ox, oy, dist, tp_obstacle_k);
+            internal_TPObsDistancePostprocess(ox, oy, i.second, tp_obstacle_k);
         }
+        else { mrpt::keep_min(tp_obstacle_k, static_cast<double>(i.second)); }
+    }
 }
 
 void DiffDriveCollisionGridBased::internal_readFromStream(
