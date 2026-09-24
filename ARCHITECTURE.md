@@ -132,9 +132,11 @@ Edge cost = `estimatedExecTime` + Σ(cost_evaluators).
 
 ### 3.5 Collision Checking
 
-`tp_obstacles_single_path(k, localObstacles, ptg)` computes the free distance along PTG trajectory `k` given local obstacle points. It uses the PTG's `updateTPObstacleSingle()` which internally uses precomputed collision grids for efficient lookup.
+`tp_obstacles_single_path(k, localObstacles, ptg)` computes the free distance along PTG trajectory `k` given local obstacle points. It uses the PTG's `updateTPObstacleSingle()` which internally uses precomputed collision grids for efficient lookup. `TPS_Astar` instead calls `updateTPObstacle()` once per point to fill the free distance of all trajectories in a single pass per expanded node.
 
-Obstacles are first transformed to the robot's local frame and square-clipped to the PTG's reference distance (`transform_pc_square_clipping`).
+The collision grid (`DiffDriveCollisionGridBased`) is built **conservatively**: a cell stores the distance of trajectory sample `n` if any point of the cell square is within `r_n + clearance` of the footprint at that sample, where `r_n` bounds the motion of any footprint point until the next sample. The stored free distances are therefore a certified lower bound for any obstacle point in the cell and for the continuous motion (`tests/test_collision_grid_soundness.cpp` checks this by brute force). The optional PTG parameter `clearance` [m] adds a margin; it certifies region obstacles represented by boundary samples when it is at least the maximum distance from any boundary point to its nearest sample. The grid covers `refDistance + robotRadius + clearance`, and `TPS_Astar` clips local obstacles to that same reach (`obstacle_clipping_distance()`).
+
+Obstacles are first transformed to the robot's local frame and square-clipped to that reach.
 
 ### 3.6 Navigation Engine
 

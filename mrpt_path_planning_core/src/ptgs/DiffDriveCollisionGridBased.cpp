@@ -16,13 +16,107 @@
 #include <mrpt/serialization/stl_serialization.h>
 #include <mrpt/system/CTicTac.h>
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <utility>
 
 using namespace mpp::ptg;
 using mrpt::d2f;
 using mrpt::format;
+
+namespace
+{
+double pointSegmentDistance(
+    const mrpt::math::TPoint2D& p, const mrpt::math::TPoint2D& a,
+    const mrpt::math::TPoint2D& b)
+{
+    const double abx  = b.x - a.x;
+    const double aby  = b.y - a.y;
+    const double len2 = abx * abx + aby * aby;
+    double       t    = 0;
+    if (len2 > 0)
+    {
+        t = ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2;
+        t = std::clamp(t, 0.0, 1.0);
+    }
+    return std::hypot(p.x - (a.x + t * abx), p.y - (a.y + t * aby));
+}
+
+struct Box2D
+{
+    double x0 = 0;
+    double x1 = 0;
+    double y0 = 0;
+    double y1 = 0;
+};
+
+double pointBoxDistance(const mrpt::math::TPoint2D& p, const Box2D& b)
+{
+    const double dx = std::max({b.x0 - p.x, 0.0, p.x - b.x1});
+    const double dy = std::max({b.y0 - p.y, 0.0, p.y - b.y1});
+    return std::hypot(dx, dy);
+}
+
+// Liang-Barsky clipping test: does segment [a,b] touch the closed box?
+bool segmentIntersectsBox(
+    const mrpt::math::TPoint2D& a, const mrpt::math::TPoint2D& b,
+    const Box2D& box)
+{
+    double       t0   = 0;
+    double       t1   = 1;
+    const double dx   = b.x - a.x;
+    const double dy   = b.y - a.y;
+    const double p[4] = {-dx, dx, -dy, dy};
+    const double q[4] = {
+        a.x - box.x0, box.x1 - a.x, a.y - box.y0, box.y1 - a.y};
+    for (int i = 0; i < 4; i++)
+    {
+        if (p[i] == 0)
+        {
+            if (q[i] < 0) { return false; }
+            continue;
+        }
+        const double r = q[i] / p[i];
+        if (p[i] < 0) { t0 = std::max(t0, r); }
+        else { t1 = std::min(t1, r); }
+        if (t0 > t1) { return false; }
+    }
+    return true;
+}
+
+// Exact Euclidean distance between an axis-aligned box and a (possibly
+// non-convex) simple polygon region. Zero if they overlap.
+double boxPolygonDistance(const Box2D& box, const mrpt::math::TPolygon2D& poly)
+{
+    const mrpt::math::TPoint2D center(
+        0.5 * (box.x0 + box.x1), 0.5 * (box.y0 + box.y1));
+    if (poly.contains(center)) { return 0; }
+
+    const mrpt::math::TPoint2D corners[4] = {
+        {box.x0, box.y0}, {box.x1, box.y0}, {box.x1, box.y1}, {box.x0, box.y1}};
+
+    double       dmin = std::numeric_limits<double>::max();
+    const size_t N    = poly.size();
+    for (size_t i = 0; i < N; i++)
+    {
+        const auto& a = poly[i];
+        const auto& b = poly[(i + 1) % N];
+        if (segmentIntersectsBox(a, b, box)) { return 0; }
+        // Two disjoint convex sets (segment, box): the closest pair involves a
+        // vertex of one of them.
+        for (const auto& c : corners)
+        {
+            dmin = std::min(dmin, pointSegmentDistance(c, a, b));
+        }
+        dmin = std::min(dmin, pointBoxDistance(a, box));
+    }
+    return dmin;
+}
+
+}  // namespace
 
 /** Constructor: possible values in "params":
  *   - ref_distance: The maximum distance in PTGs
@@ -40,6 +134,7 @@ void DiffDriveCollisionGridBased::loadDefaultParams()
     CPTG_RobotShape_Polygonal::loadDefaultParams();
 
     m_resolution = 0.10;
+    m_clearance  = 0.0;
     V_MAX        = 1.0;
     W_MAX        = mrpt::DEG2RAD(120);
 }
@@ -57,6 +152,8 @@ void DiffDriveCollisionGridBased::loadFromConfigFile(
     MRPT_LOAD_HERE_CONFIG_VAR_DEGREES_NO_DEFAULT(
         w_max_dps, double, W_MAX, cfg, sSection);
     MRPT_LOAD_CONFIG_VAR(turningRadiusReference, double, cfg, sSection);
+    MRPT_LOAD_HERE_CONFIG_VAR(clearance, double, m_clearance, cfg, sSection);
+    ASSERT_GE_(m_clearance, 0.0);
 }
 void DiffDriveCollisionGridBased::saveToConfigFile(
     mrpt::config::CConfigFileBase& cfg, const std::string& sSection) const
@@ -79,6 +176,9 @@ void DiffDriveCollisionGridBased::saveToConfigFile(
         sSection, "turningRadiusReference", turningRadiusReference, WN, WV,
         "An approximate dimension of the robot (not a critical parameter) "
         "[m].");
+    cfg.write(
+        sSection, "clearance", m_clearance, WN, WV,
+        "Certified clearance between footprint and obstacles [m].");
 
     CPTG_RobotShape_Polygonal::saveToConfigFile(cfg, sSection);
 
@@ -321,14 +421,16 @@ bool DiffDriveCollisionGridBased::CCollisionGrid::saveToFile(
     {
         if (!f) return false;
 
-        const uint8_t serialize_version =
-            2;  // v1: As of jun 2012, v2: As of dec-2013
+        // v1: As of jun 2012, v2: As of dec-2013, v3: conservative
+        // (certified) cell marking + clearance, sep-2026.
+        const uint8_t serialize_version = 3;
 
         // Save magic signature && serialization version:
         *f << COLGRID_FILE_MAGIC << serialize_version;
 
         // Robot shape:
         *f << computed_robotShape;
+        *f << m_parent->m_clearance;
 
         // and standard PTG data:
         *f << m_parent->getDescription() << m_parent->getAlphaValuesCount()
@@ -380,7 +482,7 @@ bool DiffDriveCollisionGridBased::CCollisionGrid::loadFromFile(
 
         switch (serialized_version)
         {
-            case 2:
+            case 3:
             {
                 mrpt::math::CPolygon stored_shape;
                 *f >> stored_shape;
@@ -392,11 +494,24 @@ bool DiffDriveCollisionGridBased::CCollisionGrid::loadFromFile(
                          current_robotShape.begin()));
 
                 if (!shapes_match)
-                    return false;  // Must recompute if the robot shape changed.
+                {
+                    // Must recompute if the robot shape changed.
+                    return false;
+                }
+
+                double stored_clearance = 0;
+                *f >> stored_clearance;
+                if (std::abs(stored_clearance - m_parent->m_clearance) > 1e-9)
+                {
+                    return false;
+                }
             }
             break;
 
+            // Older versions used a non-conservative cell marking rule:
+            // always rebuild them.
             case 1:
+            case 2:
             default:
                 // Unknown version: Maybe we are loading a file from a more
                 // recent version of MRPT? Whatever, we can't read it: It's
@@ -629,8 +744,9 @@ void DiffDriveCollisionGridBased::internal_initialize(
 
     // Check for collisions between the robot shape and the grid cells:
     // ----------------------------------------------------------------------------
+    const double gridHalfSize = getObstacleReachDistance();
     m_collisionGrid.setSize(
-        -refDistance, refDistance, -refDistance, refDistance, m_resolution);
+        -gridHalfSize, gridHalfSize, -gridHalfSize, gridHalfSize, m_resolution);
 
     const size_t Ki = getAlphaValuesCount();
     ASSERTMSG_(Ki > 0, "The PTG seems to be not initialized!");
@@ -646,27 +762,61 @@ void DiffDriveCollisionGridBased::internal_initialize(
         // error,
         //         we must make sure that there's space enough for the grid:
         m_collisionGrid.setSize(
-            -refDistance, refDistance, -refDistance, refDistance,
+            -gridHalfSize, gridHalfSize, -gridHalfSize, gridHalfSize,
             m_collisionGrid.getResolution());
 
         const int    grid_cx_max = m_collisionGrid.getSizeX() - 1;
         const int    grid_cy_max = m_collisionGrid.getSizeY() - 1;
         const double half_cell   = m_collisionGrid.getResolution() * 0.5;
 
-        const size_t                      nVerts = m_robotShape.size();
-        std::vector<mrpt::math::TPoint2D> transf_shape(
-            nVerts);  // The robot shape at each location
+        const size_t nVerts      = m_robotShape.size();
+        double       robotRadius = 0;
+        for (size_t m = 0; m < nVerts; m++)
+        {
+            mrpt::keep_max(
+                robotRadius, std::hypot(
+                                 m_robotShape.get_vertex_x(m),
+                                 m_robotShape.get_vertex_y(m)));
+        }
+
+        // The robot shape at each location:
+        std::vector<mrpt::math::TPoint2D> transf_shape(nVerts);
 
         // RECOMPUTE THE COLLISION GRIDS:
         // ---------------------------------------
+        // A cell is marked with the distance of sample "n" if any point of
+        // the cell square is closer than "margin" to the footprint at that
+        // sample, where "margin" bounds the displacement of any footprint
+        // point until the next sample, plus the user clearance. This makes the
+        // stored free distances a certified lower bound for ANY obstacle point
+        // inside the cell and for the continuous motion between samples.
         for (size_t k = 0; k < Ki; k++)
         {
             const size_t nPoints = getPathStepCount(k);
             ASSERT_(nPoints > 1);
-            for (size_t n = 0; n < (nPoints - 1); n++)
+            for (size_t n = 0; n < nPoints; n++)
             {
                 // Translate and rotate the robot shape at this C-Space pose:
                 const mrpt::math::TPose2D p = getPathPose(k, n);
+
+                // Upper bound of the displacement of any footprint point along
+                // the (constant-twist) motion until the next sample: center
+                // arc length (chord times the arc/chord ratio) plus the
+                // rotation lever arm.
+                double sweep = 0;
+                if (n + 1 < nPoints)
+                {
+                    const mrpt::math::TPose2D pNext = getPathPose(k, n + 1);
+                    const double              chord =
+                        std::hypot(pNext.x - p.x, pNext.y - p.y);
+                    const double dPhi =
+                        std::abs(mrpt::math::angDistance(p.phi, pNext.phi));
+                    const double halfPhi = 0.5 * dPhi;
+                    const double arcRatio =
+                        halfPhi > 1e-9 ? halfPhi / std::sin(halfPhi) : 1.0;
+                    sweep = chord * arcRatio + robotRadius * dPhi;
+                }
+                const double margin = sweep + m_clearance;
 
                 mrpt::math::TPoint2D bb_min(
                     std::numeric_limits<double>::max(),
@@ -692,33 +842,33 @@ void DiffDriveCollisionGridBased::internal_initialize(
                 // Robot shape polygon:
                 const mrpt::math::TPolygon2D poly(transf_shape);
 
-                // Get the range of cells that may collide with this shape:
+                // Range of cells that may be within "margin" of this shape:
                 const int ix_min =
-                    std::max(0, m_collisionGrid.x2idx(bb_min.x) - 1);
+                    std::max(0, m_collisionGrid.x2idx(bb_min.x - margin) - 1);
                 const int iy_min =
-                    std::max(0, m_collisionGrid.y2idx(bb_min.y) - 1);
-                const int ix_max =
-                    std::min(m_collisionGrid.x2idx(bb_max.x) + 1, grid_cx_max);
-                const int iy_max =
-                    std::min(m_collisionGrid.y2idx(bb_max.y) + 1, grid_cy_max);
+                    std::max(0, m_collisionGrid.y2idx(bb_min.y - margin) - 1);
+                const int ix_max = std::min(
+                    m_collisionGrid.x2idx(bb_max.x + margin) + 1, grid_cx_max);
+                const int iy_max = std::min(
+                    m_collisionGrid.y2idx(bb_max.y + margin) + 1, grid_cy_max);
 
-                for (int ix = ix_min; ix < ix_max; ix++)
+                const float d = this->getPathDist(k, n);
+
+                for (int ix = ix_min; ix <= ix_max; ix++)
                 {
-                    const double cx = m_collisionGrid.idx2x(ix) - half_cell;
+                    const double cx = m_collisionGrid.idx2x(ix);
 
-                    for (int iy = iy_min; iy < iy_max; iy++)
+                    for (int iy = iy_min; iy <= iy_max; iy++)
                     {
-                        const double cy = m_collisionGrid.idx2y(iy) - half_cell;
+                        const double cy = m_collisionGrid.idx2y(iy);
 
-                        if (poly.contains(mrpt::math::TPoint2D(cx, cy)))
+                        const Box2D cellBox{
+                            cx - half_cell, cx + half_cell, cy - half_cell,
+                            cy + half_cell};
+
+                        if (boxPolygonDistance(cellBox, poly) <= margin)
                         {
-                            // Collision!! Update cell info:
-                            const float d = this->getPathDist(k, n);
                             m_collisionGrid.updateCellInfo(ix, iy, k, d);
-                            m_collisionGrid.updateCellInfo(ix - 1, iy, k, d);
-                            m_collisionGrid.updateCellInfo(ix, iy - 1, k, d);
-                            m_collisionGrid.updateCellInfo(
-                                ix - 1, iy - 1, k, d);
                         }
                     }  // for iy
                 }  // for ix
@@ -736,6 +886,22 @@ void DiffDriveCollisionGridBased::internal_initialize(
     }  // "else" recompute all PTG
 
     MRPT_END
+}
+
+double DiffDriveCollisionGridBased::getObstacleReachDistance() const
+{
+    double robotRadius = 0;
+    for (size_t m = 0; m < m_robotShape.size(); m++)
+    {
+        mrpt::keep_max(
+            robotRadius,
+            std::hypot(
+                m_robotShape.get_vertex_x(m), m_robotShape.get_vertex_y(m)));
+    }
+    // Trajectories never go farther than refDistance from the origin, so the
+    // footprint (grown by the clearance) stays within this radius. One extra
+    // cell accounts for the cell-square test at the border.
+    return refDistance + robotRadius + m_clearance + 2 * m_resolution;
 }
 
 size_t DiffDriveCollisionGridBased::getPathStepCount(uint16_t k) const
@@ -821,9 +987,12 @@ void DiffDriveCollisionGridBased::internal_readFromStream(
     switch (version)
     {
         case 0:
+        case 1:
             internal_deinitialize();
             in >> V_MAX >> W_MAX >> turningRadiusReference >> m_robotShape >>
                 m_resolution >> m_trajectory;
+            m_clearance = 0;
+            if (version >= 1) { in >> m_clearance; }
             break;
         default:
             MRPT_THROW_UNKNOWN_SERIALIZATION_VERSION(version);
@@ -836,11 +1005,11 @@ void DiffDriveCollisionGridBased::internal_writeToStream(
     CParameterizedTrajectoryGenerator::internal_writeToStream(out);
     CPTG_RobotShape_Polygonal::internal_shape_saveToStream(out);
 
-    const uint8_t version = 0;
+    const uint8_t version = 1;
     out << version;
 
     out << V_MAX << W_MAX << turningRadiusReference << m_robotShape
-        << m_resolution << m_trajectory;
+        << m_resolution << m_trajectory << m_clearance;
 }
 
 mrpt::kinematics::CVehicleVelCmd::Ptr

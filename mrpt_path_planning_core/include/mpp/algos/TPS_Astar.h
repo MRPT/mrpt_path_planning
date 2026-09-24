@@ -361,6 +361,11 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
         double                                          MAX_PTG_XY_DIST);
 
+    /** Distance from a node beyond which obstacles cannot affect any edge of
+     * this PTG: trajectory length plus footprint radius (and clearance, for
+     * collision-grid PTGs). Used to clip local obstacles soundly. */
+    static double obstacle_clipping_distance(const ptg_t& ptg);
+
     /** Maximum linear speed across all active PTGs, cached at the start of
      *  each plan() call. Used to convert geometric distances (meters) to
      *  time estimates (seconds) in the heuristic, ensuring admissibility when

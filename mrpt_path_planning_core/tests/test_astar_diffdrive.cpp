@@ -28,6 +28,7 @@
 #include <mpp/interfaces/ObstacleSource.h>
 #include <mrpt/config/CConfigFileMemory.h>
 #include <mrpt/maps/CSimplePointsMap.h>
+#include <mrpt/math/wrap2pi.h>
 
 #include <algorithm>
 #include <vector>
@@ -192,6 +193,37 @@ static std::vector<int> solutionPtgIndices(const mpp::PlannerOutput& out)
     return indices;
 }
 
+// Every node pose along the returned path must equal its parent pose composed
+// with the PTG motion of the edge between them (the final node is excluded:
+// it is snapped to the exact goal). Guards against stale node poses in the
+// motion tree after a cell's representative state is replaced.
+static void expectConsistentPath(
+    const mpp::PlannerOutput& out, const mpp::PlannerInput& in)
+{
+    ASSERT_TRUE(out.success);
+    const auto [nodes, edges] =
+        out.motionTree.backtrack_path(out.goalNodeId.value());
+    auto   itNode = nodes.begin();
+    size_t i      = 0;
+    for (const auto* e : edges)
+    {
+        const auto parentPose = itNode->pose;
+        ++itNode;
+        ++i;
+        if (e == nullptr || i == edges.size()) { continue; }
+        const auto& ptg = in.ptgs.ptgs.at(e->ptgIndex);
+        const auto  expected =
+            parentPose + ptg->getPathPose(e->ptgPathIndex, e->ptgStepIndex);
+        EXPECT_NEAR(itNode->pose.x, expected.x, 1e-4) << "edge #" << i;
+        EXPECT_NEAR(itNode->pose.y, expected.y, 1e-4) << "edge #" << i;
+        EXPECT_NEAR(
+            mrpt::math::angDistance(itNode->pose.phi, expected.phi), 0.0, 1e-4)
+            << "edge #" << i;
+        EXPECT_NEAR(e->stateFrom.pose.x, parentPose.x, 1e-4) << "edge #" << i;
+        EXPECT_NEAR(e->stateFrom.pose.y, parentPose.y, 1e-4) << "edge #" << i;
+    }
+}
+
 // Geometric quality of a solution path, accumulated over the interpolated
 // poses of all solution edges (poses are relative to each edge's stateFrom).
 struct PathQuality
@@ -299,6 +331,7 @@ RobotModel_shape2D_ys = 0.275 0.275 0.20 -0.20 -0.275 -0.275
 
     const auto out = planner.plan(in);
     ASSERT_TRUE(out.success) << "Easy open-space SE(2) goal must be solvable";
+    expectConsistentPath(out, in);
 
     const auto q        = measurePath(out);
     const double straight = std::hypot(0.6, 3.35);
@@ -408,6 +441,7 @@ TEST(AstarDiffDrive, ReverseReachesGoalBehind)
     const auto out = planner.plan(in);
     ASSERT_TRUE(out.success)
         << "Forward+reverse C-PTG set must reach a goal straight behind";
+    expectConsistentPath(out, in);
 
     // The solution must actually use the reverse PTG at least once.
     const auto indices = solutionPtgIndices(out);

@@ -111,6 +111,18 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
     double getMax_V() const { return V_MAX; }
     double getMax_W() const { return W_MAX; }
 
+    /** Cell size of the collision grid [m] */
+    double getCollisionGridResolution() const { return m_resolution; }
+
+    /** Certified clearance [m] enforced between the footprint and any obstacle
+     * point, on top of the exact footprint. See loadFromConfigFile(). */
+    double getClearance() const { return m_clearance; }
+
+    /** Distance from the PTG origin beyond which an obstacle point can never
+     * affect any trajectory of this PTG (the collision grid covers this
+     * range) [m]. */
+    double getObstacleReachDistance() const;
+
    protected:
     DiffDriveCollisionGridBased();
 
@@ -127,6 +139,18 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
      *   - `${sKeyPrefix}shape_x{0,1,2..}`, ``${sKeyPrefix}shape_y{0,1,2..}`:
      * Polygonal robot shape [Optional, can be also set via
      * `setRobotPolygonShape()`]
+     *   - `${sKeyPrefix}clearance`: Optional extra clearance [m] (default: 0).
+     *
+     * The collision grid is built conservatively: a cell stores the traveled
+     * distance `d_n` of trajectory sample `n` if any point of the cell square
+     * lies within `r_n + clearance` of the footprint at that sample, with
+     * `r_n` an upper bound of how far any footprint point moves until the
+     * next sample. Hence, for any obstacle point, the stored free distance
+     * never exceeds the true distance at which the continuously-swept
+     * footprint (grown by `clearance`) first touches it. A nonzero
+     * `clearance` is needed to certify region obstacles represented by
+     * boundary samples: it must be at least the maximum distance from any
+     * region boundary point to its nearest sample.
      *
      * See docs of derived classes for additional parameters in setParams()
      */
@@ -143,6 +167,7 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
     double                     turningRadiusReference{.10};
     std::vector<TCPointVector> m_trajectory;
     double                     m_resolution{0.05};
+    double                     m_clearance{0.0};
     double                     m_stepTimeDuration{0.01};
 
     void internal_readFromStream(mrpt::serialization::CArchive& in) override;

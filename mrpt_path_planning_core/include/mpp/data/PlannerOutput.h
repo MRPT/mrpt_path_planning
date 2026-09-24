@@ -28,6 +28,9 @@ struct PlannerOutput
     /** Time spent (in secs) */
     double computationTime = 0;
 
+    /** Number of search nodes expanded (successors generated) */
+    size_t numExpandedNodes = 0;
+
     // Distance from best found path to goal
     // double goalDistance = std::numeric_limits<double>::max();
 

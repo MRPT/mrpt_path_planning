@@ -11,6 +11,7 @@
 #include <mpp/algos/transform_pc_square_clipping.h>
 #include <mpp/algos/within_bbox.h>
 #include <mpp/data/MotionPrimitivesTree.h>
+#include <mpp/ptgs/DiffDriveCollisionGridBased.h>
 #include <mpp/ptgs/SpeedTrimmablePTG.h>
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/version.h>
@@ -122,7 +123,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     // clipping dist for all ptgs:
     double MAX_XY_DIST = 0;
     for (const auto& ptg : in.ptgs.ptgs)
-        mrpt::keep_max(MAX_XY_DIST, ptg->getRefDistance());
+        mrpt::keep_max(MAX_XY_DIST, obstacle_clipping_distance(*ptg));
     ASSERT_(MAX_XY_DIST > 0);
 
     // Cache max linear speed for heuristic unit conversion (distance→time).
@@ -331,6 +332,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         current.pendingInOpenSet = false;
         current.visited          = true;
         openSet.erase(openSet.begin());
+        po.numExpandedNodes++;
 
         // for each neighbor of current:
         const auto neighbors = find_feasible_paths_to_neighbors(
@@ -471,6 +473,13 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             {
                 // do rewire:
                 tree.rewire_node_parent(neighborNode.id.value(), newEdge);
+
+                // The cell's representative state changed too: keep the tree
+                // node consistent with its new incoming edge, since returned
+                // paths are read from the tree.
+                auto& treeNode = tree.node_state(neighborNode.id.value());
+                treeNode.pose  = neighborNode.state.pose;
+                treeNode.vel   = neighborNode.state.vel;
             }
             else
             {
@@ -630,6 +639,17 @@ cost_t TPS_Astar::default_heuristic_R2(
     cost_t h = (from.pose.translation() - goal).norm() / maxLinSpeed_;
 
     return h;
+}
+
+double TPS_Astar::obstacle_clipping_distance(const ptg_t& ptg)
+{
+    if (const auto* g =
+            dynamic_cast<const ptg::DiffDriveCollisionGridBased*>(&ptg);
+        g)
+    {
+        return g->getObstacleReachDistance();
+    }
+    return ptg.getRefDistance() + ptg.getMaxRobotRadius();
 }
 
 TPS_Astar::Node& TPS_Astar::getOrCreateNodeByPose(
