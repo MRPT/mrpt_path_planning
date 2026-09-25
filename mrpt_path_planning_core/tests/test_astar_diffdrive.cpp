@@ -210,7 +210,10 @@ static void expectConsistentPath(
         const auto parentPose = itNode->pose;
         ++itNode;
         ++i;
-        if (e == nullptr || i == edges.size()) { continue; }
+        if (e == nullptr) { continue; }
+        EXPECT_NEAR(e->stateFrom.pose.x, parentPose.x, 1e-4) << "edge #" << i;
+        EXPECT_NEAR(e->stateFrom.pose.y, parentPose.y, 1e-4) << "edge #" << i;
+        if (i == edges.size()) { continue; }
         const auto& ptg = in.ptgs.ptgs.at(e->ptgIndex);
         const auto  expected =
             parentPose + ptg->getPathPose(e->ptgPathIndex, e->ptgStepIndex);
@@ -219,8 +222,6 @@ static void expectConsistentPath(
         EXPECT_NEAR(
             mrpt::math::angDistance(itNode->pose.phi, expected.phi), 0.0, 1e-4)
             << "edge #" << i;
-        EXPECT_NEAR(e->stateFrom.pose.x, parentPose.x, 1e-4) << "edge #" << i;
-        EXPECT_NEAR(e->stateFrom.pose.y, parentPose.y, 1e-4) << "edge #" << i;
     }
 }
 

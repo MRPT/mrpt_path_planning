@@ -507,7 +507,8 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
         }
     }
 
-    po.computationTime = mrpt::Clock::nowDouble() - planInitTime;
+    po.computationTime  = mrpt::Clock::nowDouble() - planInitTime;
+    po.numExpandedNodes = nIter;
 
     if (!haveMeet)
     {

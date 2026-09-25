@@ -29,6 +29,9 @@ using mrpt::format;
 
 namespace
 {
+// Time step used to simulate the PTG trajectories [s]
+constexpr float kTrajectoryTimeStep = 1.0e-3f;
+
 double pointSegmentDistance(
     const mrpt::math::TPoint2D& p, const mrpt::math::TPoint2D& a,
     const mrpt::math::TPoint2D& b)
@@ -739,13 +742,12 @@ void DiffDriveCollisionGridBased::internal_initialize(
     if (verbose) cout << "Initializing PTG '" << cacheFilename << "'...";
 
     // Simulate paths:
-    float trajectory_max_time  = 100.0f;  // [s]
-    float trajectory_time_step = 1.0e-3f;  // [s]
+    float trajectory_max_time = 100.0f;  // [s]
 
     simulateTrajectories(
         trajectory_max_time,
         refDistance,  // max.dist,
-        trajectory_time_step  // timestep
+        kTrajectoryTimeStep  // timestep
     );
 
     // Just for debugging, etc.
@@ -927,10 +929,13 @@ double DiffDriveCollisionGridBased::getObstacleReachDistance() const
             std::hypot(
                 m_robotShape.get_vertex_x(m), m_robotShape.get_vertex_y(m)));
     }
-    // Trajectories never go farther than refDistance from the origin, so the
-    // footprint (grown by the clearance) stays within this radius. One extra
-    // cell accounts for the cell-square test at the border.
-    return refDistance + robotRadius + m_clearance + 2 * m_resolution;
+    // Trajectories never go farther than refDistance from the origin, plus at
+    // most one final simulation step, so the footprint (grown by the
+    // clearance) stays within this radius. One extra cell accounts for the
+    // cell-square test at the border.
+    const double lastStepOvershoot = V_MAX * kTrajectoryTimeStep;
+    return refDistance + lastStepOvershoot + robotRadius + m_clearance +
+           2 * m_resolution;
 }
 
 size_t DiffDriveCollisionGridBased::getPathStepCount(uint16_t k) const
