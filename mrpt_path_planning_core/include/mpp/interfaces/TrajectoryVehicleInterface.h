@@ -6,9 +6,9 @@
 
 #pragma once
 
+#include <mpp/data/SampledTrajectory.h>
 #include <mpp/data/VehicleLocalizationState.h>
 #include <mpp/data/VehicleOdometryState.h>
-#include <mpp/data/SampledTrajectory.h>
 #include <mrpt/system/COutputLogger.h>
 
 #include <chrono>

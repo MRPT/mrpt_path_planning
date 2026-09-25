@@ -12,7 +12,8 @@
  *    actual node delta within tolerance.
  *  - Multi-edge: every edge is independently corrected.
  *  - Zero-delta node pair: skipped silently, no crash.
- *  - Both overloads (path_t/edge_sequence_t and vector) produce the same result.
+ *  - Both overloads (path_t/edge_sequence_t and vector) produce the same
+ * result.
  */
 
 #include <gtest/gtest.h>
@@ -76,7 +77,8 @@ static EdgeT makeEdge(
     return e;
 }
 
-// Returns true if the PTG-reconstructed pose for this edge is within tol of target.
+// Returns true if the PTG-reconstructed pose for this edge is within tol of
+// target.
 static bool poseClose(
     const mpp::TrajectoriesAndRobotShape& trs, const EdgeT& edge,
     const mrpt::math::TPose2D& target, double tol = 0.10)

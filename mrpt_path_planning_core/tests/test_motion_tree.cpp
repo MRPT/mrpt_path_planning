@@ -16,8 +16,8 @@
  */
 
 #include <gtest/gtest.h>
-#include <mpp/data/MoveEdgeSE2_TPS.h>
 #include <mpp/data/MotionPrimitivesTree.h>
+#include <mpp/data/MoveEdgeSE2_TPS.h>
 #include <mpp/data/SE2_KinState.h>
 
 using Tree = mpp::MotionPrimitivesTreeSE2;

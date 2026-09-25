@@ -49,8 +49,8 @@ TEST(EdgeInterpolation, IntermediatePointsOnPTG)
     auto& ptg = trs.ptgs.at(0);
 
     // Pick a trajectory index and a step somewhere in the middle.
-    const size_t k    = 30;   // trajectory index (0..60)
-    const size_t step = 50;   // PTG step index
+    const size_t k    = 30;  // trajectory index (0..60)
+    const size_t step = 50;  // PTG step index
 
     const mrpt::math::TPose2D reconstrRelPose = ptg->getPathPose(k, step);
     const double              dt              = ptg->getPathStepDuration();
@@ -73,14 +73,14 @@ TEST(EdgeInterpolation, IntermediatePointsOnPTG)
 
     // First entry: identity pose at t=0.
     const auto& firstPose = ip.begin()->second;
-    EXPECT_NEAR(firstPose.x,   0.0, 1e-9);
-    EXPECT_NEAR(firstPose.y,   0.0, 1e-9);
+    EXPECT_NEAR(firstPose.x, 0.0, 1e-9);
+    EXPECT_NEAR(firstPose.y, 0.0, 1e-9);
     EXPECT_NEAR(firstPose.phi, 0.0, 1e-9);
 
     // Last entry: must match reconstrRelPose.
     const auto& lastPose = ip.rbegin()->second;
-    EXPECT_NEAR(lastPose.x,   reconstrRelPose.x,   1e-6);
-    EXPECT_NEAR(lastPose.y,   reconstrRelPose.y,   1e-6);
+    EXPECT_NEAR(lastPose.x, reconstrRelPose.x, 1e-6);
+    EXPECT_NEAR(lastPose.y, reconstrRelPose.y, 1e-6);
     EXPECT_NEAR(lastPose.phi, reconstrRelPose.phi, 1e-6);
 
     // estimatedExecTime must equal step * dt.
@@ -94,12 +94,11 @@ TEST(EdgeInterpolation, IntermediatePointsOnPTG)
         const double t     = iStep * dt;
 
         const auto it = ip.find(t);
-        ASSERT_NE(it, ip.end())
-            << "Missing interpolated entry at t=" << t;
+        ASSERT_NE(it, ip.end()) << "Missing interpolated entry at t=" << t;
 
         const mrpt::math::TPose2D expected = ptg->getPathPose(k, iStep);
-        EXPECT_NEAR(it->second.x,   expected.x,   1e-6) << "at i=" << i;
-        EXPECT_NEAR(it->second.y,   expected.y,   1e-6) << "at i=" << i;
+        EXPECT_NEAR(it->second.x, expected.x, 1e-6) << "at i=" << i;
+        EXPECT_NEAR(it->second.y, expected.y, 1e-6) << "at i=" << i;
         EXPECT_NEAR(it->second.phi, expected.phi, 1e-6) << "at i=" << i;
     }
 }

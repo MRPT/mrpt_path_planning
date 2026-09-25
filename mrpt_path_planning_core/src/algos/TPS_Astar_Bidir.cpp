@@ -44,11 +44,13 @@ TPS_Astar::list_paths_to_neighbors_t
     std::unordered_map<NodeCoords, path_to_neighbor_t, NodeCoordsHash>
         bestPaths;
 
-    // Cache of the TP-obstacle free-distance array, keyed by (ptgIdx, predCell):
-    // unlike forward expansion (single obstacle anchor = the node), each
-    // predecessor pose is a different obstacle anchor, so we cache per cell to
-    // avoid re-scanning the local cloud for predecessors that share a cell.
-    std::map<std::pair<size_t, std::pair<int32_t, int32_t>>, std::vector<double>>
+    // Cache of the TP-obstacle free-distance array, keyed by (ptgIdx,
+    // predCell): unlike forward expansion (single obstacle anchor = the node),
+    // each predecessor pose is a different obstacle anchor, so we cache per
+    // cell to avoid re-scanning the local cloud for predecessors that share a
+    // cell.
+    std::map<
+        std::pair<size_t, std::pair<int32_t, int32_t>>, std::vector<double>>
         tpObsCache;
 
     for (size_t ptgIdx = 0; ptgIdx < trs.ptgs.size(); ptgIdx++)
@@ -104,10 +106,9 @@ TPS_Astar::list_paths_to_neighbors_t
 
                     // Predecessor pose: p such that p (+) relPose == qPose
                     //   CPose2D(p) = CPose2D(q) (+) inverse(relPose)
-                    const auto pPose =
-                        (mrpt::poses::CPose2D(qPose) -
-                         mrpt::poses::CPose2D(relPose))
-                            .asTPose();
+                    const auto pPose = (mrpt::poses::CPose2D(qPose) -
+                                        mrpt::poses::CPose2D(relPose))
+                                           .asTPose();
 
                     // out of lattice limits?
                     if (pPose.x < worldBboxMin.x || pPose.y < worldBboxMin.y)
@@ -118,8 +119,9 @@ TPS_Astar::list_paths_to_neighbors_t
 
                     const NodeCoords pCell = nodeGridCoords(pPose);
 
-                    // TP-obstacles for a forward arc *from p*: build (and cache)
-                    // the free-distance array anchored at the predecessor pose.
+                    // TP-obstacles for a forward arc *from p*: build (and
+                    // cache) the free-distance array anchored at the
+                    // predecessor pose.
                     const auto cacheKey = std::make_pair(
                         ptgIdx, std::make_pair(pCell.idxX, pCell.idxY));
                     auto itCache = tpObsCache.find(cacheKey);
@@ -130,15 +132,15 @@ TPS_Astar::list_paths_to_neighbors_t
                             MAX_XY_OBSTACLES_CLIPPING_DIST);
 
                         ptg_t::TNavDynamicState ds;
-                        ds.curVelLocal = mrpt::math::TTwist2D(0, 0, 0);
-                        ds.relTarget   = startPose - pPose;
+                        ds.curVelLocal    = mrpt::math::TTwist2D(0, 0, 0);
+                        ds.relTarget      = startPose - pPose;
                         ds.targetRelSpeed = 0;
                         ptg->updateNavDynamicState(ds);
 
                         std::vector<double> tpObstacles;
                         ptg->initTPObstacles(tpObstacles);
-                        const auto&  ox   = localObstacles->getPointsBufferRef_x();
-                        const auto&  oy   = localObstacles->getPointsBufferRef_y();
+                        const auto& ox = localObstacles->getPointsBufferRef_x();
+                        const auto& oy = localObstacles->getPointsBufferRef_y();
                         const size_t nObs = localObstacles->size();
                         for (size_t i = 0; i < nObs; i++)
                             ptg->updateTPObstacle(ox[i], oy[i], tpObstacles);
@@ -154,21 +156,20 @@ TPS_Astar::list_paths_to_neighbors_t
                     // Valid predecessor. Store with forward-generator
                     // convention: neighborPose = from.pose (+) relReconstrPose
                     //   => relReconstrPose = inverse(relPose)
-                    const NodeCoords nc = pCell;
+                    const NodeCoords nc   = pCell;
                     auto&            path = bestPaths[nc];
                     if (relDist < path.ptgDist)
                     {
-                        path.ptgDist      = relDist;
-                        path.ptgIndex     = ptgIdx;
-                        path.ptgTrajIndex = trjIdx;
-                        path.relTrgStep   = trjStep;
-                        path.relReconstrPose =
-                            (mrpt::poses::CPose2D(pPose) -
-                             mrpt::poses::CPose2D(qPose))
-                                .asTPose();
+                        path.ptgDist         = relDist;
+                        path.ptgIndex        = ptgIdx;
+                        path.ptgTrajIndex    = trjIdx;
+                        path.relTrgStep      = trjStep;
+                        path.relReconstrPose = (mrpt::poses::CPose2D(pPose) -
+                                                mrpt::poses::CPose2D(qPose))
+                                                   .asTPose();
                         path.neighborNodeCoords = nc;
-                        path.ptgDynState        = ptg->getCurrentNavDynamicState();
-                        path.ptgTrimmableSpeed  = speed;
+                        path.ptgDynState = ptg->getCurrentNavDynamicState();
+                        path.ptgTrimmableSpeed = speed;
                     }
                 }
             }
@@ -295,8 +296,8 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
     else
     {
         // R(2) point goal: one backward root per yaw bin (multi-source).
-        const auto& gp     = in.stateGoal.state.point();
-        const int   nBins  = static_cast<int>(
+        const auto& gp    = in.stateGoal.state.point();
+        const int   nBins = static_cast<int>(
             std::round(2 * M_PI / params_.grid_resolution_yaw));
         for (int j = 0; j < nBins; j++)
         {
@@ -313,9 +314,9 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
     }
 
     // Best meeting found so far:
-    cost_t                bestMu     = std::numeric_limits<cost_t>::max();
-    mrpt::graphs::TNodeID meetFwdId  = mrpt::graphs::INVALID_NODEID;
-    mrpt::graphs::TNodeID meetBwdId  = mrpt::graphs::INVALID_NODEID;
+    cost_t                bestMu    = std::numeric_limits<cost_t>::max();
+    mrpt::graphs::TNodeID meetFwdId = mrpt::graphs::INVALID_NODEID;
+    mrpt::graphs::TNodeID meetBwdId = mrpt::graphs::INVALID_NODEID;
     NodeCoords            meetCell;
     bool                  haveMeet = false;
 
@@ -330,7 +331,7 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
     // grid/open set of the given side.
     auto relax =
         [&](Direction dir, Node& current, SE2_Lattice& grid,
-            std::multimap<cost_t, Node*>& openSet,
+            std::multimap<cost_t, Node*>&                               openSet,
             std::unordered_map<mrpt::graphs::TNodeID, MoveEdgeSE2_TPS>& edgeMap,
             mrpt::graphs::TNodeID& nextId, const SE2orR2_KinState& sideGoal,
             const path_to_neighbor_t& edge)
@@ -366,11 +367,11 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
         //  - backward side: the real arc is predecessor(neigh) -> current,
         //    so stateFrom=neighbor, stateTo=current.
         MoveEdgeSE2_TPS newEdge;
-        newEdge.ptgIndex          = edge.ptgIndex.value();
-        newEdge.ptgPathIndex      = edge.ptgTrajIndex.value();
-        newEdge.ptgDist           = edge.ptgDist;
-        newEdge.ptgStepIndex      = ptg_step;
-        newEdge.ptgTrimmableSpeed = edge.ptgTrimmableSpeed;
+        newEdge.ptgIndex             = edge.ptgIndex.value();
+        newEdge.ptgPathIndex         = edge.ptgTrajIndex.value();
+        newEdge.ptgDist              = edge.ptgDist;
+        newEdge.ptgStepIndex         = ptg_step;
+        newEdge.ptgTrimmableSpeed    = edge.ptgTrimmableSpeed;
         newEdge.ptgFinalGoalRelSpeed = edge.ptgDynState.value().targetRelSpeed;
 #if MRPT_VERSION >= 0x20e02
         newEdge.ptgInternalState =
@@ -379,22 +380,21 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
         mrpt::math::TPose2D arcFrom, arcTo;
         if (dir == Direction::Forward)
         {
-            arcFrom         = current.state.pose;
-            arcTo           = neighPose;
+            arcFrom          = current.state.pose;
+            arcTo            = neighPose;
             newEdge.parentId = current.id.value();
         }
         else
         {
-            arcFrom         = neighPose;       // predecessor
-            arcTo           = current.state.pose;
+            arcFrom          = neighPose;  // predecessor
+            arcTo            = current.state.pose;
             newEdge.parentId = current.id.value();
         }
-        newEdge.stateFrom = SE2_KinState();
-        newEdge.stateFrom.pose = arcFrom;
-        newEdge.stateTo        = SE2_KinState();
-        newEdge.stateTo.pose   = arcTo;
-        newEdge.ptgFinalRelativeGoal =
-            sideGoal.asSE2KinState().pose - arcFrom;
+        newEdge.stateFrom            = SE2_KinState();
+        newEdge.stateFrom.pose       = arcFrom;
+        newEdge.stateTo              = SE2_KinState();
+        newEdge.stateTo.pose         = arcTo;
+        newEdge.ptgFinalRelativeGoal = sideGoal.asSE2KinState().pose - arcFrom;
 
         const auto reconstrRelPose = arcTo - arcFrom;
         edge_interpolated_path(
@@ -407,12 +407,12 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
         const cost_t tentative_g = current.gScore + newEdge.cost;
         if (tentative_g >= neighborNode.gScore) return;
 
-        neighborNode.cameFrom        = &current;
-        neighborNode.gScore          = tentative_g;
-        const cost_t costToGoal      = heuristic(x_i, sideGoal);
-        neighborNode.fScore          = tentative_g + costToGoal;
-        neighborNode.pendingInOpenSet = true;
-        neighborNode.state            = x_i;
+        neighborNode.cameFrom            = &current;
+        neighborNode.gScore              = tentative_g;
+        const cost_t costToGoal          = heuristic(x_i, sideGoal);
+        neighborNode.fScore              = tentative_g + costToGoal;
+        neighborNode.pendingInOpenSet    = true;
+        neighborNode.state               = x_i;
         edgeMap[neighborNode.id.value()] = newEdge;
         openSet.insert({neighborNode.fScore, &neighborNode});
     };
@@ -421,7 +421,7 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
     // lattice has a visited node in the same cell.
     auto checkMeet = [&](Node& u, SE2_Lattice& otherGrid, Direction uSide)
     {
-        const NodeCoords c = nodeGridCoords(u.state.pose);
+        const NodeCoords c  = nodeGridCoords(u.state.pose);
         auto             it = otherGrid.find(c);
         if (it == otherGrid.end()) return;
         Node& w = it->second;
@@ -525,7 +525,11 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
         std::vector<MoveEdgeSE2_TPS> rev;
         const Node*                  meet = nullptr;
         for (auto& kv : gridFwd)
-            if (kv.second.id == meetFwdId) { meet = &kv.second; break; }
+            if (kv.second.id == meetFwdId)
+            {
+                meet = &kv.second;
+                break;
+            }
         ASSERT_(meet != nullptr);
         const Node* node = meet;
         while (node->cameFrom.has_value())
@@ -542,7 +546,11 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
     {
         const Node* meet = nullptr;
         for (auto& kv : gridBwd)
-            if (kv.second.id == meetBwdId) { meet = &kv.second; break; }
+            if (kv.second.id == meetBwdId)
+            {
+                meet = &kv.second;
+                break;
+            }
         ASSERT_(meet != nullptr);
         const Node* node = meet;
         while (node->cameFrom.has_value())
@@ -623,8 +631,8 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
     po.pathCost             = tree.nodes().at(prevId).cost_;
 
     MRPT_LOG_DEBUG_STREAM(
-        "TPS_Astar_Bidir: solved. iters="
-        << nIter << " mu=" << bestMu << " edges=" << chainEdges.size());
+        "TPS_Astar_Bidir: solved. iters=" << nIter << " mu=" << bestMu
+                                          << " edges=" << chainEdges.size());
 
     return po;
     MRPT_END

@@ -48,10 +48,7 @@ SE2_KinState SE2orR2_KinState::asSE2KinState() const
         // pose:
         s.pose = state.pose();
     }
-    else
-    {
-        THROW_EXCEPTION("Called with undefined state.");
-    }
+    else { THROW_EXCEPTION("Called with undefined state."); }
 
     return s;
 }

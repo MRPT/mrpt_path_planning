@@ -94,7 +94,8 @@ static mpp::PlannerInput buildInput(
     in.worldBboxMax = bboxMax;
 
     if (obsPts)
-        in.obstacles.push_back(mpp::ObstacleSource::FromStaticPointcloud(obsPts));
+        in.obstacles.push_back(
+            mpp::ObstacleSource::FromStaticPointcloud(obsPts));
 
     return in;
 }
@@ -183,8 +184,9 @@ static Continuity measureContinuity(const mpp::PlannerOutput& out)
                                 e->stateFrom.pose.x - prev->stateTo.pose.x,
                                 e->stateFrom.pose.y - prev->stateTo.pose.y));
             c.maxYawGap = std::max(
-                c.maxYawGap, std::abs(mrpt::math::wrapToPi(
-                                 e->stateFrom.pose.phi - prev->stateTo.pose.phi)));
+                c.maxYawGap,
+                std::abs(mrpt::math::wrapToPi(
+                    e->stateFrom.pose.phi - prev->stateTo.pose.phi)));
         }
         c.length += std::hypot(
             e->stateTo.pose.x - e->stateFrom.pose.x,
@@ -278,8 +280,8 @@ TEST(AstarDiffDriveBidir, BidirReverseReachesGoalBehind)
 
     auto walls = buildCorridorWalls(-3.0, 3.0, 0.7);
     auto in    = buildInput(
-        mrpt::math::TPoint2D{-1.5, 0.0}, kCPtgForwardReverse, {-3, -1.0, -M_PI},
-        {3, 1.0, M_PI}, walls);
+           mrpt::math::TPoint2D{-1.5, 0.0}, kCPtgForwardReverse, {-3, -1.0, -M_PI},
+           {3, 1.0, M_PI}, walls);
 
     const auto out = planner.plan(in);
     ASSERT_TRUE(out.success)

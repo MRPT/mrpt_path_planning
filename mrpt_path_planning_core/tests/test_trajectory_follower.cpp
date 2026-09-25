@@ -1353,12 +1353,12 @@ TEST(TrajectoryFollower, NoisyLocalizationDoesNotLimitCycle)
     };
 
     TPose2D      mapPose{0, 0, 0};  // true robot pose
-    double       v         = 0;
-    const double dt        = f.params.control_period;
-    double       t         = 0;
-    double       maxCross  = 0;
-    double       sumSqE    = 0;
-    int          nE        = 0;
+    double       v          = 0;
+    const double dt         = f.params.control_period;
+    double       t          = 0;
+    double       maxCross   = 0;
+    double       sumSqE     = 0;
+    int          nE         = 0;
     int          omegaFlips = 0;
     int          lastSign   = 0;
     bool         reached    = false;
@@ -1453,8 +1453,8 @@ TEST(TrajectoryFollower, AnchorFilterAttenuatesLocalizationJitter)
         const auto tw = out.command.points.front().twist;
         mapPose       = integrate(mapPose, tw.vx, tw.omega, dt);
         v             = tw.vx;
-        maxTrueE      = std::max(
-                 maxTrueE, distToPolyline(pts, {mapPose.x, mapPose.y}));
+        maxTrueE =
+            std::max(maxTrueE, distToPolyline(pts, {mapPose.x, mapPose.y}));
     }
     ASSERT_GT(n, 500);
     const double ctrlStd   = std::sqrt(sumSqCtrl / n);
@@ -1506,10 +1506,7 @@ TEST(TrajectoryFollower, ReachedGoalLatchesUntilNewTrajectory)
     for (int k = 0; k < 200; k++)
     {
         robot.x += 0.02;
-        if (k > 100)
-        {
-            robot.y += 0.02;
-        }
+        if (k > 100) { robot.y += 0.02; }
         const auto out = f.step(mkLoc(robot), mkOdo(robot, 0.4));
         EXPECT_EQ(out.status, mpp::FollowerStatus::ReachedGoal)
             << "follower re-awakened on a stale path at k=" << k;
@@ -1518,7 +1515,8 @@ TEST(TrajectoryFollower, ReachedGoalLatchesUntilNewTrajectory)
     }
 
     // A new trajectory re-arms it.
-    f.setTrajectory(polyToTraj({{robot.x, robot.y}, {robot.x + 5, robot.y}}, 0.3));
+    f.setTrajectory(
+        polyToTraj({{robot.x, robot.y}, {robot.x + 5, robot.y}}, 0.3));
     const auto out = f.step(mkLoc(robot), mkOdo(robot, 0));
     EXPECT_NE(out.status, mpp::FollowerStatus::ReachedGoal);
     EXPECT_FALSE(out.command.points.empty());
@@ -1554,9 +1552,9 @@ TEST(TrajectoryFollower, YawJitterFarFromOdomOriginDoesNotDegrade)
         };
 
         TPose2D          mapPose{0, 0, 0};
-        double           v  = 0;
-        const double     dt = f.params.control_period;
-        double           t  = 0;
+        double           v             = 0;
+        const double     dt            = f.params.control_period;
+        double           t             = 0;
         constexpr double kYawJitterAmp = mrpt::DEG2RAD(2.0);
         double           maxTrueE      = 0;
         bool             reached       = false;
@@ -1572,10 +1570,7 @@ TEST(TrajectoryFollower, YawJitterFarFromOdomOriginDoesNotDegrade)
                 reached = true;
                 break;
             }
-            if (out.command.points.empty())
-            {
-                break;
-            }
+            if (out.command.points.empty()) { break; }
             const auto tw = out.command.points.front().twist;
             mapPose       = integrate(mapPose, tw.vx, tw.omega, dt);
             v             = tw.vx;
@@ -1612,7 +1607,7 @@ TEST(TrajectoryFollower, CuspApproachKeepsLookaheadDistance)
 {
     // Forward to (2,0), cusp, then back-and-left to (1,1).
     const std::vector<TPoint2D> pts = {
-        {0, 0}, {0.5, 0}, {1.0, 0}, {1.5, 0}, {2.0, 0},
+        {0, 0},     {0.5, 0},   {1.0, 0},   {1.5, 0},   {2.0, 0},
         {1.8, 0.2}, {1.6, 0.4}, {1.4, 0.6}, {1.2, 0.8}, {1.0, 1.0}};
     mpp::TrajectoryFollower f;
     applyAccuracyTunedParams(f);
@@ -1622,7 +1617,7 @@ TEST(TrajectoryFollower, CuspApproachKeepsLookaheadDistance)
     const TPose2D robot{1.85, 0.0, 0.0};
     const auto    out = f.step(mkLoc(robot), mkOdo(robot, 0.2));
     const double  Ld  = std::hypot(
-         out.lookahead_point.x - robot.x, out.lookahead_point.y - robot.y);
+          out.lookahead_point.x - robot.x, out.lookahead_point.y - robot.y);
     const double minLd =
         std::max(f.params.min_lookahead_dist, f.params.min_turn_radius);
     EXPECT_GE(Ld, minLd - 1e-6)
@@ -1646,7 +1641,7 @@ TEST(TrajectoryFollower, OffPathDebounceSuppressesTransientSpike)
     // A 2 m spike: immediately over the limit, but too fresh to latch.
     auto locSpike      = mkLoc({1.0, 2.0, 0.0});
     locSpike.timestamp = t0;
-    auto out = f.step(locSpike, mkOdo({1.0, 2.0, 0.0}, 0.3));
+    auto out           = f.step(locSpike, mkOdo({1.0, 2.0, 0.0}, 0.3));
     EXPECT_NE(out.status, mpp::FollowerStatus::OffPathExceeded)
         << "a single-cycle spike must not trip the fault";
 
