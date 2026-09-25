@@ -13,8 +13,7 @@ namespace mpp
 {
 void edge_interpolated_path(
     MoveEdgeSE2_TPS& edge, const TrajectoriesAndRobotShape& trs,
-    const mrpt::math::TPose2D& reconstrRelPose,
-    size_t                     ptg_step,
+    const mrpt::math::TPose2D& reconstrRelPose, size_t ptg_step,
     const std::optional<size_t>& numSegments = std::nullopt);
 
 }

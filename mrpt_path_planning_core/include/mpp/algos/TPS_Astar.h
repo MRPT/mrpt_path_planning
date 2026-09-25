@@ -125,10 +125,14 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     PlannerOutput plan(const PlannerInput& in) override;
 
     mrpt::containers::yaml params_as_yaml() override
-    { return params_.as_yaml(); }
+    {
+        return params_.as_yaml();
+    }
 
     void params_from_yaml(const mrpt::containers::yaml& c) override
-    { params_.load_from_yaml(c); }
+    {
+        params_.load_from_yaml(c);
+    }
 
     cost_t default_heuristic(
         const SE2_KinState& from, const SE2orR2_KinState& goal) const;
@@ -214,7 +218,9 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         // boost::hash_combine pattern: avalanches bits so that adjacent
         // integer grid coordinates map to well-separated hash buckets.
         static void hash_combine(size_t& seed, size_t v)
-        { seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2); }
+        {
+            seed ^= v + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
 
         size_t operator()(const NodeCoords& x) const
         {
@@ -278,9 +284,13 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     SE2_Lattice grid_;
 
     int32_t x2idx(float x) const
-    { return static_cast<int32_t>(std::round(x / params_.grid_resolution_xy)); }
+    {
+        return static_cast<int32_t>(std::round(x / params_.grid_resolution_xy));
+    }
     int32_t y2idx(float y) const
-    { return static_cast<int32_t>(std::round(y / params_.grid_resolution_xy)); }
+    {
+        return static_cast<int32_t>(std::round(y / params_.grid_resolution_xy));
+    }
     int32_t phi2idx(float yaw) const
     {
         const auto phi = mrpt::math::wrapToPi(yaw);
@@ -295,9 +305,13 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 
     /// throws on out of grid limits.
     NodeCoords nodeGridCoords(const mrpt::math::TPose2D& p) const
-    { return NodeCoords(x2idx(p.x), y2idx(p.y), phi2idx(p.phi)); }
+    {
+        return NodeCoords(x2idx(p.x), y2idx(p.y), phi2idx(p.phi));
+    }
     NodeCoords nodeGridCoords(const mrpt::math::TPoint2D& p) const
-    { return NodeCoords(x2idx(p.x), y2idx(p.y)); }
+    {
+        return NodeCoords(x2idx(p.x), y2idx(p.y));
+    }
 
     struct NodePtr
     {

@@ -10,7 +10,8 @@
  * Verified behaviors:
  *  - Single edge: timestamps span [0, T], poses match the PTG path.
  *  - Multi-edge: time is stitched — second edge starts after the first ends.
- *  - Coarser sample period → fewer trajectory points; final step always included.
+ *  - Coarser sample period → fewer trajectory points; final step always
+ * included.
  *  - save_to_txt: creates a non-empty file with one data line per entry.
  */
 
@@ -52,7 +53,8 @@ static mpp::TrajectoriesAndRobotShape buildTRS()
     return trs;
 }
 
-// Build an edge using bestTrajectory so ptgIndex/ptgPathIndex/ptgDist are valid.
+// Build an edge using bestTrajectory so ptgIndex/ptgPathIndex/ptgDist are
+// valid.
 static mpp::MoveEdgeSE2_TPS buildEdge(
     mpp::TrajectoriesAndRobotShape& trs, double tx, double ty,
     const mrpt::math::TPose2D& fromPose = {0, 0, 0})
@@ -61,7 +63,7 @@ static mpp::MoveEdgeSE2_TPS buildEdge(
     edge.stateFrom.pose       = fromPose;
     edge.stateTo.pose         = fromPose + mrpt::math::TPose2D{tx, ty, 0};
     edge.ptgFinalRelativeGoal = {tx, ty, 0};
-    const bool ok = mpp::bestTrajectory(edge, trs);
+    const bool ok             = mpp::bestTrajectory(edge, trs);
     EXPECT_TRUE(ok);
     EXPECT_GE(edge.ptgIndex, 0);
     return edge;
@@ -76,8 +78,7 @@ TEST(Trajectories, SingleEdge)
 
     ASSERT_GE(edge.ptgIndex, 0);
 
-    const double ptg_dt =
-        trs.ptgs.at(edge.ptgIndex)->getPathStepDuration();
+    const double ptg_dt = trs.ptgs.at(edge.ptgIndex)->getPathStepDuration();
 
     mpp::MotionPrimitivesTreeSE2::edge_sequence_t seq;
     seq.push_back(&edge);
@@ -94,14 +95,12 @@ TEST(Trajectories, SingleEdge)
     ptg->updateNavDynamicState(edge.getPTGDynState());
     uint32_t finalStep = 0;
     ptg->getPathStepForDist(edge.ptgPathIndex, edge.ptgDist, finalStep);
-    EXPECT_NEAR(
-        traj.rbegin()->first, finalStep * ptg_dt,
-        ptg_dt + 1e-9);
+    EXPECT_NEAR(traj.rbegin()->first, finalStep * ptg_dt, ptg_dt + 1e-9);
 
     // PTG index and path index must be preserved.
     for (const auto& kv : traj)
     {
-        EXPECT_EQ(kv.second.ptgIndex,     edge.ptgIndex);
+        EXPECT_EQ(kv.second.ptgIndex, edge.ptgIndex);
         EXPECT_EQ(kv.second.ptgPathIndex, edge.ptgPathIndex);
     }
 }
@@ -135,7 +134,8 @@ TEST(Trajectories, MultiEdgeTimeStitching)
 
     // The last timestamp must exceed T1 (second edge added time on top).
     EXPECT_GT(traj.rbegin()->first, T1)
-        << "Multi-edge trajectory must span more time than the first edge alone";
+        << "Multi-edge trajectory must span more time than the first edge "
+           "alone";
 }
 
 TEST(Trajectories, CoarserSampleFewerPoints)
@@ -152,7 +152,7 @@ TEST(Trajectories, CoarserSampleFewerPoints)
     const auto fine   = mpp::plan_to_trajectory(seq, trs, ptg_dt);
     const auto coarse = mpp::plan_to_trajectory(seq, trs, ptg_dt * 10);
 
-    EXPECT_GT(fine.size(),   1u);
+    EXPECT_GT(fine.size(), 1u);
     EXPECT_LT(coarse.size(), fine.size())
         << "Coarser sample period must produce fewer trajectory points";
 
@@ -163,7 +163,7 @@ TEST(Trajectories, CoarserSampleFewerPoints)
     ptg->getPathStepForDist(edge.ptgPathIndex, edge.ptgDist, finalStep);
     const double T = finalStep * ptg_dt;
 
-    EXPECT_NEAR(fine.rbegin()->first,   T, ptg_dt + 1e-9);
+    EXPECT_NEAR(fine.rbegin()->first, T, ptg_dt + 1e-9);
     EXPECT_NEAR(coarse.rbegin()->first, T, ptg_dt * 10 + 1e-9);
 }
 

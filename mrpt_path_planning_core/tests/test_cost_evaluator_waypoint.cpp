@@ -82,10 +82,10 @@ TEST(CostEvaluatorWaypoint, EdgeFarFromWaypoint)
 TEST(CostEvaluatorWaypoint, UseAverageVsMax)
 {
     // Two poses: one at the waypoint (cost=0), one outside (cost=costScale).
-    // Average mode returns the mean; max mode returns the maximum per-pose cost.
-    // Both must stay in [0, costScale].
+    // Average mode returns the mean; max mode returns the maximum per-pose
+    // cost. Both must stay in [0, costScale].
     const auto edge = makeEdge(
-        {{0.0, {0.0, 0, 0}},   // outside radius → cost = costScale
+        {{0.0, {0.0, 0, 0}},  // outside radius → cost = costScale
          {1.0, {1.0, 0, 0}}});  // at waypoint   → cost = 0
 
     auto evAvg = makeEv(1.0, 0.5, /*avg=*/true);
@@ -117,5 +117,6 @@ TEST(CostEvaluatorWaypoint, SetPreferredWaypointsUpdates)
     EXPECT_LT(ev(edge), 1.0) << "Cost must be reduced with waypoint at (1,0)";
 
     ev.setPreferredWaypoints({});
-    EXPECT_NEAR(ev(edge), 1.0, 1e-9) << "Cost must return to costScale after clearing waypoints";
+    EXPECT_NEAR(ev(edge), 1.0, 1e-9)
+        << "Cost must return to costScale after clearing waypoints";
 }

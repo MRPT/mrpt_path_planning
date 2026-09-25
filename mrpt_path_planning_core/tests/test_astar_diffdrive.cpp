@@ -229,9 +229,9 @@ static void expectConsistentPath(
 // poses of all solution edges (poses are relative to each edge's stateFrom).
 struct PathQuality
 {
-    double length      = 0;  //!< total travelled XY arc length [m]
-    double totalTurn   = 0;  //!< sum of |heading increments| [rad]
-    size_t numSamples  = 0;
+    double length     = 0;  //!< total travelled XY arc length [m]
+    double totalTurn  = 0;  //!< sum of |heading increments| [rad]
+    size_t numSamples = 0;
 };
 
 static PathQuality measurePath(const mpp::PlannerOutput& out)
@@ -256,7 +256,7 @@ static PathQuality measurePath(const mpp::PlannerOutput& out)
                 q.totalTurn +=
                     std::abs(mrpt::math::wrapToPi(abs.phi - prev.phi));
             }
-            prev = abs;
+            prev  = abs;
             first = false;
             q.numSamples++;
         }
@@ -273,11 +273,11 @@ static PathQuality measurePath(const mpp::PlannerOutput& out)
 // goal position with its heading ~12 deg off and then performed a full ~360 deg
 // in-place loop to re-enter the exact goal SE(2) lattice cell, instead of a
 // gentle approach. Root cause: the analytic goal expansion used to terminate on
-// the *first* collision-free edge landing in the goal cell. With a tight turning
-// radius, a node already at the goal xy but a couple of yaw cells off can only
-// reach the exact goal cell through a near-full-circle PTG arc, so that greedy
-// first edge was a loop. The fix records the goal-landing edge as a candidate
-// and commits only when it is provably (eps-)optimal.
+// the *first* collision-free edge landing in the goal cell. With a tight
+// turning radius, a node already at the goal xy but a couple of yaw cells off
+// can only reach the exact goal cell through a near-full-circle PTG arc, so
+// that greedy first edge was a loop. The fix records the goal-landing edge as a
+// candidate and commits only when it is provably (eps-)optimal.
 //
 // This reproduces the geometry in open space (no obstacles) with the same
 // PTG/turning-radius regime, and asserts the easy path is NOT over-complicated.
@@ -334,7 +334,7 @@ RobotModel_shape2D_ys = 0.275 0.275 0.20 -0.20 -0.275 -0.275
     ASSERT_TRUE(out.success) << "Easy open-space SE(2) goal must be solvable";
     expectConsistentPath(out, in);
 
-    const auto q        = measurePath(out);
+    const auto   q        = measurePath(out);
     const double straight = std::hypot(0.6, 3.35);
 
     // The net required heading change is only 45 deg. Anything close to a full

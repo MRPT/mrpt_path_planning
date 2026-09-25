@@ -380,9 +380,8 @@ double TrajectoryFollower::adaptiveLookaheadS(double sStart, double capS) const
     // Arc-length floor so the lookahead never collapses onto the robot; with
     // an arbitrarily short lookahead the pure-pursuit curvature diverges. The
     // min_turn_radius clamp and this floor together bound the commanded turn.
-    const double kFloor = params.min_lookahead_arc > 0
-                              ? params.min_lookahead_arc
-                              : 0.3;  // [m]
+    const double kFloor =
+        params.min_lookahead_arc > 0 ? params.min_lookahead_arc : 0.3;  // [m]
     const double total  = totalLength();
     const double sFloor = sStart + kFloor;
     if (capS <= sFloor) return std::min(std::max(capS, sStart), total);
@@ -491,13 +490,13 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
         {
             // Pinned at capS (goal, cusp, or max travel) and still inside
             // the floor circle: extrapolate along the trailing chord.
-            const double     sPin       = std::min(capS, totalLength());
-            constexpr double kEndWindow = 0.5;  // [m]
-            const double     w          = std::min(sPin, kEndWindow);
-            const mrpt::math::TPoint2D pEndA = pointAtArc(sPin - w);
-            double                     ex    = out.lookahead.x - pEndA.x;
-            double                     ey    = out.lookahead.y - pEndA.y;
-            const double               eLen  = std::hypot(ex, ey);
+            const double               sPin = std::min(capS, totalLength());
+            constexpr double           kEndWindow = 0.5;  // [m]
+            const double               w          = std::min(sPin, kEndWindow);
+            const mrpt::math::TPoint2D pEndA      = pointAtArc(sPin - w);
+            double                     ex         = out.lookahead.x - pEndA.x;
+            double                     ey         = out.lookahead.y - pEndA.y;
+            const double               eLen       = std::hypot(ex, ey);
             if (eLen > 1e-6)
             {
                 ex /= eLen;
@@ -567,8 +566,7 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     if (params.max_curvature_rate > 0.0)
     {
         const double maxDCurv = params.max_curvature_rate * dt;
-        curv                  = std::clamp(
-                             curv, currentCurv - maxDCurv, currentCurv + maxDCurv);
+        curv = std::clamp(curv, currentCurv - maxDCurv, currentCurv + maxDCurv);
     }
     out.curv = curv;
 
@@ -616,8 +614,8 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     else
         sNew = std::max(sTarget, sCur - params.max_decel * dt);
 
-    out.v     = gear * sNew;
-    out.omega = out.v * curv;
+    out.v                     = gear * sNew;
+    out.omega                 = out.v * curv;
     const double omegaDesired = out.omega;
 
     // Rate-limit the commanded angular velocity itself: pure pursuit is a
@@ -957,11 +955,12 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     // relocalization jumps, but that same slew makes the smoothed pose lag the
     // true localization while the correction is being absorbed -- judging "off
     // path" by it turns a normal localization correction into a phantom
-    // tracking error even when the robot is physically on the path. The command still uses `proj` (ctrlPose) for
-    // smoothness; only the fault test uses the true pose. A genuine sustained
-    // deviation still trips it; a brief localization glitch is left for the
-    // caller to debounce. In the identity/static map->odom case (unit tests)
-    // ctrlPose == loc.pose, so this is a no-op there.
+    // tracking error even when the robot is physically on the path. The command
+    // still uses `proj` (ctrlPose) for smoothness; only the fault test uses the
+    // true pose. A genuine sustained deviation still trips it; a brief
+    // localization glitch is left for the caller to debounce. In the
+    // identity/static map->odom case (unit tests) ctrlPose == loc.pose, so this
+    // is a no-op there.
     const auto nowStamp =
         loc.timestamp != INVALID_TIMESTAMP ? loc.timestamp : mrpt::Clock::now();
 
@@ -977,20 +976,13 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     const bool offPathNow = std::abs(offPathCross) > params.max_cross_track;
     if (offPathNow)
     {
-        if (offPathSince_ == INVALID_TIMESTAMP)
-        {
-            offPathSince_ = nowStamp;
-        }
+        if (offPathSince_ == INVALID_TIMESTAMP) { offPathSince_ = nowStamp; }
     }
-    else
-    {
-        offPathSince_ = INVALID_TIMESTAMP;
-    }
+    else { offPathSince_ = INVALID_TIMESTAMP; }
     const bool offPathLatched =
-        offPathNow &&
-        (params.off_path_min_duration <= 0.0 ||
-         mrpt::system::timeDifference(offPathSince_, nowStamp) >=
-             params.off_path_min_duration);
+        offPathNow && (params.off_path_min_duration <= 0.0 ||
+                       mrpt::system::timeDifference(offPathSince_, nowStamp) >=
+                           params.off_path_min_duration);
     out.status = offPathLatched ? FollowerStatus::OffPathExceeded
                                 : FollowerStatus::Running;
 
@@ -1087,8 +1079,8 @@ TrajectoryFollower::Output TrajectoryFollower::step(
         // command would be allowed sample_period-sized steps at
         // control_period cadence -- all rate limits would effectively run at
         // (sample_period / control_period) times their configured rate.
-        const double dtK = k == 0 ? params.control_period
-                                  : params.sample_period;
+        const double dtK =
+            k == 0 ? params.control_period : params.sample_period;
         const Command cmd = pursuit(
             predPose, predV, predOmega, predCurv, predS, dtK, gear, scale);
 

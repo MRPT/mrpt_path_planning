@@ -8,9 +8,8 @@
 
 void mpp::edge_interpolated_path(
     MoveEdgeSE2_TPS& edge, const TrajectoriesAndRobotShape& trs,
-    const mrpt::math::TPose2D& reconstrRelPose,
-    size_t                     ptg_step,
-    const std::optional<size_t>&              numSegments)
+    const mrpt::math::TPose2D& reconstrRelPose, size_t ptg_step,
+    const std::optional<size_t>& numSegments)
 {
     size_t nSeg = 0;
 
