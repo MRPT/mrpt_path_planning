@@ -39,6 +39,12 @@ selfdriving_add_test(
 )
 
 selfdriving_add_test(
+    TARGET  test_collision_grid_soundness
+    SOURCES test_collision_grid_soundness.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
+
+selfdriving_add_test(
     TARGET  test_astar_diffdrive_bidir
     SOURCES test_astar_diffdrive_bidir.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main

@@ -209,7 +209,7 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
     maxLinSpeed_       = 0.0;
     for (const auto& ptg : in.ptgs.ptgs)
     {
-        mrpt::keep_max(MAX_XY_DIST, ptg->getRefDistance());
+        mrpt::keep_max(MAX_XY_DIST, obstacle_clipping_distance(*ptg));
         mrpt::keep_max(maxLinSpeed_, ptg->getMaxLinVel());
     }
     ASSERT_(MAX_XY_DIST > 0);
@@ -507,7 +507,8 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
         }
     }
 
-    po.computationTime = mrpt::Clock::nowDouble() - planInitTime;
+    po.computationTime  = mrpt::Clock::nowDouble() - planInitTime;
+    po.numExpandedNodes = nIter;
 
     if (!haveMeet)
     {
