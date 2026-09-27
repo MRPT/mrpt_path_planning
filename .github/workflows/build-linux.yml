@@ -5,7 +5,7 @@ on: [push, pull_request]
 
 jobs:
   build:
-    name: ${{ matrix.name }} ${{ matrix.build_type }}
+    name: ${{ matrix.name }} ${{ matrix.build_type }} ${{ matrix.mrpt_ppa }}
     runs-on: ${{ matrix.os }}
 
     env:
@@ -23,27 +23,32 @@ jobs:
         ]
 
         build_type: [ Release ]
+        # MRPT 3.x PPAs: last stable release and nightly (develop) builds.
+        mrpt_ppa: [ mrpt3-stable, mrpt3-develop ]
         include:
           - name: ubuntu-latest-gcc
             os: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@master
+        uses: actions/checkout@v4
 
       - name: Install Dependencies
         run: |
           sudo apt-get -y update
 
           sudo apt-get install -y software-properties-common
-          sudo add-apt-repository  ppa:joseluisblancoc/mrpt -y
+          sudo add-apt-repository ppa:joseluisblancoc/${{ matrix.mrpt_ppa }} -y
           sudo apt-get update -qq
 
           sudo apt-get -y upgrade
           # libgtest-dev is required for the unit tests to be built and run;
           # without it tests/CMakeLists.txt skips the whole suite (ctest then
           # reports "No tests were found").
-          sudo apt install -qq -y cmake build-essential libmrpt-dev libgtest-dev python3-pip
+          # libcli11-dev: required by the CLI app (mrpt_path_planning_apps).
+          # libnanoflann-dev: required by MRPT's CMake config files, but not
+          # pulled in by the mrpt3-stable -dev packages.
+          sudo apt install -qq -y cmake build-essential libmrpt-dev libgtest-dev libcli11-dev libnanoflann-dev python3-pip
 
           # This repo is colcon-only (no standalone top-level CMake build);
           # colcon itself is pure Python, so pip avoids needing the ROS apt repo.
