@@ -12,7 +12,7 @@ namespace mpp
 {
 /** Length [m] of the shortest Reeds-Shepp path (forward and reverse motion,
  * circular arcs of radius `turningRadius` and straight segments, no obstacles)
- * from `from` to `to`.
+ * from `from` to `to`. Precondition: `turningRadius > 0`.
  *
  * Any path of a vehicle whose curvature is bounded by 1/turningRadius is at
  * least this long, so this is a lower bound of the path length usable as an

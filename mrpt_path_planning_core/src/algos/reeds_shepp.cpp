@@ -47,8 +47,8 @@ namespace
 // frame of the start pose, scaled to unit turning radius. (t, u, v) are the
 // signed lengths of the path segments (negative = reverse).
 
-constexpr double kPi    = M_PI;
-constexpr double kTwoPi = 2.0 * M_PI;
+constexpr double kPi    = 3.14159265358979323846;
+constexpr double kTwoPi = 2.0 * kPi;
 constexpr double kZero  = 10 * std::numeric_limits<double>::epsilon();
 
 double mod2pi(double x)
