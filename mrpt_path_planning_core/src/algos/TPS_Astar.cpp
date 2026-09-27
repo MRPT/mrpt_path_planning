@@ -6,12 +6,14 @@
 
 #include <mpp/algos/TPS_Astar.h>
 #include <mpp/algos/edge_interpolated_path.h>
+#include <mpp/algos/reeds_shepp.h>
 #include <mpp/algos/render_tree.h>
 #include <mpp/algos/tp_obstacles_single_path.h>
 #include <mpp/algos/transform_pc_square_clipping.h>
 #include <mpp/algos/within_bbox.h>
 #include <mpp/data/MotionPrimitivesTree.h>
 #include <mpp/ptgs/DiffDriveCollisionGridBased.h>
+#include <mpp/ptgs/DiffDrive_C.h>
 #include <mpp/ptgs/SpeedTrimmablePTG.h>
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/version.h>
@@ -38,6 +40,7 @@ mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
     MCP_SAVE(c, heuristic_heading_weight);
     MCP_SAVE(c, heuristic_epsilon);
     MCP_SAVE(c, use_analytic_expansion);
+    MCP_SAVE(c, use_reeds_shepp_heuristic);
     MCP_SAVE(c, max_ptg_trajectories_to_explore);
     MCP_SAVE(c, max_ptg_speeds_to_explore);
     MCP_SAVE_DEG(c, grid_resolution_yaw);
@@ -72,6 +75,7 @@ void TPS_Astar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_OPT(c, heuristic_heading_weight);
     MCP_LOAD_OPT(c, heuristic_epsilon);
     MCP_LOAD_OPT(c, use_analytic_expansion);
+    MCP_LOAD_OPT(c, use_reeds_shepp_heuristic);
 
     MCP_LOAD_OPT(c, maximumComputationTime);
 }
@@ -131,6 +135,18 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     for (const auto& ptg : in.ptgs.ptgs)
         mrpt::keep_max(maxLinSpeed_, ptg->getMaxLinVel());
     if (maxLinSpeed_ <= 0) maxLinSpeed_ = 1.0;  // fallback: units = distance
+
+    reedsSheppTurningRadius_ = 0.0;
+    if (params_.use_reeds_shepp_heuristic)
+    {
+        reedsSheppTurningRadius_ = reeds_shepp_turning_radius(in.ptgs);
+        if (reedsSheppTurningRadius_ <= 0)
+        {
+            MRPT_LOG_WARN(
+                "use_reeds_shepp_heuristic ignored: it requires all PTGs to "
+                "be of type DiffDrive_C.");
+        }
+    }
 
     // obstacles (TODO: dynamic over future time?):
     std::vector<mrpt::maps::CPointsMap::Ptr> obstaclePoints;
@@ -609,9 +625,28 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     MRPT_END
 }
 
+double TPS_Astar::reeds_shepp_turning_radius(
+    const TrajectoriesAndRobotShape& trs)
+{
+    double r = std::numeric_limits<double>::max();
+    for (const auto& ptg : trs.ptgs)
+    {
+        const auto* c = dynamic_cast<const ptg::DiffDrive_C*>(ptg.get());
+        if (!c || c->getMax_W() <= 0) { return 0; }
+        mrpt::keep_min(r, c->getMax_V() / c->getMax_W());
+    }
+    return trs.ptgs.empty() ? 0 : r;
+}
+
 cost_t TPS_Astar::default_heuristic_SE2(
     const SE2_KinState& from, const mrpt::math::TPose2D& goal) const
 {
+    if (reedsSheppTurningRadius_ > 0)
+    {
+        return reeds_shepp_distance(from.pose, goal, reedsSheppTurningRadius_) /
+               maxLinSpeed_;
+    }
+
     mpp::PoseDistanceMetric_Lie<mpp::SE2_KinState> metric(
         params_.SE2_metricAngleWeight);
 

@@ -66,6 +66,16 @@ struct TPS_Astar_Parameters
      * termination. */
     bool use_analytic_expansion = true;
 
+    /** For full-pose (SE(2)) goals, use the Reeds-Shepp path length divided by
+     * the maximum linear speed as heuristic. It is a lower bound of the travel
+     * time of any path made of forward and reverse circular arcs with radius
+     * no smaller than the minimum turning radius, hence admissible and
+     * consistent, and it accounts for the maneuvering (e.g., reversals)
+     * needed to reach a goal heading, as in Hybrid-A*. Only applied if all
+     * PTGs are of type DiffDrive_C (the minimum turning radius is
+     * v_max/w_max); otherwise the default heuristic is used. */
+    bool use_reeds_shepp_heuristic = false;
+
     uint32_t                        max_ptg_trajectories_to_explore = 20;
     std::vector<duration_seconds_t> ptg_sample_timestamps     = {1.0, 3.0, 5.0};
     uint32_t                        max_ptg_speeds_to_explore = 3;
@@ -141,6 +151,11 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         const SE2_KinState& from, const mrpt::math::TPose2D& goal) const;
     cost_t default_heuristic_R2(
         const SE2_KinState& from, const mrpt::math::TPoint2D& goal) const;
+
+    /** Minimum turning radius of a set of DiffDrive_C PTGs (the Reeds-Shepp
+     * heuristic radius), or 0 if any PTG is of another type. */
+    static double reeds_shepp_turning_radius(
+        const TrajectoriesAndRobotShape& trs);
 
     astar_heuristic_t heuristic = astar_heuristic_t(
         [this](const SE2_KinState& from, const SE2orR2_KinState& goal)
@@ -386,6 +401,10 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
      *  edge costs are in seconds (estimatedExecTime). Defaults to 1.0 so
      *  that heuristic calls outside plan() return geometric distances. */
     double maxLinSpeed_ = 1.0;
+
+    /** Turning radius for the Reeds-Shepp heuristic [m], 0 = not applicable.
+     * Set in plan() from the PTGs. */
+    double reedsSheppTurningRadius_ = 0.0;
 
     /** Cache of local obstacle maps, keyed by (ix, iy) grid cell (no yaw,
      *  since obstacle clipping only depends on xy position). Cleared at the

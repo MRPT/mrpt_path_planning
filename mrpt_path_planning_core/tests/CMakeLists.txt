@@ -97,3 +97,9 @@ selfdriving_add_test(
     SOURCES test_trajectories.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
 )
+
+selfdriving_add_test(
+    TARGET  test_reeds_shepp
+    SOURCES test_reeds_shepp.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
