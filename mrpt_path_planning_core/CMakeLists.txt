@@ -54,6 +54,7 @@ set(LIB_SRCS
 	src/algos/edge_interpolated_path.cpp
 	src/algos/NavEngine.cpp
 	src/algos/Planner.cpp
+	src/algos/reeds_shepp.cpp
 	src/algos/refine_trajectory.cpp
 	src/algos/render_tree.cpp
 	src/algos/render_vehicle.cpp
@@ -88,6 +89,7 @@ set(LIB_PUBLIC_HDRS
 	include/mpp/algos/edge_interpolated_path.h
 	include/mpp/algos/NavEngine.h
 	include/mpp/algos/Planner.h
+	include/mpp/algos/reeds_shepp.h
 	include/mpp/algos/refine_trajectory.h
 	include/mpp/algos/render_tree.h
 	include/mpp/algos/render_vehicle.h

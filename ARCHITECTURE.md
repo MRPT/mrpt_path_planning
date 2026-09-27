@@ -113,6 +113,13 @@ Two heuristics depending on goal type:
 
 The heading term `heuristic_heading_weight * |angDistance(atan2(dy,dx), phi)|` encourages the robot to orient towards the goal during transit, which improves path quality for non-holonomic vehicles.
 
+**Reeds-Shepp heuristic (`use_reeds_shepp_heuristic`, default false)**: for
+SE(2) goals, `h = reeds_shepp_distance(from, goal, R) / v_max`, with `R` the
+minimum `v_max/w_max` of the PTGs (all must be `DiffDrive_C`, otherwise the
+default heuristic is used). Admissible and consistent for forward+reverse
+C-PTGs, and it accounts for the maneuvers (reversals) a goal heading needs,
+as in Hybrid-A*. Essential for tight full-pose goals such as parking.
+
 **Weighted A* (`heuristic_epsilon`, default 1.0)**: the OPEN set is ordered by
 `f = g + eps * h` (ARA*/SBPL-style); `eps > 1` returns a solution within a
 factor `eps` of optimal while expanding fewer nodes. The raw (eps=1)
@@ -257,6 +264,7 @@ Lines 34-48 have two `THROW_EXCEPTION("To do")` paths for cases where `reconstrR
 - `test_astar_holonomic.cpp` — end-to-end planning scenarios: free space, diagonal, R(2) goal, SE(2) goal, obstacle avoidance (10 tests)
 - `test_edge_interpolation.cpp` — interpolated path start/end/intermediate-point correctness (1 test)
 - `test_obstacle_cache.cpp` — cache correctness and performance (3 tests)
+- `test_reeds_shepp.cpp` — Reeds-Shepp distance values, metric properties, lower bound of C-PTG arcs, heuristic consistency/admissibility in a plan (4 tests)
 
 ### 6.4 Missing Features / TODOs in Code
 
