@@ -27,6 +27,7 @@ struct SvgExportOptions
     bool draw_start_goal   = true;
     bool draw_bbox         = true;
     bool draw_scalebar     = true;
+    bool draw_status_text  = true;  //!< "success" / "FAILED" label
 
     /** Draw one robot footprint out of every N interpolated path poses
      *  (plus always at start and goal). 0 => only at start and goal. */
@@ -39,6 +40,20 @@ struct SvgExportOptions
      *  to thin out a very dense exhaustive-search tree (e.g. failed queries)
      *  into a visually usable figure instead of tens of thousands of edges. */
     size_t tree_decimation = 1;
+
+    /** Add a robot footprint moving along the path, as an SVG (SMIL)
+     *  animation that loops forever. Web browsers play it, including in
+     *  `<img>` tags (e.g. a README on GitHub). */
+    bool animate_robot = false;
+
+    /** Animation playback speed, relative to the estimated real time. */
+    double animation_speed = 1.0;
+
+    /** Time [s] the robot stays at the goal before the animation restarts. */
+    double animation_pause_at_end = 1.0;
+
+    std::string color_robot_animated      = "#cc0000";
+    std::string color_robot_animated_fill = "#cc000055";
 
     std::string color_background = "#ffffff";
     std::string color_obstacles  = "#2255cc";
@@ -59,7 +74,8 @@ struct SvgExportOptions
 /** Returns an SVG document (as a string) with a top-down 2D plot of a planner
  *  result: world bounding box, obstacles, the motion tree, the solution (or
  *  best) path, the robot footprint along it, and start/goal markers. Intended
- *  for debugging and for vector figures in papers (no OpenGL/GUI needed). */
+ *  for debugging and for vector figures in papers (no OpenGL/GUI needed).
+ *  See SvgExportOptions::animate_robot for an animated version. */
 std::string plan_to_svg(
     const PlannerOutput& plan, const SvgExportOptions& opts = {});
 

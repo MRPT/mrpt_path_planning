@@ -112,8 +112,11 @@ void mpp::refine_trajectory(
             edge.ptgPathIndex = newK;
             edge.ptgDist      = newDist;
 
-            // Update interpolated path:
-            edge_interpolated_path(edge, ptgInfo, deltaNodes, newPtgStep);
+            // Update interpolated path. It must end at the pose actually
+            // reached by the PTG: the (x,y)-only inverse map above may not
+            // reach the heading of the next node.
+            edge_interpolated_path(
+                edge, ptgInfo, ptg->getPathPose(newK, newPtgStep), newPtgStep);
         }
     }
 }

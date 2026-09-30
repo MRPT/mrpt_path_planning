@@ -1,17 +1,273 @@
-[![CI Linux](https://github.com/MRPT/mrpt_path_planning/actions/workflows/build-linux.yml/badge.svg)](https://github.com/MRPT/mrpt_path_planning/actions/workflows/build-linux.yml) [![Documentation Status](https://readthedocs.org/projects/selfdriving/badge/?version=latest)](https://selfdriving.readthedocs.io/en/latest/?badge=latest)
-
 # mrpt_path_planning
 
-Path planning and navigation algorithms for robots/vehicles moving on planar environments.
-This library builds upon mrpt-nav and the theory behind PTGs to generate libraries of "motion primitives"
-for vehicles with arbitrary shape and realistic kinematics and dynamics.
+[![CI Linux](https://github.com/MRPT/mrpt_path_planning/actions/workflows/build-linux.yml/badge.svg)](https://github.com/MRPT/mrpt_path_planning/actions/workflows/build-linux.yml)
+[![License: BSD-3](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
+[![ROS 2 Jazzy](https://img.shields.io/ros/v/jazzy/mrpt_path_planning)](https://index.ros.org/?pkgs=mrpt_path_planning&search_packages=true#jazzy)
 
-The planner optimizes **SE(2) path cost** (position + heading), not R(2) path length.
-For vehicles that rotate, arriving at a goal with the correct heading is part of the
-optimal solution — paths that are longer in Euclidean distance but better-aligned
-may genuinely have lower cost. See `TPS_Astar.h` for details on the cost model.
+**Kinematically-feasible path planning for robots and vehicles on planar
+environments**, for arbitrary robot shapes and realistic kinematics
+(differential-drive, Ackermann, holonomic). Built on
+[MRPT](https://github.com/MRPT/mrpt/) `mrpt_nav` and the theory of
+*Parameterized Trajectory Generators* (PTGs), which act as libraries of motion
+primitives.
 
-## Status on ROS build farm
+<p align="center">
+  <img src="docs/images/demo-holonomic.svg" width="49%" alt="Holonomic robot following a planned path">
+  <img src="docs/images/demo-ackermann.svg" width="49%" alt="Ackermann vehicle following a planned path">
+  <br>
+  <em>Planned paths for a holonomic robot (left) and an Ackermann vehicle (right).</em>
+</p>
+
+<!-- Images generated from mrpt_path_planning_apps/share/ with:
+path-planner-cli -s "[0.5 0 0]" -g "[4.2 0.5 80]" \
+  -c ptgs_ackermann_vehicle.ini --obstacles obstacles_01.txt \
+  --planner-parameters mvsim-demo-astar-planner-params-ackermann.yaml \
+  --save-svg demo-ackermann.svg --svg-animate --svg-no-tree --svg-no-bbox \
+  --svg-no-status --svg-width 440 --no-gui
+(and the same with ptgs_holonomic_robot.ini and
+mvsim-demo-astar-planner-params.yaml for demo-holonomic.svg) -->
+
+## Features
+
+- **Kinematically feasible by construction**: every path is a sequence of PTG
+  trajectories the vehicle can actually execute, respecting its turning and
+  speed limits. Several PTG families can be mixed in one search, and
+  speed-trimmable PTGs make the search velocity-aware.
+- **Any-shape vehicles**: circular or arbitrary polygonal footprints, including
+  concave ones. The footprint is baked once into per-PTG collision grids, so
+  the per-node collision cost does not grow with the footprint complexity: one
+  pass over the local obstacles gives the free distance along every candidate
+  trajectory.
+- **No costmap inflation**: the actual footprint is checked against the raw
+  obstacle points, with no inflation radius to tune.
+- **Deterministic SE(2) lattice A\*** (`mpp::TPS_Astar`) and a
+  **bidirectional** variant (`mpp::TPS_Astar_Bidir`). They optimize SE(2) cost
+  (position + heading), not just Euclidean length, with optional
+  bounded-suboptimal weighted A\* for faster queries.
+- **Pose or position goals**: SE(2) goals `[x y phi]` or heading-agnostic R(2)
+  goals `[x y]`.
+- **Forward and reverse maneuvers**, with an optional **Reeds-Shepp** heuristic
+  and analytic goal expansion for tight maneuvers such as parking.
+- **Certified collision checking**: the collision grids are conservative, so a
+  path reported as free is free for the continuous swept motion.
+- **Pluggable cost layers**: obstacle-proximity cost maps and
+  preferred-waypoint attractors.
+- **Navigation building blocks**: `NavEngine` (waypoint-sequence navigation
+  with replanning) and `TrajectoryFollower` (pure pursuit with predictive
+  safety).
+- **Headless core**: the algorithms library has no GUI dependency.
+
+## Quick start
+
+Install the binary packages (ROS 2 Humble or newer):
+
+```bash
+sudo apt install ros-$ROS_DISTRO-mrpt-path-planning
+```
+
+Plan a path around some obstacles for a holonomic robot, using the example
+configuration files installed with the apps package:
+
+```bash
+cd $(ros2 pkg prefix mrpt_path_planning_apps)/share/mrpt_path_planning_apps
+
+path-planner-cli \
+  -s "[0.5 0 0]" -g "[4.2 0.5 80]" \
+  -c ptgs_holonomic_robot.ini \
+  --obstacles obstacles_01.txt \
+  --planner-parameters mvsim-demo-astar-planner-params.yaml \
+  --play-animation
+```
+
+## Packages
+
+| Package | Contents | Depend on it when... |
+| --- | --- | --- |
+| `mrpt_path_planning_core` | C++ library (namespace `mpp`): PTGs, planners, cost evaluators, `NavEngine`, `TrajectoryFollower`. Depends only on `mrpt_nav`, `mrpt_maps`, `mrpt_graphs`, `mrpt_containers`. | You only need the algorithms (most users). |
+| `mrpt_path_planning_apps` | `path-planner-cli`, `selfdriving-simulator-gui`, example config files. Adds `mrpt_gui`, `cli11`, `mvsim`. | You want the command-line and GUI tools. |
+| `mrpt_path_planning` | Metapackage depending on the two above. | Backward compatibility with existing consumers. |
+
+ROS 2 integration (planner and trajectory follower nodes) lives in
+[mrpt_navigation](https://github.com/mrpt-ros-pkg/mrpt_navigation).
+
+## Using the library
+
+In `package.xml`:
+
+```xml
+<depend>mrpt_path_planning_core</depend>
+```
+
+In `CMakeLists.txt` (the CMake package is named `mrpt_path_planning`):
+
+```cmake
+find_package(mrpt_path_planning REQUIRED)
+target_link_libraries(YOUR_TARGET mpp::mrpt_path_planning)
+```
+
+Minimal example:
+
+```cpp
+#include <mpp/algos/TPS_Astar.h>
+#include <mpp/algos/trajectories.h>
+#include <mrpt/config/CConfigFile.h>
+#include <mrpt/maps/CSimplePointsMap.h>
+
+mpp::PlannerInput in;
+
+// Vehicle kinematics and shape, as a set of PTGs:
+mrpt::config::CConfigFile cfg("ptgs_holonomic_robot.ini");
+in.ptgs.initFromConfigFile(cfg, "SelfDriving");
+
+// Start pose and goal (a TPose2D goal; use a TPoint2D for position-only):
+in.stateStart.pose = {0.0, 0.0, 0.0};
+in.stateGoal.state = mrpt::math::TPose2D{4.0, 2.5, 0.5 * M_PI};
+in.worldBboxMin    = {-1.0, -1.0, -M_PI};
+in.worldBboxMax    = {6.0, 4.0, M_PI};
+
+// Obstacles, as a point cloud:
+auto obs = mrpt::maps::CSimplePointsMap::Create();
+obs->insertPoint(2.0, 1.0, 0.0);
+in.obstacles.push_back(mpp::ObstacleSource::FromStaticPointcloud(obs));
+
+mpp::TPS_Astar planner;
+planner.params_.maximumComputationTime = 5.0;  // [s]
+
+const mpp::PlannerOutput out = planner.plan(in);
+if (out.success)
+{
+    // Sequence of motion primitives, and the time-sampled trajectory
+    // (relative to the start pose):
+    const auto [nodes, edges] = out.motionTree.backtrack_path(*out.goalNodeId);
+    const mpp::trajectory_t traj = mpp::plan_to_trajectory(edges, in.ptgs);
+}
+```
+
+Planner parameters can also be loaded from YAML with
+`planner.params_from_yaml()`; run
+`path-planner-cli --write-planner-parameters params.yaml` to get a file with
+all parameters and their defaults.
+
+## Configuration files
+
+Example files in [`mrpt_path_planning_apps/share/`](mrpt_path_planning_apps/share/):
+
+| File | Purpose |
+| --- | --- |
+| `ptgs_holonomic_robot.ini`, `ptgs_ackermann_vehicle.ini` | Vehicle model: PTG families, velocity limits, robot shape. |
+| `mvsim-demo-astar-planner-params*.yaml` | `TPS_Astar` parameters (lattice resolution, sampling, heuristics). |
+| `costmap-obstacles.yaml` | Obstacle-proximity cost map parameters. |
+| `costmap-prefer-waypoints.yaml` | Preferred-waypoints cost layer parameters. |
+| `mvsim-demo-waypoints*.yaml` | Example waypoint sequences. |
+| `nav-engine-params.yaml` | `NavEngine` parameters. |
+| `obstacles_01.txt`, `map0*.png` | Example obstacles: point list or occupancy grid image. |
+| `mvsim-demo.xml` | [mvsim](https://github.com/MRPT/mvsim/) world for the simulator demo. |
+
+## Demos
+
+### path-planner-cli
+
+All the following commands are run from the directory with the example files
+(`mrpt_path_planning_apps/share/` in the sources, or
+`$(ros2 pkg prefix mrpt_path_planning_apps)/share/mrpt_path_planning_apps` once
+installed), and start from this base command (holonomic robot, SE(2) goal `[x y heading_deg]`):
+
+```bash
+path-planner-cli \
+  -s "[0.5 0 0]" -g "[4.2 0.5 80]" \
+  -c ptgs_holonomic_robot.ini \
+  --obstacles obstacles_01.txt \
+  --planner-parameters mvsim-demo-astar-planner-params.yaml
+```
+
+| Scenario | Add or change |
+| --- | --- |
+| Obstacle-proximity cost map | `--costmap-obstacles costmap-obstacles.yaml` |
+| R(2) goal (position only), print path edges, save trajectory to CSV | `-g "[4.2 0.5]" --print-path-edges --save-interpolated-path path.csv` |
+| Ackermann vehicle, show search tree and animation | `-c ptgs_ackermann_vehicle.ini --planner-parameters mvsim-demo-astar-planner-params-ackermann.yaml --show-tree --play-animation` |
+| Occupancy grid image as obstacles | `-s "[1 1 0]" -g "[8 6 90]" --obstacles map01.png --obstacles-gridimage-resolution 0.05` |
+| Attract the path through via-points | `--waypoints mvsim-demo-waypoints01.yaml --waypoints-parameters costmap-prefer-waypoints.yaml` |
+| Save a 2D SVG plot, no GUI | `--save-svg plan.svg --no-gui` |
+| Save an animated SVG of the robot following the path | `--save-svg plan.svg --svg-animate --no-gui` |
+| Cleaner SVG for figures: no search tree, box or label, custom width | `--svg-no-tree --svg-no-bbox --svg-no-status --svg-width 600` |
+| Verbose output, skip path refinement | `-v DEBUG --no-refine` |
+
+With forward and reverse circular-arc PTGs (as in `ptgs_ackermann_vehicle.ini`),
+pose goals are reached exactly through Reeds-Shepp maneuvers. Position-only
+goals end within one lattice cell (`grid_resolution_xy`) of the goal point.
+Run `path-planner-cli --help` for all options.
+
+### selfdriving-simulator-gui
+
+Live navigation in the [mvsim](https://github.com/MRPT/mvsim/) simulator, with
+`NavEngine` and A\* replanning.
+
+<details>
+<summary>Commands</summary>
+
+```bash
+# Holonomic robot (use ptgs_ackermann_vehicle.ini for an Ackermann vehicle):
+selfdriving-simulator-gui \
+  --waypoints mvsim-demo-waypoints01.yaml \
+  -s mvsim-demo.xml \
+  -p ptgs_holonomic_robot.ini \
+  --nav-engine-parameters nav-engine-params.yaml \
+  --planner-parameters mvsim-demo-astar-planner-params.yaml \
+  --prefer-waypoints-parameters costmap-prefer-waypoints.yaml \
+  --global-costmap-parameters costmap-obstacles.yaml \
+  --local-costmap-parameters costmap-obstacles.yaml
+```
+
+</details>
+
+## Building from source
+
+Requirements:
+
+- [MRPT](https://github.com/MRPT/mrpt/) 3.x (its colcon modules `mrpt_nav`,
+  `mrpt_maps`, ...).
+- [colcon](https://colcon.readthedocs.io/): this repository is colcon-only;
+  there is no standalone top-level CMake build.
+- Optional: [mvsim](https://github.com/MRPT/mvsim/), for the live simulator.
+
+Install dependencies either from the ROS 2 repositories:
+
+```bash
+sudo apt install ros-$ROS_DISTRO-mrpt-nav ros-$ROS_DISTRO-mrpt-gui python3-colcon-common-extensions
+```
+
+or, without ROS, from the MRPT 3 PPA (as in this repository's CI):
+
+```bash
+sudo add-apt-repository ppa:joseluisblancoc/mrpt3-stable
+sudo apt update
+sudo apt install libmrpt-dev libcli11-dev python3-colcon-common-extensions
+```
+
+Then build and test from the workspace containing this repository:
+
+```bash
+colcon build --base-paths .
+colcon test --base-paths . && colcon test-result --verbose
+source install/setup.bash
+```
+
+## How it works
+
+A PTG maps a whole family of kinematically-feasible trajectories to a compact
+*trajectory-parameter space* (TP-Space). Obstacles are projected into that
+space using precomputed collision grids, so checking many candidate motions
+against a point cloud is cheap. `TPS_Astar` runs A\* over an SE(2) lattice
+whose edges are PTG trajectory segments, each node storing its exact
+(non-snapped) pose. Edge cost is the estimated execution time plus the
+configured cost layers, so a path that is longer in distance but reaches the
+goal with the right heading may be optimal. See
+[`AGENTS.md`](AGENTS.md) for a more detailed design overview.
+
+## ROS build farm status
+
+<details>
+<summary>Build and release status per distro</summary>
 
 
 | Distro | Build dev | Release |
@@ -29,8 +285,8 @@ targets them):
 | Package | ROS 2 Humble <br/> BinBuild | ROS 2 Jazzy <br/> BinBuild | ROS 2 Kilted <br/> BinBuild | ROS 2 Lyrical <br/> BinBuild | ROS 2 Rolling <br/> BinBuild |
 | --- | --- | --- | --- | --- | --- |
 | mrpt_path_planning | [![Build Status](https://build.ros2.org/job/Hbin_uJ64__mrpt_path_planning__ubuntu_jammy_amd64__binary/badge/icon)](https://build.ros2.org/job/Hbin_uJ64__mrpt_path_planning__ubuntu_jammy_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Hbin_ujv8_uJv8__mrpt_path_planning__ubuntu_jammy_arm64__binary/badge/icon)](https://build.ros2.org/job/Hbin_ujv8_uJv8__mrpt_path_planning__ubuntu_jammy_arm64__binary/) | [![Build Status](https://build.ros2.org/job/Jbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/badge/icon)](https://build.ros2.org/job/Jbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Jbin_unv8_uNv8__mrpt_path_planning__ubuntu_noble_arm64__binary/badge/icon)](https://build.ros2.org/job/Jbin_unv8_uNv8__mrpt_path_planning__ubuntu_noble_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Jbin_rhel_el964__mrpt_path_planning__rhel_9_x86_64__binary/badge/icon)](https://build.ros2.org/job/Jbin_rhel_el964__mrpt_path_planning__rhel_9_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Kbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/badge/icon)](https://build.ros2.org/job/Kbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Kbin_unv8_uNv8__mrpt_path_planning__ubuntu_noble_arm64__binary/badge/icon)](https://build.ros2.org/job/Kbin_unv8_uNv8__mrpt_path_planning__ubuntu_noble_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Kbin_rhel_el964__mrpt_path_planning__rhel_9_x86_64__binary/badge/icon)](https://build.ros2.org/job/Kbin_rhel_el964__mrpt_path_planning__rhel_9_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Lbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/badge/icon)](https://build.ros2.org/job/Lbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_armv8_uRv8__mrpt_path_planning__ubuntu_resolute_arm64__binary/badge/icon)](https://build.ros2.org/job/Lbin_armv8_uRv8__mrpt_path_planning__ubuntu_resolute_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_rhel_el1064__mrpt_path_planning__rhel_10_x86_64__binary/badge/icon)](https://build.ros2.org/job/Lbin_rhel_el1064__mrpt_path_planning__rhel_10_x86_64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_fedora_fc4364__mrpt_path_planning__fedora_43_x86_64__binary/badge/icon)](https://build.ros2.org/job/Lbin_fedora_fc4364__mrpt_path_planning__fedora_43_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Rbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/badge/icon)](https://build.ros2.org/job/Rbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_unv8_uRv8__mrpt_path_planning__ubuntu_resolute_arm64__binary/badge/icon)](https://build.ros2.org/job/Rbin_unv8_uRv8__mrpt_path_planning__ubuntu_resolute_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_rhel_el1064__mrpt_path_planning__rhel_10_x86_64__binary/badge/icon)](https://build.ros2.org/job/Rbin_rhel_el1064__mrpt_path_planning__rhel_10_x86_64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_fedora_fc4464__mrpt_path_planning__fedora_44_x86_64__binary/badge/icon)](https://build.ros2.org/job/Rbin_fedora_fc4464__mrpt_path_planning__fedora_44_x86_64__binary/) |
-| mrpt_path_planning_core | not released yet | not released yet | not released yet | not released yet | not released yet |
-| mrpt_path_planning_apps | not released yet | not released yet | not released yet | not released yet | not released yet |
+| mrpt_path_planning_core | [![Build Status](https://build.ros2.org/job/Hbin_uJ64__mrpt_path_planning_core__ubuntu_jammy_amd64__binary/badge/icon)](https://build.ros2.org/job/Hbin_uJ64__mrpt_path_planning_core__ubuntu_jammy_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Hbin_ujv8_uJv8__mrpt_path_planning_core__ubuntu_jammy_arm64__binary/badge/icon)](https://build.ros2.org/job/Hbin_ujv8_uJv8__mrpt_path_planning_core__ubuntu_jammy_arm64__binary/) | [![Build Status](https://build.ros2.org/job/Jbin_uN64__mrpt_path_planning_core__ubuntu_noble_amd64__binary/badge/icon)](https://build.ros2.org/job/Jbin_uN64__mrpt_path_planning_core__ubuntu_noble_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Jbin_unv8_uNv8__mrpt_path_planning_core__ubuntu_noble_arm64__binary/badge/icon)](https://build.ros2.org/job/Jbin_unv8_uNv8__mrpt_path_planning_core__ubuntu_noble_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Jbin_rhel_el964__mrpt_path_planning_core__rhel_9_x86_64__binary/badge/icon)](https://build.ros2.org/job/Jbin_rhel_el964__mrpt_path_planning_core__rhel_9_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Kbin_uN64__mrpt_path_planning_core__ubuntu_noble_amd64__binary/badge/icon)](https://build.ros2.org/job/Kbin_uN64__mrpt_path_planning_core__ubuntu_noble_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Kbin_unv8_uNv8__mrpt_path_planning_core__ubuntu_noble_arm64__binary/badge/icon)](https://build.ros2.org/job/Kbin_unv8_uNv8__mrpt_path_planning_core__ubuntu_noble_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Kbin_rhel_el964__mrpt_path_planning_core__rhel_9_x86_64__binary/badge/icon)](https://build.ros2.org/job/Kbin_rhel_el964__mrpt_path_planning_core__rhel_9_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Lbin_uR64__mrpt_path_planning_core__ubuntu_resolute_amd64__binary/badge/icon)](https://build.ros2.org/job/Lbin_uR64__mrpt_path_planning_core__ubuntu_resolute_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_armv8_uRv8__mrpt_path_planning_core__ubuntu_resolute_arm64__binary/badge/icon)](https://build.ros2.org/job/Lbin_armv8_uRv8__mrpt_path_planning_core__ubuntu_resolute_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_rhel_el1064__mrpt_path_planning_core__rhel_10_x86_64__binary/badge/icon)](https://build.ros2.org/job/Lbin_rhel_el1064__mrpt_path_planning_core__rhel_10_x86_64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_fedora_fc4364__mrpt_path_planning_core__fedora_43_x86_64__binary/badge/icon)](https://build.ros2.org/job/Lbin_fedora_fc4364__mrpt_path_planning_core__fedora_43_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Rbin_uR64__mrpt_path_planning_core__ubuntu_resolute_amd64__binary/badge/icon)](https://build.ros2.org/job/Rbin_uR64__mrpt_path_planning_core__ubuntu_resolute_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_unv8_uRv8__mrpt_path_planning_core__ubuntu_resolute_arm64__binary/badge/icon)](https://build.ros2.org/job/Rbin_unv8_uRv8__mrpt_path_planning_core__ubuntu_resolute_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_rhel_el1064__mrpt_path_planning_core__rhel_10_x86_64__binary/badge/icon)](https://build.ros2.org/job/Rbin_rhel_el1064__mrpt_path_planning_core__rhel_10_x86_64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_fedora_fc4464__mrpt_path_planning_core__fedora_44_x86_64__binary/badge/icon)](https://build.ros2.org/job/Rbin_fedora_fc4464__mrpt_path_planning_core__fedora_44_x86_64__binary/) |
+| mrpt_path_planning_apps | [![Build Status](https://build.ros2.org/job/Hbin_uJ64__mrpt_path_planning_apps__ubuntu_jammy_amd64__binary/badge/icon)](https://build.ros2.org/job/Hbin_uJ64__mrpt_path_planning_apps__ubuntu_jammy_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Hbin_ujv8_uJv8__mrpt_path_planning_apps__ubuntu_jammy_arm64__binary/badge/icon)](https://build.ros2.org/job/Hbin_ujv8_uJv8__mrpt_path_planning_apps__ubuntu_jammy_arm64__binary/) | [![Build Status](https://build.ros2.org/job/Jbin_uN64__mrpt_path_planning_apps__ubuntu_noble_amd64__binary/badge/icon)](https://build.ros2.org/job/Jbin_uN64__mrpt_path_planning_apps__ubuntu_noble_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Jbin_unv8_uNv8__mrpt_path_planning_apps__ubuntu_noble_arm64__binary/badge/icon)](https://build.ros2.org/job/Jbin_unv8_uNv8__mrpt_path_planning_apps__ubuntu_noble_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Jbin_rhel_el964__mrpt_path_planning_apps__rhel_9_x86_64__binary/badge/icon)](https://build.ros2.org/job/Jbin_rhel_el964__mrpt_path_planning_apps__rhel_9_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Kbin_uN64__mrpt_path_planning_apps__ubuntu_noble_amd64__binary/badge/icon)](https://build.ros2.org/job/Kbin_uN64__mrpt_path_planning_apps__ubuntu_noble_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Kbin_unv8_uNv8__mrpt_path_planning_apps__ubuntu_noble_arm64__binary/badge/icon)](https://build.ros2.org/job/Kbin_unv8_uNv8__mrpt_path_planning_apps__ubuntu_noble_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Kbin_rhel_el964__mrpt_path_planning_apps__rhel_9_x86_64__binary/badge/icon)](https://build.ros2.org/job/Kbin_rhel_el964__mrpt_path_planning_apps__rhel_9_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Lbin_uR64__mrpt_path_planning_apps__ubuntu_resolute_amd64__binary/badge/icon)](https://build.ros2.org/job/Lbin_uR64__mrpt_path_planning_apps__ubuntu_resolute_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_armv8_uRv8__mrpt_path_planning_apps__ubuntu_resolute_arm64__binary/badge/icon)](https://build.ros2.org/job/Lbin_armv8_uRv8__mrpt_path_planning_apps__ubuntu_resolute_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_rhel_el1064__mrpt_path_planning_apps__rhel_10_x86_64__binary/badge/icon)](https://build.ros2.org/job/Lbin_rhel_el1064__mrpt_path_planning_apps__rhel_10_x86_64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_fedora_fc4364__mrpt_path_planning_apps__fedora_43_x86_64__binary/badge/icon)](https://build.ros2.org/job/Lbin_fedora_fc4364__mrpt_path_planning_apps__fedora_43_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Rbin_uR64__mrpt_path_planning_apps__ubuntu_resolute_amd64__binary/badge/icon)](https://build.ros2.org/job/Rbin_uR64__mrpt_path_planning_apps__ubuntu_resolute_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_unv8_uRv8__mrpt_path_planning_apps__ubuntu_resolute_arm64__binary/badge/icon)](https://build.ros2.org/job/Rbin_unv8_uRv8__mrpt_path_planning_apps__ubuntu_resolute_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_rhel_el1064__mrpt_path_planning_apps__rhel_10_x86_64__binary/badge/icon)](https://build.ros2.org/job/Rbin_rhel_el1064__mrpt_path_planning_apps__rhel_10_x86_64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_fedora_fc4464__mrpt_path_planning_apps__fedora_44_x86_64__binary/badge/icon)](https://build.ros2.org/job/Rbin_fedora_fc4464__mrpt_path_planning_apps__fedora_44_x86_64__binary/) |
 
 | EOL Distro | Last version |
 | ---    | ---    |
@@ -38,183 +294,27 @@ targets them):
 | ROS 2 Iron (u22.04) | [![Version](https://img.shields.io/ros/v/iron/mrpt_path_planning)](https://index.ros.org/?search_packages=true&pkgs=mrpt_path_planning) |
 
 
-## Package layout
+</details>
 
-This repository is split into three colcon/ROS 2 packages:
+## Publications
 
-- **`mrpt_path_planning_core`**: the headless C++ path-planning library (PTGs,
-  `TPS_Astar`, `NavEngine`, `TrajectoryFollower`, ...). No GUI/display
-  dependency: it depends only on the MRPT 3 modules `mrpt_maps`, `mrpt_nav`,
-  `mrpt_graphs`, and `mrpt_containers`.
-- **`mrpt_path_planning_apps`**: the CLI and GUI applications
-  (`path-planner-cli`, which opens a 3D viz window, and
-  `selfdriving-simulator-gui`, which requires `mvsim`). Depends on
-  `mrpt_path_planning_core` plus `mrpt_gui`, `cli11`, and `mvsim`.
-- **`mrpt_path_planning`**: a backward-compatible metapackage with no code of
-  its own: it just depends on the two packages above, so existing
-  `<depend>mrpt_path_planning</depend>` consumers keep working unchanged. New
-  consumers that only need the algorithms should depend on
-  `mrpt_path_planning_core` directly to avoid pulling in `mrpt_gui`.
+This library builds on the Trajectory Parameter Space (TP-Space) line of work:
 
-## Build requisites
+- J.L. Blanco, J. Gonzalez, J.A. Fernandez-Madrigal, "The Trajectory Parameter
+  Space (TP-Space): A New Space Representation for Non-Holonomic Mobile Robot
+  Reactive Navigation", *IEEE/RSJ Int. Conf. on Intelligent Robots and Systems
+  (IROS)*, pp. 1462-1468, 2006.
+  [doi:10.1109/IROS.2006.282518](https://doi.org/10.1109/IROS.2006.282518)
+- J.L. Blanco, J. Gonzalez, J.A. Fernandez-Madrigal, "Extending obstacle
+  avoidance methods through multiple parameter-space transformations",
+  *Autonomous Robots*, 24(1):29-48, 2008.
+- J.L. Blanco, M. Bellone, A. Gimenez-Fernandez, "TP-Space RRT: Kinematic
+  Path Planning of Non-Holonomic Any-Shape Vehicles", *International Journal
+  of Advanced Robotic Systems*, 12(5):55, 2015.
+  [doi:10.5772/60463](https://doi.org/10.5772/60463)
+- A paper describing the planner in this repository will be available on arXiv
+  (2026), soon. <!-- TODO: add arXiv reference and BibTeX -->
 
-- [MRPT](https://github.com/MRPT/mrpt/) 3.x (its colcon modules `mrpt_nav`,
-  `mrpt_maps`, ...).
-- [mvsim](https://github.com/MRPT/mvsim/) (optional to run the live control simulator).
-- [colcon](https://colcon.readthedocs.io/): this repo is colcon-only; there is
-  no standalone top-level CMake build.
+## License
 
-From the ROS 2 repositories (Humble or newer):
-
-```
-sudo apt install ros-$ROS_DISTRO-mrpt-nav ros-$ROS_DISTRO-mrpt-gui python3-colcon-common-extensions
-```
-
-Or, without ROS, MRPT 3 from this PPA (as in this repository's CI):
-
-```
-sudo add-apt-repository ppa:joseluisblancoc/mrpt3-stable
-sudo apt update
-sudo apt install libmrpt-dev libcli11-dev python3-colcon-common-extensions
-```
-
-Build (from the directory containing this repo, e.g. a colcon workspace `src/`):
-
-```bash
-colcon build --base-paths .
-source install/setup.bash
-```
-
-## Use in your code
-
-From your CMake script:
-
-```
-find_package(mrpt_path_planning_core REQUIRED)   # or mrpt_path_planning for backward compat
-target_link_libraries(YOUR_TARGET mpp::mrpt_path_planning)
-```
-
-And in `package.xml`, prefer `<depend>mrpt_path_planning_core</depend>` unless
-you also need the CLI/GUI apps.
-
-## Demo runs
-
-### path-planner-cli
-
-Dump default planner parameters to a YAML file for inspection or customization:
-
-```bash
-path-planner-cli --write-planner-parameters my-planner-params.yaml
-```
-
-Plan a path for a **holonomic robot** with an SE(2) goal pose (x y heading_deg),
-using a pre-built obstacle point cloud and an obstacle-proximity cost map:
-
-```bash
-path-planner-cli \
-  -s "[0.5 0 0]" \
-  -g "[4 2.5 45]" \
-  -c mrpt_path_planning_apps/share/ptgs_holonomic_robot.ini \
-  --obstacles mrpt_path_planning_apps/share/obstacles_01.txt \
-  --planner-parameters mrpt_path_planning_apps/share/mvsim-demo-astar-planner-params.yaml \
-  --costmap-obstacles mrpt_path_planning_apps/share/costmap-obstacles.yaml
-```
-
-Plan a path with an **R(2) goal** (position only, heading-agnostic), printing the
-edge details of the found path and saving the interpolated trajectory to a CSV:
-
-```bash
-path-planner-cli \
-  -s "[0.5 0 0]" \
-  -g "[4 2.5]" \
-  -c mrpt_path_planning_apps/share/ptgs_holonomic_robot.ini \
-  --obstacles mrpt_path_planning_apps/share/obstacles_01.txt \
-  --planner-parameters mrpt_path_planning_apps/share/mvsim-demo-astar-planner-params.yaml \
-  --print-path-edges \
-  --save-interpolated-path path.csv
-```
-
-Plan a path for an **Ackermann (car-like) vehicle**, show the full explored search
-tree, and animate the result. Note the goal is given as a position `[x y]` (R²,
-heading-agnostic): with arc-based PTGs, arriving at a precise heading AND position
-simultaneously is very constrained, so position-only goals are the natural choice
-for non-holonomic vehicles:
-
-```bash
-path-planner-cli \
-  -s "[0.5 0 0]" \
-  -g "[4 2.5]" \
-  -c mrpt_path_planning_apps/share/ptgs_ackermann_vehicle.ini \
-  --obstacles mrpt_path_planning_apps/share/obstacles_01.txt \
-  --planner-parameters mrpt_path_planning_apps/share/mvsim-demo-astar-planner-params-ackermann.yaml \
-  --show-tree \
-  --play-animation
-```
-
-Plan from an **occupancy grid image** (each pixel = `--obstacles-gridimage-resolution` meters):
-
-```bash
-path-planner-cli \
-  -s "[1.0 1.0 0]" \
-  -g "[8.0 6.0 90]" \
-  -c mrpt_path_planning_apps/share/ptgs_holonomic_robot.ini \
-  --obstacles mrpt_path_planning_apps/share/map01.png \
-  --obstacles-gridimage-resolution 0.05 \
-  --planner-parameters mrpt_path_planning_apps/share/mvsim-demo-astar-planner-params.yaml
-```
-
-Plan with a **preferred-waypoints cost layer** to attract the path through
-intermediate via-points, plus a proximity cost map:
-
-```bash
-path-planner-cli \
-  -s "[0.5 0 0]" \
-  -g "[4 2.5 45]" \
-  -c mrpt_path_planning_apps/share/ptgs_holonomic_robot.ini \
-  --obstacles mrpt_path_planning_apps/share/obstacles_01.txt \
-  --planner-parameters mrpt_path_planning_apps/share/mvsim-demo-astar-planner-params.yaml \
-  --costmap-obstacles mrpt_path_planning_apps/share/costmap-obstacles.yaml \
-  --waypoints mrpt_path_planning_apps/share/mvsim-demo-waypoints01.yaml \
-  --waypoints-parameters mrpt_path_planning_apps/share/costmap-prefer-waypoints.yaml
-```
-
-Enable **verbose debug output** and skip the post-plan refinement stage:
-
-```bash
-path-planner-cli \
-  -s "[0.5 0 0]" \
-  -g "[4 2.5 45]" \
-  -c mrpt_path_planning_apps/share/ptgs_holonomic_robot.ini \
-  --obstacles mrpt_path_planning_apps/share/obstacles_01.txt \
-  --planner-parameters mrpt_path_planning_apps/share/mvsim-demo-astar-planner-params.yaml \
-  --no-refine \
-  -v DEBUG
-```
-
-### selfdriving-simulator-gui (requires mvsim)
-
-GUI with live navigation simulator and A* replanning:
-
-```bash
-# Holonomic robot:
-selfdriving-simulator-gui \
-  --waypoints mrpt_path_planning_apps/share/mvsim-demo-waypoints01.yaml \
-  -s mrpt_path_planning_apps/share/mvsim-demo.xml \
-  -p mrpt_path_planning_apps/share/ptgs_holonomic_robot.ini \
-  --nav-engine-parameters mrpt_path_planning_apps/share/nav-engine-params.yaml \
-  --planner-parameters mrpt_path_planning_apps/share/mvsim-demo-astar-planner-params.yaml \
-  --prefer-waypoints-parameters mrpt_path_planning_apps/share/costmap-prefer-waypoints.yaml \
-  --global-costmap-parameters mrpt_path_planning_apps/share/costmap-obstacles.yaml \
-  --local-costmap-parameters mrpt_path_planning_apps/share/costmap-obstacles.yaml
-
-# Ackermann vehicle:
-selfdriving-simulator-gui \
-  --waypoints mrpt_path_planning_apps/share/mvsim-demo-waypoints01.yaml \
-  -s mrpt_path_planning_apps/share/mvsim-demo.xml \
-  -p mrpt_path_planning_apps/share/ptgs_ackermann_vehicle.ini \
-  --nav-engine-parameters mrpt_path_planning_apps/share/nav-engine-params.yaml \
-  --planner-parameters mrpt_path_planning_apps/share/mvsim-demo-astar-planner-params.yaml \
-  --prefer-waypoints-parameters mrpt_path_planning_apps/share/costmap-prefer-waypoints.yaml \
-  --global-costmap-parameters mrpt_path_planning_apps/share/costmap-obstacles.yaml \
-  --local-costmap-parameters mrpt_path_planning_apps/share/costmap-obstacles.yaml
-```
+BSD 3-Clause. See [LICENSE](LICENSE).
