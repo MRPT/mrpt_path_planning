@@ -21,6 +21,7 @@
 #include <mpp/algos/reeds_shepp.h>
 #include <mpp/data/PlannerInput.h>
 #include <mrpt/config/CConfigFileMemory.h>
+#include <mrpt/math/wrap2pi.h>
 
 #include <random>
 
@@ -89,6 +90,38 @@ TEST(ReedsShepp, MetricProperties)
         EXPECT_LE(ac, ab + bc + 1e-6);
         // Never shorter than the straight-line distance:
         EXPECT_GE(ab + 1e-9, std::hypot(b.x - a.x, b.y - a.y));
+    }
+}
+
+TEST(ReedsShepp, PathSegmentsReachGoalWithShortestLength)
+{
+    std::mt19937                           rng(321);
+    std::uniform_real_distribution<double> U(-5, 5);
+    std::uniform_real_distribution<double> A(-M_PI, M_PI);
+    const double                           R = 1.3;
+
+    for (int i = 0; i < 5000; i++)
+    {
+        const mrpt::math::TPose2D a(U(rng), U(rng), A(rng));
+        const mrpt::math::TPose2D b(U(rng), U(rng), A(rng));
+
+        const auto segs = mpp::reeds_shepp_path(a, b, R);
+        ASSERT_FALSE(segs.empty());
+        ASSERT_LE(segs.size(), 5U);
+
+        double total = 0;
+        for (const auto& s : segs)
+        {
+            EXPECT_TRUE(s.type == 'L' || s.type == 'R' || s.type == 'S');
+            total += std::abs(s.length);
+        }
+        EXPECT_NEAR(total, mpp::reeds_shepp_distance(a, b, R), 1e-9);
+
+        const auto end = mpp::reeds_shepp_apply(a, segs, R);
+        EXPECT_NEAR(end.x, b.x, 1e-6) << "i=" << i;
+        EXPECT_NEAR(end.y, b.y, 1e-6) << "i=" << i;
+        EXPECT_NEAR(mrpt::math::angDistance(end.phi, b.phi), 0.0, 1e-6)
+            << "i=" << i;
     }
 }
 

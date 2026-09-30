@@ -24,6 +24,7 @@
 
 #include <gtest/gtest.h>
 #include <mpp/algos/TPS_Astar.h>
+#include <mpp/algos/refine_trajectory.h>
 #include <mpp/data/PlannerInput.h>
 #include <mpp/interfaces/ObstacleSource.h>
 #include <mrpt/config/CConfigFileMemory.h>
@@ -454,4 +455,133 @@ TEST(AstarDiffDrive, ReverseReachesGoalBehind)
         << "Reaching a goal behind in a narrow corridor must use the reverse "
            "PTG (index "
         << kReversePtgIndex << ")";
+}
+
+// ---------------------------------------------------------------------------
+// Reeds-Shepp shot (use_reeds_shepp_expansion)
+// ---------------------------------------------------------------------------
+TEST(AstarDiffDrive, ReedsSheppShotReachesPoseGoalExactly)
+{
+    const mrpt::math::TPose2D goal(3.0, 1.5, M_PI / 2);
+
+    auto plannerWith = [&](bool shot)
+    {
+        auto planner                                     = buildPlanner();
+        planner.params_.use_reeds_shepp_heuristic        = true;
+        planner.params_.use_reeds_shepp_expansion        = shot;
+        planner.params_.heuristic_epsilon                = 1.5;
+        planner.params_.reeds_shepp_expansion_max_length = 10.0;
+        return planner;
+    };
+    auto in = buildInput(
+        goal.x, goal.y, kCPtgForwardReverse, /*bboxMin=*/{-2, -3, -M_PI},
+        /*bboxMax=*/{6, 5, M_PI});
+    in.stateGoal.state = goal;
+
+    auto       withShot    = plannerWith(true);
+    auto       withoutShot = plannerWith(false);
+    const auto out         = withShot.plan(in);
+    const auto outRef      = withoutShot.plan(in);
+    ASSERT_TRUE(out.success);
+    ASSERT_TRUE(outRef.success);
+    expectConsistentPath(out, in);
+
+    // The shot ends at the goal pose itself, not only in the goal cell:
+    const auto [nodes, edges] =
+        out.motionTree.backtrack_path(out.goalNodeId.value());
+    const auto& end = nodes.back().pose;
+    EXPECT_NEAR(end.x, goal.x, 5e-3);
+    EXPECT_NEAR(end.y, goal.y, 5e-3);
+    EXPECT_NEAR(mrpt::math::angDistance(end.phi, goal.phi), 0.0, 1e-2);
+
+    EXPECT_LT(out.numExpandedNodes, outRef.numExpandedNodes);
+}
+
+TEST(AstarDiffDrive, ReedsSheppShotPathCanBeRefined)
+{
+    // A progress callback disables the deferred edge interpolation, as in
+    // typical applications, which then refine the plan.
+    const mrpt::math::TPose2D goal(3.0, 1.5, M_PI / 2);
+
+    auto planner                                     = buildPlanner();
+    planner.params_.use_reeds_shepp_heuristic        = true;
+    planner.params_.use_reeds_shepp_expansion        = true;
+    planner.params_.reeds_shepp_expansion_max_length = 10.0;
+    planner.progressCallback_ = [](const mpp::ProgressCallbackData&) {};
+
+    auto in = buildInput(
+        goal.x, goal.y, kCPtgForwardReverse, /*bboxMin=*/{-2, -3, -M_PI},
+        /*bboxMax=*/{6, 5, M_PI});
+    in.stateGoal.state = goal;
+
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success);
+
+    auto [nodes, edges] = out.motionTree.backtrack_path(out.goalNodeId.value());
+    for (const auto* e : edges) { EXPECT_GT(e->interpolatedPath.size(), 1U); }
+    EXPECT_NO_THROW(mpp::refine_trajectory(nodes, edges, in.ptgs));
+
+    // Refining keeps every edge ending exactly at its node, so the executed
+    // path still ends at the goal pose:
+    auto itNode = nodes.begin();
+    for (const auto* e : edges)
+    {
+        const auto& from = itNode->pose;
+        ++itNode;
+        const auto& ptg = in.ptgs.ptgs.at(e->ptgIndex);
+        const auto  end =
+            from + ptg->getPathPose(e->ptgPathIndex, e->ptgStepIndex);
+        EXPECT_NEAR(end.x, itNode->pose.x, 1e-3);
+        EXPECT_NEAR(end.y, itNode->pose.y, 1e-3);
+    }
+}
+
+TEST(AstarDiffDrive, ReedsSheppShotRespectsWalls)
+{
+    // As SolidWallBlocksGoal, with a pose goal: the shot must never be
+    // accepted through the divider.
+    auto box = buildSealedBoxWithDivider(
+        /*x0=*/0.0, /*x1=*/2.0, /*y0=*/-1.0, /*y1=*/1.0, /*xdiv=*/1.0);
+
+    auto planner                                     = buildPlanner();
+    planner.params_.maximumComputationTime           = 10.0;
+    planner.params_.use_reeds_shepp_heuristic        = true;
+    planner.params_.use_reeds_shepp_expansion        = true;
+    planner.params_.reeds_shepp_expansion_max_length = 10.0;
+
+    auto in = buildInput(
+        /*gx=*/1.5, /*gy=*/0.0, kCPtgForwardReverse,
+        /*bboxMin=*/{0.0, -1.0, -M_PI}, /*bboxMax=*/{2.0, 1.0, M_PI}, box);
+    in.stateStart.pose = {0.5, 0.0, 0.0};
+    in.stateGoal.state = mrpt::math::TPose2D(1.5, 0.0, 0.0);
+
+    const auto out = planner.plan(in);
+    EXPECT_FALSE(out.success)
+        << "The Reeds-Shepp shot must not cross a solid wall";
+}
+
+TEST(AstarDiffDrive, ReedsSheppShotReversesInCorridor)
+{
+    // Corridor too narrow to turn around: the only solution backs up
+    // straight, which the shot finds as a single reverse segment.
+    auto planner                                     = buildPlanner();
+    planner.params_.maximumComputationTime           = 10.0;
+    planner.params_.use_reeds_shepp_heuristic        = true;
+    planner.params_.use_reeds_shepp_expansion        = true;
+    planner.params_.reeds_shepp_expansion_max_length = 10.0;
+
+    auto walls = buildCorridorWalls(/*x0=*/-3.0, /*x1=*/3.0, /*halfWidth=*/0.7);
+    auto in    = buildInput(
+           /*gx=*/-1.5, /*gy=*/0.0, kCPtgForwardReverse,
+        /*bboxMin=*/{-3, -1.0, -M_PI}, /*bboxMax=*/{3, 1.0, M_PI}, walls);
+    in.stateGoal.state = mrpt::math::TPose2D(-1.5, 0.0, 0.0);
+
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success);
+    expectConsistentPath(out, in);
+    const auto indices = solutionPtgIndices(out);
+    ASSERT_FALSE(indices.empty());
+    EXPECT_TRUE(
+        std::find(indices.begin(), indices.end(), kReversePtgIndex) !=
+        indices.end());
 }
