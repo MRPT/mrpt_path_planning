@@ -585,3 +585,139 @@ TEST(AstarDiffDrive, ReedsSheppShotReversesInCorridor)
         std::find(indices.begin(), indices.end(), kReversePtgIndex) !=
         indices.end());
 }
+
+// Where the robot actually ends: the final tree node is snapped to the goal
+// when the search ends in the goal cell, so use the motion of the last edge.
+static mrpt::math::TPose2D executedEndPose(
+    const mpp::PlannerOutput& out, const mpp::PlannerInput& in)
+{
+    const auto [nodes, edges] =
+        out.motionTree.backtrack_path(out.goalNodeId.value());
+    const auto* last = edges.back();
+    return last->stateFrom.pose +
+           in.ptgs.ptgs.at(last->ptgIndex)
+               ->getPathPose(last->ptgPathIndex, last->ptgStepIndex);
+}
+
+TEST(AstarDiffDrive, ReedsSheppShotReachesPointGoalExactly)
+{
+    const mrpt::math::TPoint2D goal(3.0, 1.5);
+
+    auto plannerWith = [&](bool shot)
+    {
+        auto planner                                     = buildPlanner();
+        planner.params_.use_reeds_shepp_expansion        = shot;
+        planner.params_.reeds_shepp_expansion_max_length = 10.0;
+        return planner;
+    };
+    const auto in = buildInput(
+        goal.x, goal.y, kCPtgForwardReverse, /*bboxMin=*/{-2, -3, -M_PI},
+        /*bboxMax=*/{6, 5, M_PI});
+
+    auto       withShot    = plannerWith(true);
+    auto       withoutShot = plannerWith(false);
+    const auto out         = withShot.plan(in);
+    const auto outRef      = withoutShot.plan(in);
+    ASSERT_TRUE(out.success);
+    ASSERT_TRUE(outRef.success);
+    expectConsistentPath(out, in);
+
+    // The shot ends at the goal point itself, not only in the goal cell:
+    const auto end = executedEndPose(out, in);
+    EXPECT_NEAR(end.x, goal.x, 5e-3);
+    EXPECT_NEAR(end.y, goal.y, 5e-3);
+}
+
+TEST(AstarDiffDrive, PointGoalsAreReachedExactly)
+{
+    // Goals ahead, sideways, behind, and within the start cell (the search
+    // then starts in the goal cell and must still maneuver onto the point).
+    const std::vector<mrpt::math::TPoint2D> goals = {
+        {2.0, 0.0},  {1.2, 1.7},   {-0.3, 1.1},   {-2.5, -0.4},
+        {0.4, -2.2}, {0.05, 0.05}, {-0.06, 0.02}, {0.0, 0.08}};
+
+    for (const auto& goal : goals)
+    {
+        auto       planner = buildPlanner();
+        const auto in      = buildInput(
+                 goal.x, goal.y, kCPtgForwardReverse, /*bboxMin=*/{-4, -4, -M_PI},
+                 /*bboxMax=*/{4, 4, M_PI});
+        const auto out = planner.plan(in);
+        ASSERT_TRUE(out.success) << "goal=" << goal;
+        expectConsistentPath(out, in);
+
+        const auto end = executedEndPose(out, in);
+        EXPECT_NEAR(end.x, goal.x, 5e-3) << "goal=" << goal;
+        EXPECT_NEAR(end.y, goal.y, 5e-3) << "goal=" << goal;
+    }
+}
+
+TEST(AstarDiffDrive, PoseGoalOnCellBoundaryIsReachedExactly)
+{
+    // x = -2.5 lies on a boundary of the 0.2 m lattice cells: a shot ending a
+    // fraction of a millimeter away falls in the neighboring cell, and must
+    // still be accepted.
+    const mrpt::math::TPose2D goal(-2.5, -0.4, M_PI / 2);
+
+    auto planner                              = buildPlanner();
+    planner.params_.use_reeds_shepp_heuristic = true;
+    auto in                                   = buildInput(
+                                          goal.x, goal.y, kCPtgForwardReverse, /*bboxMin=*/{-4, -4, -M_PI},
+                                          /*bboxMax=*/{4, 4, M_PI});
+    in.stateGoal.state = goal;
+    const auto out     = planner.plan(in);
+    ASSERT_TRUE(out.success);
+
+    const auto end = executedEndPose(out, in);
+    EXPECT_NEAR(end.x, goal.x, 5e-3);
+    EXPECT_NEAR(end.y, goal.y, 5e-3);
+    EXPECT_NEAR(mrpt::math::angDistance(end.phi, goal.phi), 0.0, 1e-2);
+}
+
+TEST(AstarDiffDrive, PointGoalShotPathCanBeRefined)
+{
+    // As ReedsSheppShotPathCanBeRefined, with a position goal: refining the
+    // plan must keep it ending at the goal point.
+    const mrpt::math::TPoint2D goal(-1.0, 2.0);
+
+    auto planner              = buildPlanner();
+    planner.progressCallback_ = [](const mpp::ProgressCallbackData&) {};
+
+    const auto in = buildInput(
+        goal.x, goal.y, kCPtgForwardReverse, /*bboxMin=*/{-4, -4, -M_PI},
+        /*bboxMax=*/{4, 4, M_PI});
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success);
+
+    auto [nodes, edges] = out.motionTree.backtrack_path(out.goalNodeId.value());
+    EXPECT_NO_THROW(mpp::refine_trajectory(nodes, edges, in.ptgs));
+
+    const auto* last = edges.back();
+    const auto  end  = last->stateFrom.pose +
+                     in.ptgs.ptgs.at(last->ptgIndex)
+                         ->getPathPose(last->ptgPathIndex, last->ptgStepIndex);
+    EXPECT_NEAR(end.x, goal.x, 5e-3);
+    EXPECT_NEAR(end.y, goal.y, 5e-3);
+}
+
+TEST(AstarDiffDrive, PointGoalShotRespectsWalls)
+{
+    // As SolidWallBlocksGoal, with the shot explicitly enabled and long enough
+    // to reach across the divider: it must never be accepted through it.
+    auto box = buildSealedBoxWithDivider(
+        /*x0=*/0.0, /*x1=*/2.0, /*y0=*/-1.0, /*y1=*/1.0, /*xdiv=*/1.0);
+
+    auto planner                                     = buildPlanner();
+    planner.params_.maximumComputationTime           = 10.0;
+    planner.params_.use_reeds_shepp_expansion        = true;
+    planner.params_.reeds_shepp_expansion_max_length = 10.0;
+
+    auto in = buildInput(
+        /*gx=*/1.5, /*gy=*/0.0, kCPtgForwardReverse,
+        /*bboxMin=*/{0.0, -1.0, -M_PI}, /*bboxMax=*/{2.0, 1.0, M_PI}, box);
+    in.stateStart.pose = {0.5, 0.0, 0.0};
+
+    const auto out = planner.plan(in);
+    EXPECT_FALSE(out.success)
+        << "The Reeds-Shepp shot must not cross a solid wall";
+}

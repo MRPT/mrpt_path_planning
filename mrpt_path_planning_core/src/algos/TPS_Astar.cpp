@@ -154,8 +154,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     }
 
     rsExpansionRadius_ = 0.0;
-    if (params_.use_reeds_shepp_expansion && in.stateGoal.state.isPose() &&
-        params_.use_analytic_expansion &&
+    if (params_.use_reeds_shepp_expansion && params_.use_analytic_expansion &&
         !prepare_reeds_shepp_expansion(in.ptgs))
     {
         MRPT_LOG_DEBUG(
@@ -282,6 +281,35 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         costEvaluators_.empty() &&
         params_.saveDebugVisualizationDecimation == 0 && !progressCallback_;
 
+    // Tries a Reeds-Shepp shot from `n` to the goal (see
+    // use_reeds_shepp_expansion). A clear shot becomes the goal candidate if
+    // it is cheaper than the current one or, with `replace`, in any case (an
+    // exact goal is preferred to a candidate anywhere in the goal cell).
+    // Returns whether the shot is clear.
+    auto tryReedsSheppShot = [&](const Node& n, bool replace)
+    {
+        const auto shot = reeds_shepp_shot(
+            n, in.stateGoal, in.ptgs, obstaclePoints, MAX_XY_DIST, in);
+        if (shot.empty()) { return false; }
+        cost_t g = n.gScore;
+        for (const auto& e : shot) { g += e.edge.cost; }
+        if (!replace && g >= bestGoalCandidateG) { return true; }
+
+        mrpt::graphs::TNodeID parent = n.id.value();
+        for (const auto& e : shot)
+        {
+            const auto id       = nextFreeId++;
+            auto       edgeData = e.edge;
+            edgeData.parentId   = parent;
+            tree.insert_node_and_edge(parent, id, e.stateTo, edgeData);
+            parent = id;
+        }
+        bestGoalCandidate       = nullptr;
+        bestGoalCandidateG      = g;
+        bestGoalCandidateShotId = parent;
+        return true;
+    };
+
     while (!openSet.empty())
     {
         mrpt::system::CTimeLoggerEntry tle(profiler_(), "plan.iter");
@@ -316,6 +344,12 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             bestGoalCandidateG <= current.fScore)
         {
             Node& gn = *bestGoalCandidate;
+            // Reach the goal exactly from the candidate, if possible. The
+            // shot is then committed by the rule above.
+            if (rsExpansionRadius_ > 0 && tryReedsSheppShot(gn, true))
+            {
+                continue;
+            }
             if (in.stateGoal.state.isPoint())
             {
                 const auto& goalPt = in.stateGoal.state.point();
@@ -340,8 +374,16 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         // we must check the state to be on the same lattice cell to check
         // for a match of the current SE(2) pose against the goal state,
         // which may be either a SE(2) pose or a R2 point:
+        //
+        // With the Reeds-Shepp shot, a node in the goal cell is first used to
+        // reach the goal exactly: if its shot is clear, or a shot candidate
+        // already exists, it is expanded as any other node and a shot is
+        // committed by the rule above. Otherwise the search ends here, as
+        // without shots, before any goal-cell node has been expanded.
         if (const auto curNodeGridIdx = nodeGridCoords(current.state.pose);
-            curNodeGridIdx.sameLocation(goalCellIndices))
+            curNodeGridIdx.sameLocation(goalCellIndices) &&
+            !(rsExpansionRadius_ > 0 && (bestGoalCandidateShotId.has_value() ||
+                                         tryReedsSheppShot(current, true))))
         {
             // Path found:
 
@@ -574,33 +616,23 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
         }  // end for each edge to neighbor
 
-        // Reeds-Shepp shot to the goal pose (see use_reeds_shepp_expansion):
-        if (rsExpansionRadius_ > 0 &&
-            current.gScore + reeds_shepp_distance(
-                                 current.state.pose, in.stateGoal.state.pose(),
-                                 rsExpansionRadius_) /
-                                 maxLinSpeed_ <
-                bestGoalCandidateG)
+        // Reeds-Shepp shot to the goal (see use_reeds_shepp_expansion), if
+        // a lower bound of its cost can improve on the current candidate:
+        if (rsExpansionRadius_ > 0)
         {
-            const auto shot = reeds_shepp_shot(
-                current, in.stateGoal.state.pose(), in.ptgs, obstaclePoints,
-                MAX_XY_DIST, in);
-            cost_t g = current.gScore;
-            for (const auto& e : shot) { g += e.edge.cost; }
-            if (!shot.empty() && g < bestGoalCandidateG)
+            const double lowerBoundLength =
+                in.stateGoal.state.isPose()
+                    ? reeds_shepp_distance(
+                          current.state.pose, in.stateGoal.state.pose(),
+                          rsExpansionRadius_)
+                    : (current.state.pose.translation() -
+                       in.stateGoal.state.point())
+                          .norm();
+            if (current.gScore + lowerBoundLength / maxLinSpeed_ <
+                    bestGoalCandidateG &&
+                lowerBoundLength <= params_.reeds_shepp_expansion_max_length)
             {
-                mrpt::graphs::TNodeID parent = current.id.value();
-                for (const auto& e : shot)
-                {
-                    const auto id       = nextFreeId++;
-                    auto       edgeData = e.edge;
-                    edgeData.parentId   = parent;
-                    tree.insert_node_and_edge(parent, id, e.stateTo, edgeData);
-                    parent = id;
-                }
-                bestGoalCandidate       = nullptr;
-                bestGoalCandidateG      = g;
-                bestGoalCandidateShotId = parent;
+                tryReedsSheppShot(current, false);
             }
         }
 
@@ -1254,7 +1286,7 @@ bool TPS_Astar::prepare_reeds_shepp_expansion(
 }
 
 std::vector<TPS_Astar::RsShotEdge> TPS_Astar::reeds_shepp_shot(
-    const Node& from, const mrpt::math::TPose2D& goal,
+    const Node& from, const SE2orR2_KinState& goal,
     const TrajectoriesAndRobotShape&                trs,
     const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
     double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in)
@@ -1263,7 +1295,11 @@ std::vector<TPS_Astar::RsShotEdge> TPS_Astar::reeds_shepp_shot(
 
     std::vector<RsShotEdge> out;
     const auto              segments =
-        reeds_shepp_path(from.state.pose, goal, rsExpansionRadius_);
+        goal.state.isPose()
+                         ? reeds_shepp_path(
+                               from.state.pose, goal.state.pose(), rsExpansionRadius_)
+                         : reeds_shepp_path_to_point(
+                               from.state.pose, goal.state.point(), rsExpansionRadius_);
     double length = 0;
     for (const auto& seg : segments) { length += std::abs(seg.length); }
     if (segments.empty() || length > params_.reeds_shepp_expansion_max_length)
@@ -1334,10 +1370,11 @@ std::vector<TPS_Astar::RsShotEdge> TPS_Astar::reeds_shepp_shot(
             e.edge.ptgPathIndex         = k;
             e.edge.ptgTrimmableSpeed    = 1.0;
             e.edge.ptgFinalGoalRelSpeed = 0;
-            e.edge.ptgFinalRelativeGoal = goal - state.pose;
-            e.edge.stateFrom            = state;
-            e.edge.stateTo              = next;
-            e.edge.ptgStepIndex         = *step;
+            e.edge.ptgFinalRelativeGoal =
+                goal.asSE2KinState().pose - state.pose;
+            e.edge.stateFrom    = state;
+            e.edge.stateTo      = next;
+            e.edge.ptgStepIndex = *step;
             // Always interpolated (also sets estimatedExecTime): cost
             // evaluators and refine_trajectory() need it, and shots are few.
             edge_interpolated_path(
@@ -1349,9 +1386,18 @@ std::vector<TPS_Astar::RsShotEdge> TPS_Astar::reeds_shepp_shot(
             state = next;
         }
     }
-    // The chain must end in the goal cell (it ends at the goal pose, up to
-    // the time discretization of the PTG trajectories):
-    if (!nodeGridCoords(state.pose).sameLocation(nodeGridCoords(goal)))
+    // The chain ends at the goal, up to the time discretization of the PTG
+    // trajectories. (A same-cell test would reject shots to goals on a cell
+    // boundary.)
+    const auto   goalPose = goal.asSE2KinState().pose;
+    const double errXY =
+        std::hypot(state.pose.x - goalPose.x, state.pose.y - goalPose.y);
+    const double errPhi =
+        goal.state.isPose()
+            ? std::abs(mrpt::math::angDistance(state.pose.phi, goalPose.phi))
+            : 0.0;
+    if (errXY > 0.5 * params_.grid_resolution_xy ||
+        errPhi > 0.5 * params_.grid_resolution_yaw)
     {
         out.clear();
     }

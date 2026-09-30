@@ -76,17 +76,22 @@ struct TPS_Astar_Parameters
      * v_max/w_max); otherwise the default heuristic is used. */
     bool use_reeds_shepp_heuristic = false;
 
-    /** For full-pose (SE(2)) goals, try a Reeds-Shepp shot from every expanded
-     * node within `reeds_shepp_expansion_max_length` [m] of the goal: the
-     * shortest Reeds-Shepp path to the goal pose, at the tightest turning
-     * radius of the PTGs, executed exactly as a chain of edges along the
-     * tightest-arc and straight trajectories of forward and reverse C-PTGs.
-     * Every edge is checked with the same certified TP-obstacle query as any
-     * other edge. A collision-free shot becomes a goal candidate of the
-     * deferred analytic expansion (so `use_analytic_expansion` must be
-     * enabled), which keeps the suboptimality bound. It requires forward and
-     * reverse DiffDrive_C PTGs with an odd number of trajectories (so that
-     * one is straight); otherwise it is silently not used. */
+    /** Try a Reeds-Shepp shot from every expanded node within
+     * `reeds_shepp_expansion_max_length` [m] of the goal: the shortest
+     * Reeds-Shepp path to the goal pose (full-pose goals) or to the goal point
+     * with a free final heading (position goals, see
+     * reeds_shepp_path_to_point()), at the tightest turning radius of the
+     * PTGs, executed exactly as a chain of edges along the tightest-arc and
+     * straight trajectories of forward and reverse C-PTGs. Every edge is
+     * checked with the same certified TP-obstacle query as any other edge. A
+     * collision-free shot becomes a goal candidate of the deferred analytic
+     * expansion (so `use_analytic_expansion` must be enabled), which keeps the
+     * suboptimality bound, and it ends at the goal itself, not only in the
+     * goal cell. A search that would end in the goal cell first tries a shot
+     * from there and, if it is clear, goes on until a shot is committed. It
+     * requires forward and reverse DiffDrive_C PTGs with an odd number of
+     * trajectories (so that one is straight); otherwise it is silently not
+     * used. */
     bool   use_reeds_shepp_expansion        = true;
     double reeds_shepp_expansion_max_length = 5.0;
 
@@ -461,11 +466,12 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         SE2_KinState    stateTo;
     };
 
-    /** Builds the Reeds-Shepp shot from `from` to `goal` as certified PTG
-     * edges. \return An empty vector if there is none (too long, colliding,
-     * or leaving the world box). */
+    /** Builds the Reeds-Shepp shot from `from` to the goal pose or point as
+     * certified PTG edges. \return An empty vector if there is none (too
+     * long, colliding, leaving the world box, or `from` already at the goal
+     * point). */
     std::vector<RsShotEdge> reeds_shepp_shot(
-        const Node& from, const mrpt::math::TPose2D& goal,
+        const Node& from, const SE2orR2_KinState& goal,
         const TrajectoriesAndRobotShape&                trs,
         const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
         double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in);
