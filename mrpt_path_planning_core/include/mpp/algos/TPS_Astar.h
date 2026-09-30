@@ -86,8 +86,8 @@ struct TPS_Astar_Parameters
      * deferred analytic expansion (so `use_analytic_expansion` must be
      * enabled), which keeps the suboptimality bound. It requires forward and
      * reverse DiffDrive_C PTGs with an odd number of trajectories (so that
-     * one is straight); otherwise it is ignored with a warning. */
-    bool   use_reeds_shepp_expansion        = false;
+     * one is straight); otherwise it is silently not used. */
+    bool   use_reeds_shepp_expansion        = true;
     double reeds_shepp_expansion_max_length = 5.0;
 
     uint32_t                        max_ptg_trajectories_to_explore = 20;

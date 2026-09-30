@@ -154,20 +154,13 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     }
 
     rsExpansionRadius_ = 0.0;
-    if (params_.use_reeds_shepp_expansion && in.stateGoal.state.isPose())
+    if (params_.use_reeds_shepp_expansion && in.stateGoal.state.isPose() &&
+        params_.use_analytic_expansion &&
+        !prepare_reeds_shepp_expansion(in.ptgs))
     {
-        if (!params_.use_analytic_expansion)
-        {
-            MRPT_LOG_WARN(
-                "use_reeds_shepp_expansion ignored: it requires "
-                "use_analytic_expansion.");
-        }
-        else if (!prepare_reeds_shepp_expansion(in.ptgs))
-        {
-            MRPT_LOG_WARN(
-                "use_reeds_shepp_expansion ignored: it requires forward and "
-                "reverse DiffDrive_C PTGs with an odd number of trajectories.");
-        }
+        MRPT_LOG_DEBUG(
+            "Reeds-Shepp shot not used: it requires forward and reverse "
+            "DiffDrive_C PTGs with an odd number of trajectories.");
     }
 
     // obstacles (TODO: dynamic over future time?):

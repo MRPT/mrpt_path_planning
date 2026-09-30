@@ -1073,6 +1073,15 @@ void DiffDriveCollisionGridBased::updateTPObstacles(
 {
     ASSERTMSG_(!m_trajectory.empty(), "PTG has not been initialized!");
     const auto& g = m_flatGrid;
+    if (g.offsets.empty())
+    {
+        // Not built (e.g. a PTG restored from a stream without initialize()):
+        for (size_t i = 0; i < n; i++)
+        {
+            updateTPObstacle(xs[i], ys[i], tp_obstacles);
+        }
+        return;
+    }
     for (size_t i = 0; i < n; i++)
     {
         const double ox = xs[i];
