@@ -58,7 +58,7 @@ configuration files installed with the apps package:
 cd $(ros2 pkg prefix mrpt_path_planning_apps)/share/mrpt_path_planning_apps
 
 path-planner-cli \
-  -s "[0.5 0 0]" -g "[4 2.5 45]" \
+  -s "[0.5 0 0]" -g "[4.2 0.5 80]" \
   -c ptgs_holonomic_robot.ini \
   --obstacles obstacles_01.txt \
   --planner-parameters mvsim-demo-astar-planner-params.yaml \
@@ -160,7 +160,7 @@ installed), and start from this base command (holonomic robot, SE(2) goal `[x y 
 
 ```bash
 path-planner-cli \
-  -s "[0.5 0 0]" -g "[4 2.5 45]" \
+  -s "[0.5 0 0]" -g "[4.2 0.5 80]" \
   -c ptgs_holonomic_robot.ini \
   --obstacles obstacles_01.txt \
   --planner-parameters mvsim-demo-astar-planner-params.yaml
@@ -169,17 +169,18 @@ path-planner-cli \
 | Scenario | Add or change |
 | --- | --- |
 | Obstacle-proximity cost map | `--costmap-obstacles costmap-obstacles.yaml` |
-| R(2) goal (position only), print path edges, save trajectory to CSV | `-g "[4 2.5]" --print-path-edges --save-interpolated-path path.csv` |
-| Ackermann vehicle, show search tree and animation | `-g "[4 2.5]" -c ptgs_ackermann_vehicle.ini --planner-parameters mvsim-demo-astar-planner-params-ackermann.yaml --show-tree --play-animation` |
+| R(2) goal (position only), print path edges, save trajectory to CSV | `-g "[4.2 0.5]" --print-path-edges --save-interpolated-path path.csv` |
+| Ackermann vehicle, show search tree and animation | `-c ptgs_ackermann_vehicle.ini --planner-parameters mvsim-demo-astar-planner-params-ackermann.yaml --show-tree --play-animation` |
 | Occupancy grid image as obstacles | `-s "[1 1 0]" -g "[8 6 90]" --obstacles map01.png --obstacles-gridimage-resolution 0.05` |
 | Attract the path through via-points | `--waypoints mvsim-demo-waypoints01.yaml --waypoints-parameters costmap-prefer-waypoints.yaml` |
 | Save a 2D SVG plot, no GUI | `--save-svg plan.svg --no-gui` |
 | Save an animated SVG of the robot following the path | `--save-svg plan.svg --svg-animate --no-gui` |
 | Verbose output, skip path refinement | `-v DEBUG --no-refine` |
 
-For non-holonomic vehicles, position-only goals are usually the natural choice:
-reaching an exact position *and* heading with arc-based PTGs is very
-constrained. Run `path-planner-cli --help` for all options.
+With forward and reverse circular-arc PTGs (as in `ptgs_ackermann_vehicle.ini`),
+pose goals are reached exactly through Reeds-Shepp maneuvers. Position-only
+goals end within one lattice cell (`grid_resolution_xy`) of the goal point.
+Run `path-planner-cli --help` for all options.
 
 ### selfdriving-simulator-gui
 
