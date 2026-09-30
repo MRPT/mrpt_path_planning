@@ -1338,9 +1338,13 @@ std::vector<TPS_Astar::RsShotEdge> TPS_Astar::reeds_shepp_shot(
             e.edge.stateFrom            = state;
             e.edge.stateTo              = next;
             e.edge.ptgStepIndex         = *step;
-            e.edge.estimatedExecTime    = *step * ptg.getPathStepDuration();
-            e.edge.cost                 = cost_path_segment(e.edge);
-            e.stateTo                   = next;
+            // Always interpolated (also sets estimatedExecTime): cost
+            // evaluators and refine_trajectory() need it, and shots are few.
+            edge_interpolated_path(
+                e.edge, trs, ptg.getPathPose(k, *step), *step,
+                params_.pathInterpolatedSegments);
+            e.edge.cost = cost_path_segment(e.edge);
+            e.stateTo   = next;
             out.push_back(e);
             state = next;
         }

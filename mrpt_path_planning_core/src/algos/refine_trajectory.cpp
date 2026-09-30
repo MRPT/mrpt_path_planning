@@ -7,6 +7,7 @@
 #include <mpp/algos/edge_interpolated_path.h>
 #include <mpp/algos/refine_trajectory.h>
 #include <mpp/ptgs/SpeedTrimmablePTG.h>
+#include <mrpt/math/wrap2pi.h>
 
 #include <iostream>
 
@@ -48,6 +49,23 @@ void mpp::refine_trajectory(
 
         // Should never happen, except in buggy callers:
         if (deltaNodes.x == 0 && deltaNodes.y == 0) continue;
+
+        // Edges that already end exactly at the next node are kept as they
+        // are: re-mapping them from (x,y) alone could only add error.
+        if (edge.ptgStepIndex > 0)
+        {
+            const auto current =
+                ptg->getPathPose(edge.ptgPathIndex, edge.ptgStepIndex);
+            const double kTolXY  = 1e-4;  // [m]
+            const double kTolPhi = 1e-4;  // [rad]
+            if (std::abs(current.x - deltaNodes.x) < kTolXY &&
+                std::abs(current.y - deltaNodes.y) < kTolXY &&
+                std::abs(mrpt::math::angDistance(current.phi, deltaNodes.phi)) <
+                    kTolPhi)
+            {
+                continue;
+            }
+        }
 
         const auto invMap = ptg->inverseMap_WS2TP(
             deltaNodes.x, deltaNodes.y, ptg_tolerance_dist);

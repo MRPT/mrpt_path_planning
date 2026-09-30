@@ -24,6 +24,7 @@
 
 #include <gtest/gtest.h>
 #include <mpp/algos/TPS_Astar.h>
+#include <mpp/algos/refine_trajectory.h>
 #include <mpp/data/PlannerInput.h>
 #include <mpp/interfaces/ObstacleSource.h>
 #include <mrpt/config/CConfigFileMemory.h>
@@ -494,6 +495,45 @@ TEST(AstarDiffDrive, ReedsSheppShotReachesPoseGoalExactly)
     EXPECT_NEAR(mrpt::math::angDistance(end.phi, goal.phi), 0.0, 1e-2);
 
     EXPECT_LT(out.numExpandedNodes, outRef.numExpandedNodes);
+}
+
+TEST(AstarDiffDrive, ReedsSheppShotPathCanBeRefined)
+{
+    // A progress callback disables the deferred edge interpolation, as in
+    // typical applications, which then refine the plan.
+    const mrpt::math::TPose2D goal(3.0, 1.5, M_PI / 2);
+
+    auto planner                                     = buildPlanner();
+    planner.params_.use_reeds_shepp_heuristic        = true;
+    planner.params_.use_reeds_shepp_expansion        = true;
+    planner.params_.reeds_shepp_expansion_max_length = 10.0;
+    planner.progressCallback_ = [](const mpp::ProgressCallbackData&) {};
+
+    auto in = buildInput(
+        goal.x, goal.y, kCPtgForwardReverse, /*bboxMin=*/{-2, -3, -M_PI},
+        /*bboxMax=*/{6, 5, M_PI});
+    in.stateGoal.state = goal;
+
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success);
+
+    auto [nodes, edges] = out.motionTree.backtrack_path(out.goalNodeId.value());
+    for (const auto* e : edges) { EXPECT_GT(e->interpolatedPath.size(), 1U); }
+    EXPECT_NO_THROW(mpp::refine_trajectory(nodes, edges, in.ptgs));
+
+    // Refining keeps every edge ending exactly at its node, so the executed
+    // path still ends at the goal pose:
+    auto itNode = nodes.begin();
+    for (const auto* e : edges)
+    {
+        const auto& from = itNode->pose;
+        ++itNode;
+        const auto& ptg = in.ptgs.ptgs.at(e->ptgIndex);
+        const auto  end =
+            from + ptg->getPathPose(e->ptgPathIndex, e->ptgStepIndex);
+        EXPECT_NEAR(end.x, itNode->pose.x, 1e-3);
+        EXPECT_NEAR(end.y, itNode->pose.y, 1e-3);
+    }
 }
 
 TEST(AstarDiffDrive, ReedsSheppShotRespectsWalls)
