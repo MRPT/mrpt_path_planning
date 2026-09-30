@@ -67,6 +67,8 @@ static bool         arg_playAnimation{false};
 static bool         arg_noGui{false};
 static size_t       arg_svg_tree_decimation{1};
 static bool         arg_svg_no_tree{false};
+static bool         arg_svg_animate{false};
+static double       arg_svg_animation_speed{1.0};
 
 static mrpt::maps::CPointsMap::Ptr load_obstacles()
 {
@@ -270,6 +272,8 @@ static void do_plan_path()
         mpp::SvgExportOptions svgOpts;
         svgOpts.draw_tree       = !arg_svg_no_tree;
         svgOpts.tree_decimation = arg_svg_tree_decimation;
+        svgOpts.animate_robot   = arg_svg_animate;
+        svgOpts.animation_speed = arg_svg_animation_speed;
         if (mpp::save_plan_to_svg(plan, arg_save_svg, svgOpts))
         {
             std::cout << "Saved SVG plot: " << arg_save_svg << "\n";
@@ -476,6 +480,14 @@ int main(int argc, char** argv)
         app.add_flag(
             "--svg-no-tree", arg_svg_no_tree,
             "When exporting SVG, omit the motion tree entirely.");
+        app.add_flag(
+            "--svg-animate", arg_svg_animate,
+            "When exporting SVG, add an animation of the robot moving along "
+            "the path (played by web browsers).");
+        app.add_option(
+            "--svg-animation-speed", arg_svg_animation_speed,
+            "When exporting an animated SVG, playback speed relative to the "
+            "estimated real time.");
 
         CLI11_PARSE(app, argc, argv);
 

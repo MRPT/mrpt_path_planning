@@ -12,6 +12,7 @@
 #include <mpp/data/PlannerInput.h>
 #include <mrpt/config/CConfigFileMemory.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 
@@ -92,4 +93,36 @@ TEST(VizSvg, OptionsTogglesReduceOutput)
     EXPECT_GT(
         mpp::plan_to_svg(out, full).size(),
         mpp::plan_to_svg(out, minimal).size());
+}
+
+TEST(VizSvg, AnimatedRobot)
+{
+    const auto out = planSimple();
+    ASSERT_TRUE(out.success);
+
+    mpp::SvgExportOptions opts;
+    EXPECT_EQ(
+        mpp::plan_to_svg(out, opts).find("animateTransform"),
+        std::string::npos);
+
+    opts.animate_robot    = true;
+    const std::string svg = mpp::plan_to_svg(out, opts);
+
+    // one translate and one rotate animation, looping, ending at keyTime 1:
+    EXPECT_NE(svg.find("type=\"translate\""), std::string::npos);
+    EXPECT_NE(svg.find("type=\"rotate\""), std::string::npos);
+    EXPECT_NE(svg.find("repeatCount=\"indefinite\""), std::string::npos);
+    EXPECT_NE(svg.find(";1\" calcMode"), std::string::npos);
+
+    // keyTimes and values must have the same number of entries:
+    const auto countAttrEntries = [&](const std::string& attr, size_t from)
+    {
+        const size_t b = svg.find(attr + "=\"", from) + attr.size() + 2;
+        const size_t e = svg.find('"', b);
+        const auto   v = svg.substr(b, e - b);
+        return std::count(v.begin(), v.end(), ';') + 1;
+    };
+    const size_t anim = svg.find("<animateTransform");
+    EXPECT_EQ(
+        countAttrEntries("values", anim), countAttrEntries("keyTimes", anim));
 }

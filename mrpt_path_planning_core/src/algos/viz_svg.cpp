@@ -5,8 +5,11 @@
  * ------------------------------------------------------------------------- */
 
 #include <mpp/algos/viz_svg.h>
+#include <mrpt/core/bits_math.h>
+#include <mrpt/math/wrap2pi.h>
 #include <mrpt/poses/CPose2D.h>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <sstream>
@@ -25,11 +28,11 @@ struct Frame
     double ty(double y) const { return margin + (ymax - y) * scale; }
 };
 
-std::string fmt(double v)
+std::string fmt(double v, int precision = 2)
 {
     std::ostringstream s;
     s << std::fixed;
-    s.precision(2);
+    s.precision(precision);
     s << v;
     return s.str();
 }
@@ -65,26 +68,140 @@ void appendRobotShape(
     }
 }
 
-// Global poses sampled along an edge (interpolatedPath if present, else the
-// straight from->to segment as a fallback, e.g. for deferred-interpolation
-// tree edges).
-std::vector<mrpt::math::TPose2D> edgePoses(const MoveEdgeSE2_TPS& e)
+using timed_pose_t = std::pair<double, mrpt::math::TPose2D>;
+
+// Global poses sampled along an edge, with times relative to the edge start
+// (interpolatedPath if present, else the straight from->to segment as a
+// fallback, e.g. for deferred-interpolation tree edges).
+std::vector<timed_pose_t> edgeTimedPoses(const MoveEdgeSE2_TPS& e)
 {
-    std::vector<mrpt::math::TPose2D> out;
+    std::vector<timed_pose_t> out;
     if (e.interpolatedPath.size() >= 2)
     {
         for (const auto& [t, relPose] : e.interpolatedPath)
         {
-            (void)t;
-            out.push_back(e.stateFrom.pose + relPose);
+            out.emplace_back(t, e.stateFrom.pose + relPose);
         }
     }
     else
     {
-        out.push_back(e.stateFrom.pose);
-        out.push_back(e.stateTo.pose);
+        out.emplace_back(0.0, e.stateFrom.pose);
+        out.emplace_back(e.estimatedExecTime, e.stateTo.pose);
     }
     return out;
+}
+
+std::vector<mrpt::math::TPose2D> edgePoses(const MoveEdgeSE2_TPS& e)
+{
+    std::vector<mrpt::math::TPose2D> out;
+    for (const auto& tp : edgeTimedPoses(e)) { out.push_back(tp.second); }
+    return out;
+}
+
+// Robot footprint centered at the image origin, heading along +x, so it can
+// be placed with an SVG transform.
+void appendRobotShapeAtOrigin(
+    std::ostream& os, const RobotShape& shape, const Frame& fr,
+    const SvgExportOptions& o)
+{
+    const std::string style = "fill=\"" + o.color_robot_animated_fill +
+                              "\" stroke=\"" + o.color_robot_animated +
+                              "\" stroke-width=\"" + fmt(o.stroke_robot_px) +
+                              "\"";
+    double headingLength = 0;
+    if (std::holds_alternative<mrpt::math::TPolygon2D>(shape))
+    {
+        const auto& poly = std::get<mrpt::math::TPolygon2D>(shape);
+        os << "<polygon points=\"";
+        for (const auto& v : poly)
+        {
+            // image y points down:
+            os << fmt(v.x * fr.scale) << "," << fmt(-v.y * fr.scale) << " ";
+            headingLength = std::max(headingLength, v.x * fr.scale);
+        }
+        os << "\" " << style << "/>\n";
+    }
+    else if (std::holds_alternative<robot_radius_t>(shape))
+    {
+        headingLength = std::get<robot_radius_t>(shape) * fr.scale;
+        os << "<circle cx=\"0\" cy=\"0\" r=\"" << fmt(headingLength) << "\" "
+           << style << "/>\n";
+    }
+    // Heading tick, so rotations are visible for any shape:
+    os << "<line x1=\"0\" y1=\"0\" x2=\"" << fmt(headingLength)
+       << "\" y2=\"0\" stroke=\"" << o.color_robot_animated
+       << "\" stroke-width=\"" << fmt(o.stroke_robot_px) << "\"/>\n";
+}
+
+// A robot footprint moving along `keyframes` (global poses with absolute
+// times), looping forever. Translation and rotation are animated in two
+// nested groups, since each <animateTransform> handles one transform type.
+void appendAnimatedRobot(
+    std::ostream& os, const RobotShape& shape,
+    const std::vector<timed_pose_t>& keyframes, const Frame& fr,
+    const SvgExportOptions& o)
+{
+    if (keyframes.size() < 2) { return; }
+    const double speed = o.animation_speed > 0 ? o.animation_speed : 1.0;
+    const double t0    = keyframes.front().first;
+    const double motionDuration = (keyframes.back().first - t0) / speed;
+    const double totalDuration =
+        motionDuration + std::max(0.0, o.animation_pause_at_end);
+    if (totalDuration <= 0) { return; }
+
+    std::ostringstream keyTimes;
+    std::ostringstream translations;
+    std::ostringstream rotations;
+
+    // Unwrapped heading, so the interpolation never spins the long way round:
+    double phi     = keyframes.front().second.phi;
+    double prevPhi = phi;
+    for (size_t i = 0; i < keyframes.size(); i++)
+    {
+        const auto& [t, p] = keyframes[i];
+        phi += mrpt::math::wrapToPi(p.phi - prevPhi);
+        prevPhi = p.phi;
+
+        const double kt =
+            std::clamp((t - t0) / speed / totalDuration, 0.0, 1.0);
+        const bool isLastKey =
+            (i + 1 == keyframes.size()) && motionDuration >= totalDuration;
+        const char* sep = (i == 0) ? "" : ";";
+        keyTimes << sep << (isLastKey ? std::string("1") : fmt(kt, 5));
+        translations << sep << fmt(fr.tx(p.x)) << " " << fmt(fr.ty(p.y));
+        // world angles are CCW, image rotations are CW (y axis down):
+        rotations << sep << fmt(-mrpt::RAD2DEG(phi));
+    }
+    std::string lastTranslation;
+    std::string lastRotation;
+    {
+        const auto& p   = keyframes.back().second;
+        lastTranslation = fmt(fr.tx(p.x)) + " " + fmt(fr.ty(p.y));
+        lastRotation    = fmt(-mrpt::RAD2DEG(phi));
+    }
+    if (motionDuration < totalDuration)
+    {
+        // Hold the final pose until the loop restarts:
+        keyTimes << ";1";
+        translations << ";" << lastTranslation;
+        rotations << ";" << lastRotation;
+    }
+
+    const auto&       p0 = keyframes.front().second;
+    const std::string timing =
+        "dur=\"" + fmt(totalDuration, 3) + "s\" keyTimes=\"" + keyTimes.str() +
+        "\" calcMode=\"linear\" repeatCount=\"indefinite\"";
+
+    // The static transforms are what non-animating viewers show (start pose):
+    os << "<g transform=\"translate(" << fmt(fr.tx(p0.x)) << " "
+       << fmt(fr.ty(p0.y)) << ")\">\n";
+    os << "<animateTransform attributeName=\"transform\" type=\"translate\" "
+       << "values=\"" << translations.str() << "\" " << timing << "/>\n";
+    os << "<g transform=\"rotate(" << fmt(-mrpt::RAD2DEG(p0.phi)) << ")\">\n";
+    os << "<animateTransform attributeName=\"transform\" type=\"rotate\" "
+       << "values=\"" << rotations.str() << "\" " << timing << "/>\n";
+    appendRobotShapeAtOrigin(os, shape, fr, o);
+    os << "</g>\n</g>\n";
 }
 
 void polyline(
@@ -234,6 +351,7 @@ std::string mpp::plan_to_svg(
     }
 
     // Solution / best path (bold) + robot shapes along it:
+    std::vector<timed_pose_t> pathKeyframes;  // for the animation
     const auto bestId = plan.bestNodeId ? plan.bestNodeId : plan.goalNodeId;
     if (o.draw_path && bestId.has_value() &&
         plan.motionTree.nodes().count(bestId.value()))
@@ -243,11 +361,17 @@ std::string mpp::plan_to_svg(
         (void)nodes;
 
         std::vector<mrpt::math::TPose2D> full;
+        double                           edgeStartTime = 0;
         for (const auto* e : edges)
         {
             if (!e) continue;
-            const auto ps = edgePoses(*e);
-            full.insert(full.end(), ps.begin(), ps.end());
+            const auto ps = edgeTimedPoses(*e);
+            for (const auto& [t, p] : ps)
+            {
+                full.push_back(p);
+                pathKeyframes.emplace_back(edgeStartTime + t, p);
+            }
+            edgeStartTime += ps.back().first;
         }
         polyline(os, full, fr, o.color_path, o.stroke_path_px);
 
@@ -278,6 +402,11 @@ std::string mpp::plan_to_svg(
             goalHasHeading);
     }
 
+    if (o.animate_robot)
+    {
+        appendAnimatedRobot(os, pi.ptgs.robotShape, pathKeyframes, fr, o);
+    }
+
     // Scale bar (1 m) + status text:
     if (o.draw_scalebar)
     {
@@ -288,9 +417,12 @@ std::string mpp::plan_to_svg(
         os << "<text x=\"" << fmt(o.margin_px) << "\" y=\"" << fmt(y - 4)
            << "\" font-size=\"11\" font-family=\"sans-serif\">1 m</text>\n";
     }
-    os << "<text x=\"" << fmt(o.margin_px) << "\" y=\"16\" font-size=\"12\" "
-       << "font-family=\"sans-serif\">" << (plan.success ? "success" : "FAILED")
-       << "</text>\n";
+    if (o.draw_status_text)
+    {
+        os << "<text x=\"" << fmt(o.margin_px)
+           << "\" y=\"16\" font-size=\"12\" font-family=\"sans-serif\">"
+           << (plan.success ? "success" : "FAILED") << "</text>\n";
+    }
 
     os << "</svg>\n";
     return os.str();
