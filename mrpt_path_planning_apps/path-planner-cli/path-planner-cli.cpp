@@ -69,6 +69,9 @@ static bool         arg_noGui{false};
 static size_t       arg_svg_tree_decimation{1};
 static bool         arg_svg_no_tree{false};
 static bool         arg_svg_animate{false};
+static bool         arg_svg_no_bbox{false};
+static bool         arg_svg_no_status{false};
+static double       arg_svg_width{900};
 static double       arg_svg_animation_speed{1.0};
 
 static mrpt::maps::CPointsMap::Ptr load_obstacles()
@@ -286,10 +289,13 @@ static void do_plan_path()
     if (arg_save_svg_set)
     {
         mpp::SvgExportOptions svgOpts;
-        svgOpts.draw_tree       = !arg_svg_no_tree;
-        svgOpts.tree_decimation = arg_svg_tree_decimation;
-        svgOpts.animate_robot   = arg_svg_animate;
-        svgOpts.animation_speed = arg_svg_animation_speed;
+        svgOpts.draw_tree        = !arg_svg_no_tree;
+        svgOpts.tree_decimation  = arg_svg_tree_decimation;
+        svgOpts.animate_robot    = arg_svg_animate;
+        svgOpts.draw_bbox        = !arg_svg_no_bbox;
+        svgOpts.draw_status_text = !arg_svg_no_status;
+        svgOpts.image_width_px   = arg_svg_width;
+        svgOpts.animation_speed  = arg_svg_animation_speed;
         if (mpp::save_plan_to_svg(plan, arg_save_svg, svgOpts))
         {
             std::cout << "Saved SVG plot: " << arg_save_svg << "\n";
@@ -486,6 +492,15 @@ int main(int argc, char** argv)
         app.add_flag(
             "--svg-no-tree", arg_svg_no_tree,
             "When exporting SVG, omit the motion tree entirely.");
+        app.add_option(
+            "--svg-width", arg_svg_width,
+            "When exporting SVG, the image width in pixels.");
+        app.add_flag(
+            "--svg-no-bbox", arg_svg_no_bbox,
+            "When exporting SVG, omit the planning world bounding box.");
+        app.add_flag(
+            "--svg-no-status", arg_svg_no_status,
+            "When exporting SVG, omit the success/failure label.");
         app.add_flag(
             "--svg-animate", arg_svg_animate,
             "When exporting SVG, add an animation of the robot moving along "

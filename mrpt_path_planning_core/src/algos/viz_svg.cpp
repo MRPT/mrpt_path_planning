@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <variant>
 #include <vector>
@@ -249,12 +250,37 @@ std::string mpp::plan_to_svg(
 {
     const auto& pi = plan.originalInput;
 
-    // Drawing extent: union of the world bbox, obstacles, and all tree node
-    // poses, so that legitimate path "bulges" outside the planning bbox (e.g.
-    // an arc routing around a finite wall through free space) are NOT clipped
-    // off-canvas. This makes such behavior visible for debugging.
-    double     xmin = pi.worldBboxMin.x, xmax = pi.worldBboxMax.x;
-    double     ymin = pi.worldBboxMin.y, ymax = pi.worldBboxMax.y;
+    // Solution (or best) path, with times for the animation:
+    std::vector<mrpt::math::TPose2D> pathPoses;
+    std::vector<timed_pose_t>        pathKeyframes;
+    const auto bestId = plan.bestNodeId ? plan.bestNodeId : plan.goalNodeId;
+    if (bestId.has_value() && plan.motionTree.nodes().count(bestId.value()))
+    {
+        const auto [nodes, edges] =
+            plan.motionTree.backtrack_path(bestId.value());
+        (void)nodes;
+
+        double edgeStartTime = 0;
+        for (const auto* e : edges)
+        {
+            if (!e) continue;
+            const auto ps = edgeTimedPoses(*e);
+            for (const auto& [t, p] : ps)
+            {
+                pathPoses.push_back(p);
+                pathKeyframes.emplace_back(edgeStartTime + t, p);
+            }
+            edgeStartTime += ps.back().first;
+        }
+    }
+
+    // Drawing extent: union of everything drawn, so that legitimate path
+    // "bulges" outside the planning bbox (e.g. an arc routing around a finite
+    // wall through free space) are NOT clipped off-canvas.
+    double     xmin = std::numeric_limits<double>::max();
+    double     ymin = std::numeric_limits<double>::max();
+    double     xmax = -std::numeric_limits<double>::max();
+    double     ymax = -std::numeric_limits<double>::max();
     const auto grow = [&](double x, double y)
     {
         xmin = std::min(xmin, x);
@@ -262,15 +288,36 @@ std::string mpp::plan_to_svg(
         ymin = std::min(ymin, y);
         ymax = std::max(ymax, y);
     };
-    for (const auto& kv : plan.motionTree.nodes())
-        grow(kv.second.pose.x, kv.second.pose.y);
-    for (const auto& os_src : pi.obstacles)
+    if (o.draw_bbox)
     {
-        if (!os_src || !os_src->obstacles()) continue;
-        const auto& xs = os_src->obstacles()->getPointsBufferRef_x();
-        const auto& ys = os_src->obstacles()->getPointsBufferRef_y();
-        for (size_t i = 0; i < os_src->obstacles()->size(); i++)
-            grow(xs[i], ys[i]);
+        grow(pi.worldBboxMin.x, pi.worldBboxMin.y);
+        grow(pi.worldBboxMax.x, pi.worldBboxMax.y);
+    }
+    if (o.draw_tree)
+    {
+        for (const auto& kv : plan.motionTree.nodes())
+        {
+            grow(kv.second.pose.x, kv.second.pose.y);
+        }
+    }
+    if (o.draw_obstacles)
+    {
+        for (const auto& os_src : pi.obstacles)
+        {
+            if (!os_src || !os_src->obstacles()) continue;
+            const auto& xs = os_src->obstacles()->getPointsBufferRef_x();
+            const auto& ys = os_src->obstacles()->getPointsBufferRef_y();
+            for (size_t i = 0; i < os_src->obstacles()->size(); i++)
+            {
+                grow(xs[i], ys[i]);
+            }
+        }
+    }
+    for (const auto& p : pathPoses) { grow(p.x, p.y); }
+    grow(pi.stateStart.pose.x, pi.stateStart.pose.y);
+    {
+        const auto goal = pi.stateGoal.asSE2KinState().pose;
+        grow(goal.x, goal.y);
     }
     // a little world-space padding so footprints near the edge are not cut:
     const double pad = 0.5;
@@ -280,16 +327,16 @@ std::string mpp::plan_to_svg(
     ymax += pad;
 
     Frame fr;
-    fr.xmin             = xmin;
-    fr.ymin             = ymin;
-    fr.ymax             = ymax;
-    fr.margin           = o.margin_px;
-    const double worldW = xmax - xmin;
-    const double worldH = ymax - ymin;
+    fr.xmin              = xmin;
+    fr.ymin              = ymin;
+    fr.ymax              = ymax;
+    fr.margin            = o.margin_px;
+    const double extentW = xmax - xmin;
+    const double extentH = ymax - ymin;
     fr.scale =
-        (worldW > 0) ? (o.image_width_px - 2 * o.margin_px) / worldW : 1.0;
+        (extentW > 0) ? (o.image_width_px - 2 * o.margin_px) / extentW : 1.0;
     const double imgW = o.image_width_px;
-    const double imgH = worldH * fr.scale + 2 * o.margin_px;
+    const double imgH = extentH * fr.scale + 2 * o.margin_px;
 
     std::ostringstream os;
     os << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
@@ -304,7 +351,9 @@ std::string mpp::plan_to_svg(
     {
         os << "<rect x=\"" << fmt(fr.tx(pi.worldBboxMin.x)) << "\" y=\""
            << fmt(fr.ty(pi.worldBboxMax.y)) << "\" width=\""
-           << fmt(worldW * fr.scale) << "\" height=\"" << fmt(worldH * fr.scale)
+           << fmt((pi.worldBboxMax.x - pi.worldBboxMin.x) * fr.scale)
+           << "\" height=\""
+           << fmt((pi.worldBboxMax.y - pi.worldBboxMin.y) * fr.scale)
            << "\" fill=\"none\" stroke=\"" << o.color_bbox
            << "\" stroke-width=\"1\"/>\n";
     }
@@ -351,41 +400,22 @@ std::string mpp::plan_to_svg(
     }
 
     // Solution / best path (bold) + robot shapes along it:
-    std::vector<timed_pose_t> pathKeyframes;  // for the animation
-    const auto bestId = plan.bestNodeId ? plan.bestNodeId : plan.goalNodeId;
-    if (o.draw_path && bestId.has_value() &&
-        plan.motionTree.nodes().count(bestId.value()))
+    if (o.draw_path && !pathPoses.empty())
     {
-        const auto [nodes, edges] =
-            plan.motionTree.backtrack_path(bestId.value());
-        (void)nodes;
+        polyline(os, pathPoses, fr, o.color_path, o.stroke_path_px);
 
-        std::vector<mrpt::math::TPose2D> full;
-        double                           edgeStartTime = 0;
-        for (const auto* e : edges)
-        {
-            if (!e) continue;
-            const auto ps = edgeTimedPoses(*e);
-            for (const auto& [t, p] : ps)
-            {
-                full.push_back(p);
-                pathKeyframes.emplace_back(edgeStartTime + t, p);
-            }
-            edgeStartTime += ps.back().first;
-        }
-        polyline(os, full, fr, o.color_path, o.stroke_path_px);
-
-        if (o.draw_robot_shapes && !full.empty())
+        if (o.draw_robot_shapes)
         {
             os << "<g>\n";
             if (o.robot_shape_decimation > 0)
             {
-                for (size_t i = 0; i < full.size();
+                for (size_t i = 0; i < pathPoses.size();
                      i += o.robot_shape_decimation)
-                    appendRobotShape(os, pi.ptgs.robotShape, full[i], fr, o);
+                    appendRobotShape(
+                        os, pi.ptgs.robotShape, pathPoses[i], fr, o);
             }
-            appendRobotShape(os, pi.ptgs.robotShape, full.front(), fr, o);
-            appendRobotShape(os, pi.ptgs.robotShape, full.back(), fr, o);
+            appendRobotShape(os, pi.ptgs.robotShape, pathPoses.front(), fr, o);
+            appendRobotShape(os, pi.ptgs.robotShape, pathPoses.back(), fr, o);
             os << "</g>\n";
         }
     }

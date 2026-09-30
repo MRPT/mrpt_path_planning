@@ -49,6 +49,7 @@ mrpt_path_planning_apps/        Needs mrpt_gui, cli11, mvsim (optional)
 ├── selfdriving-simulator-gui/  Live navigation demo on mvsim
 └── share/                      Example PTG .ini, planner/costmap .yaml, maps (installed)
 mrpt_path_planning/             Backward-compatible metapackage, no code
+docs/images/                    README images (animated SVGs from path-planner-cli --save-svg)
 ```
 
 Consumers that only need the algorithms should depend on

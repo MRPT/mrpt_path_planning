@@ -11,7 +11,21 @@ environments**, for arbitrary robot shapes and realistic kinematics
 *Parameterized Trajectory Generators* (PTGs), which act as libraries of motion
 primitives.
 
-<!-- TODO: hero animation (docs/images/hero.svg) -->
+<p align="center">
+  <img src="docs/images/demo-holonomic.svg" width="49%" alt="Holonomic robot following a planned path">
+  <img src="docs/images/demo-ackermann.svg" width="49%" alt="Ackermann vehicle following a planned path">
+  <br>
+  <em>Planned paths for a holonomic robot (left) and an Ackermann vehicle (right).</em>
+</p>
+
+<!-- Images generated from mrpt_path_planning_apps/share/ with:
+path-planner-cli -s "[0.5 0 0]" -g "[4.2 0.5 80]" \
+  -c ptgs_ackermann_vehicle.ini --obstacles obstacles_01.txt \
+  --planner-parameters mvsim-demo-astar-planner-params-ackermann.yaml \
+  --save-svg demo-ackermann.svg --svg-animate --svg-no-tree --svg-no-bbox \
+  --svg-no-status --svg-width 440 --no-gui
+(and the same with ptgs_holonomic_robot.ini and
+mvsim-demo-astar-planner-params.yaml for demo-holonomic.svg) -->
 
 ## Features
 
@@ -175,6 +189,7 @@ path-planner-cli \
 | Attract the path through via-points | `--waypoints mvsim-demo-waypoints01.yaml --waypoints-parameters costmap-prefer-waypoints.yaml` |
 | Save a 2D SVG plot, no GUI | `--save-svg plan.svg --no-gui` |
 | Save an animated SVG of the robot following the path | `--save-svg plan.svg --svg-animate --no-gui` |
+| Cleaner SVG for figures: no search tree, box or label, custom width | `--svg-no-tree --svg-no-bbox --svg-no-status --svg-width 600` |
 | Verbose output, skip path refinement | `-v DEBUG --no-refine` |
 
 With forward and reverse circular-arc PTGs (as in `ptgs_ackermann_vehicle.ini`),
