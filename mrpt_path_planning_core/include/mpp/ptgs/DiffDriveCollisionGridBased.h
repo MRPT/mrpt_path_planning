@@ -100,6 +100,14 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
     void updateTPObstacleSingle(
         double ox, double oy, uint16_t k, double& tp_obstacle_k) const override;
 
+    /** Batched updateTPObstacle() for `n` obstacle points given in the PTG
+     * frame: same result as calling updateTPObstacle() for each point, but it
+     * reads a flattened copy of the collision grid and skips, without any
+     * memory access, the points that no grid cell entry can reach. */
+    void updateTPObstacles(
+        const float* xs, const float* ys, size_t n,
+        std::vector<double>& tp_obstacles) const;
+
     /** This family of PTGs ignores the dynamic states */
     void onNewNavDynamicState() override
     {
@@ -244,6 +252,25 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
 
     /** The collision grid */
     CCollisionGrid m_collisionGrid;
+
+    /** Read-only flattened copy of m_collisionGrid for updateTPObstacles():
+     * the (k, d) entries of all cells in one array, cell `i` owning
+     * entries[offsets[i]] .. entries[offsets[i+1]-1] (CSR layout). */
+    struct FlatCollisionGrid
+    {
+        std::vector<uint32_t>                   offsets;
+        std::vector<std::pair<uint16_t, float>> entries;
+        double                                  x_min = 0, y_min = 0;
+        double                                  resolution = 1;
+        int                                     size_x = 0, size_y = 0;
+        /** Squared distance from the origin beyond which no cell has entries
+         */
+        double max_radius_sq = 0;
+    };
+    FlatCollisionGrid m_flatGrid;
+
+    /** Builds m_flatGrid from m_collisionGrid */
+    void buildFlatCollisionGrid();
 
     /** Specifies the min/max values for "k" and "n", respectively.
      * \sa m_lambdaFunctionOptimizer

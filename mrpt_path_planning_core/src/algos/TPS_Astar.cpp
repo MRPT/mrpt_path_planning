@@ -21,6 +21,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <queue>
 #include <unordered_set>
 
 IMPLEMENTS_MRPT_OBJECT(TPS_Astar, Planner, mpp)
@@ -176,9 +177,24 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     // A* algorithm
     //
     // ----------------------------------------
-    // Open set is keyed by fScore (estimated cost to goal).
-    std::multimap<distance_t, NodePtr> openSet;
-    mrpt::graphs::TNodeID              nextFreeId = 0;
+    // Open set, ordered by fScore; ties are popped in insertion order (FIFO),
+    // as a std::multimap keyed by fScore would do, but without one heap
+    // allocation per insertion.
+    struct OpenEntry
+    {
+        distance_t fScore;
+        uint64_t   seq;
+        Node*      node;
+        bool       operator>(const OpenEntry& o) const
+        {
+            return fScore != o.fScore ? fScore > o.fScore : seq > o.seq;
+        }
+    };
+    std::priority_queue<
+        OpenEntry, std::vector<OpenEntry>, std::greater<OpenEntry>>
+                          openSet;
+    uint64_t              openSeq    = 0;
+    mrpt::graphs::TNodeID nextFreeId = 0;
 
     // openSet <- startNode
     {
@@ -194,7 +210,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         n.fScore = params_.heuristic_epsilon * heuristic(n.state, in.stateGoal);
         n.pendingInOpenSet = true;
 
-        openSet.insert({n.fScore, &n});
+        openSet.push({n.fScore, openSeq++, &n});
     }
 
     // Define goal node ID:
@@ -256,13 +272,13 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         nIter++;  // just for debugging purposes
 
         // node with the lowest fScore:
-        Node& current = *openSet.begin()->second.ptr;
+        Node& current = *openSet.top().node;
 
         // Skip stale entries: this node was already expanded via a
         // earlier (better) open-set entry.
         if (current.visited)
         {
-            openSet.erase(openSet.begin());
+            openSet.pop();
             continue;
         }
 
@@ -347,7 +363,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         // remove it from open set:
         current.pendingInOpenSet = false;
         current.visited          = true;
-        openSet.erase(openSet.begin());
+        openSet.pop();
         po.numExpandedNodes++;
 
         // for each neighbor of current:
@@ -479,7 +495,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // fScore. If an older entry with a higher fScore remains,
             // it will be skipped when popped via the visited check.
             neighborNode.pendingInOpenSet = true;
-            openSet.insert({neighborNode.fScore, &neighborNode});
+            openSet.push({neighborNode.fScore, openSeq++, &neighborNode});
 
             // Overwrite state with new one:
             neighborNode.state = x_i;
@@ -734,7 +750,7 @@ TPS_Astar::list_paths_to_neighbors_t
     const double halfCell = params_.grid_resolution_xy * 0.5;
 
     // local obstacles as seen from this "from" pose:
-    const auto localObstacles = cached_local_obstacles(
+    const size_t nLocalObs = local_obstacles_to_buffers(
         from.state.pose, globalObstacles, MAX_XY_OBSTACLES_CLIPPING_DIST);
 
     // If two PTGs reach the same cell, keep the shortest/best:
@@ -895,12 +911,21 @@ TPS_Astar::list_paths_to_neighbors_t
                 profiler_(), "find_feasible.tp_obstacles_all");
 
             ptg->initTPObstacles(tpObstacles);
-            const auto&  ox   = localObstacles->getPointsBufferRef_x();
-            const auto&  oy   = localObstacles->getPointsBufferRef_y();
-            const size_t nObs = localObstacles->size();
-            for (size_t i = 0; i < nObs; i++)
+            if (const auto* gridPtg =
+                    dynamic_cast<const ptg::DiffDriveCollisionGridBased*>(
+                        ptg.get()))
             {
-                ptg->updateTPObstacle(ox[i], oy[i], tpObstacles);
+                gridPtg->updateTPObstacles(
+                    localObsX_.data(), localObsY_.data(), nLocalObs,
+                    tpObstacles);
+            }
+            else
+            {
+                for (size_t i = 0; i < nLocalObs; i++)
+                {
+                    ptg->updateTPObstacle(
+                        localObsX_[i], localObsY_[i], tpObstacles);
+                }
             }
         }
 
@@ -1033,6 +1058,58 @@ mrpt::maps::CPointsMap::Ptr TPS_Astar::cached_local_obstacles(
 {
     mrpt::system::CTimeLoggerEntry tle(profiler_(), "cached_local_obstacles");
 
+    const auto clippedGlobal =
+        clipped_global_obstacles(queryPose, globalObstacles, MAX_PTG_XY_DIST);
+
+    // Per-call: rigid-transform the small clipped subset into the robot-local
+    // frame of `queryPose` (translation + rotation by heading).
+    auto         local = mrpt::maps::CSimplePointsMap::Create();
+    const auto   inv   = -mrpt::poses::CPose2D(queryPose);
+    const auto&  xs    = clippedGlobal->getPointsBufferRef_x();
+    const auto&  ys    = clippedGlobal->getPointsBufferRef_y();
+    const size_t n     = clippedGlobal->size();
+    local->reserve(n);
+    for (size_t i = 0; i < n; i++)
+    {
+        double ox = 0, oy = 0;
+        inv.composePoint(xs[i], ys[i], ox, oy);
+        local->insertPointFast(ox, oy, 0);
+    }
+    return local;
+}
+
+size_t TPS_Astar::local_obstacles_to_buffers(
+    const mrpt::math::TPose2D&                      queryPose,
+    const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+    double                                          MAX_PTG_XY_DIST)
+{
+    mrpt::system::CTimeLoggerEntry tle(profiler_(), "cached_local_obstacles");
+
+    const auto clippedGlobal =
+        clipped_global_obstacles(queryPose, globalObstacles, MAX_PTG_XY_DIST);
+
+    // Same transform (and float storage) as cached_local_obstacles():
+    const auto   inv = -mrpt::poses::CPose2D(queryPose);
+    const auto&  xs  = clippedGlobal->getPointsBufferRef_x();
+    const auto&  ys  = clippedGlobal->getPointsBufferRef_y();
+    const size_t n   = clippedGlobal->size();
+    localObsX_.resize(n);
+    localObsY_.resize(n);
+    for (size_t i = 0; i < n; i++)
+    {
+        double ox = 0, oy = 0;
+        inv.composePoint(xs[i], ys[i], ox, oy);
+        localObsX_[i] = static_cast<float>(ox);
+        localObsY_[i] = static_cast<float>(oy);
+    }
+    return n;
+}
+
+mrpt::maps::CPointsMap::Ptr TPS_Astar::clipped_global_obstacles(
+    const mrpt::math::TPose2D&                      queryPose,
+    const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+    double                                          MAX_PTG_XY_DIST)
+{
     // Only the *clipping* of the global obstacle set to a local window depends
     // solely on the xy cell, so that (expensive, O(N_global)) step is cached
     // per (ix,iy). The subsequent rigid transform into the robot-local frame
@@ -1075,20 +1152,5 @@ mrpt::maps::CPointsMap::Ptr TPS_Astar::cached_local_obstacles(
         }
         localObstaclesCache_.emplace(key, clippedGlobal);
     }
-
-    // Per-call: rigid-transform the small clipped subset into the robot-local
-    // frame of `queryPose` (translation + rotation by heading).
-    auto         local = mrpt::maps::CSimplePointsMap::Create();
-    const auto   inv   = -mrpt::poses::CPose2D(queryPose);
-    const auto&  xs    = clippedGlobal->getPointsBufferRef_x();
-    const auto&  ys    = clippedGlobal->getPointsBufferRef_y();
-    const size_t n     = clippedGlobal->size();
-    local->reserve(n);
-    for (size_t i = 0; i < n; i++)
-    {
-        double ox = 0, oy = 0;
-        inv.composePoint(xs[i], ys[i], ox, oy);
-        local->insertPointFast(ox, oy, 0);
-    }
-    return local;
+    return clippedGlobal;
 }

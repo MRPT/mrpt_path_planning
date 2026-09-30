@@ -390,6 +390,23 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
         double                                          MAX_PTG_XY_DIST);
 
+    /** The global obstacles within the clipping window of the lattice xy cell
+     * of `queryPose`, in the global frame, cached per cell. */
+    mrpt::maps::CPointsMap::Ptr clipped_global_obstacles(
+        const mrpt::math::TPose2D&                      queryPose,
+        const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+        double                                          MAX_PTG_XY_DIST);
+
+    /** As cached_local_obstacles(), but writes the local obstacles into the
+     * reused buffers localObsX_, localObsY_ instead of a new points map.
+     * \return The number of local obstacle points. */
+    size_t local_obstacles_to_buffers(
+        const mrpt::math::TPose2D&                      queryPose,
+        const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+        double                                          MAX_PTG_XY_DIST);
+
+    std::vector<float> localObsX_, localObsY_;
+
     /** Distance from a node beyond which obstacles cannot affect any edge of
      * this PTG: trajectory length plus footprint radius (and clearance, for
      * collision-grid PTGs). Used to clip local obstacles soundly. */
