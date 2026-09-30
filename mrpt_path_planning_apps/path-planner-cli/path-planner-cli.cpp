@@ -27,6 +27,7 @@
 #include <CLI/CLI.hpp>
 #include <fstream>
 #include <iostream>
+#include <tuple>
 
 // CLI globals (populated in main before helper functions are called):
 static std::string  arg_obs_file;
@@ -267,6 +268,21 @@ static void do_plan_path()
               << " overall edges, " << plan.motionTree.nodes().size()
               << " nodes\n";
 
+    // backtrack and refine (this modifies the path edges in the plan tree, so
+    // the SVG below shows the same final path as all other outputs):
+    mpp::MotionPrimitivesTreeSE2::path_t          plannedPath;
+    mpp::MotionPrimitivesTreeSE2::edge_sequence_t pathEdges;
+    if (plan.bestNodeId.has_value())
+    {
+        std::tie(plannedPath, pathEdges) =
+            plan.motionTree.backtrack_path(*plan.bestNodeId);
+
+        if (!arg_noRefine)
+        {
+            mpp::refine_trajectory(plannedPath, pathEdges, pi.ptgs);
+        }
+    }
+
     if (arg_save_svg_set)
     {
         mpp::SvgExportOptions svgOpts;
@@ -285,16 +301,6 @@ static void do_plan_path()
     {
         std::cerr << "No bestNodeId in plan output.\n";
         return;
-    }
-
-    // backtrack:
-    auto [plannedPath, pathEdges] =
-        plan.motionTree.backtrack_path(*plan.bestNodeId);
-
-    if (!arg_noRefine)
-    {
-        // refine:
-        mpp::refine_trajectory(plannedPath, pathEdges, pi.ptgs);
     }
 
     // Visualize:

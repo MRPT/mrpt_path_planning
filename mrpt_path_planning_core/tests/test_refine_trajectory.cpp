@@ -21,6 +21,8 @@
 #include <mpp/data/MotionPrimitivesTree.h>
 #include <mpp/data/TrajectoriesAndRobotShape.h>
 #include <mrpt/config/CConfigFileMemory.h>
+#include <mrpt/core/bits_math.h>
+#include <mrpt/math/wrap2pi.h>
 
 static const char* kPtgCfg = R"cfg(
 [SelfDriving]
@@ -170,4 +172,35 @@ TEST(RefineTrajectory, VectorOverloadMatchesPathOverload)
         << "Both overloads must produce the same ptgPathIndex";
     EXPECT_NEAR(edges1[0].ptgDist, rawEdge.ptgDist, 1e-9)
         << "Both overloads must produce the same ptgDist";
+}
+
+TEST(RefineTrajectory, InterpolatedPathEndsAtReachedPose)
+{
+    auto trs = buildTRS();
+
+    // The inverse map only matches (x,y), so the requested heading cannot be
+    // reached: the interpolated path must end at the pose the PTG actually
+    // reaches, not at the requested node pose.
+    const mrpt::math::TPose2D delta{1.0, 0.5, mrpt::DEG2RAD(170.0)};
+
+    std::vector<NodeT> path = {
+        makeNode(0, 0), makeNode(delta.x, delta.y, delta.phi)};
+    std::vector<EdgeT> edges = {makeEdge(0, 0, 999.0, {delta.x, delta.y, 0})};
+
+    mpp::refine_trajectory(path, edges, trs, 0.5);
+
+    const auto& edge = edges[0];
+    auto&       ptg  = trs.ptgs.at(edge.ptgIndex);
+    ptg->updateNavDynamicState(edge.getPTGDynState());
+    uint32_t step = 0;
+    ptg->getPathStepForDist(edge.ptgPathIndex, edge.ptgDist, step);
+    const auto reached = ptg->getPathPose(edge.ptgPathIndex, step);
+
+    ASSERT_FALSE(edge.interpolatedPath.empty());
+    const auto& last = edge.interpolatedPath.rbegin()->second;
+    EXPECT_NEAR(last.x, reached.x, 1e-6);
+    EXPECT_NEAR(last.y, reached.y, 1e-6);
+    EXPECT_NEAR(last.phi, reached.phi, 1e-6);
+    EXPECT_GT(std::abs(mrpt::math::angDistance(last.phi, delta.phi)), 0.1)
+        << "The requested heading was expected to be unreachable";
 }
