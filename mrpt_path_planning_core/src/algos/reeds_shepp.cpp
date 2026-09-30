@@ -4,8 +4,8 @@
  * See LICENSE for license information.
  * ------------------------------------------------------------------------- */
 
-/* The path formulas below are adapted from OMPL's ReedsSheppStateSpace.cpp,
- * keeping only the computation of the shortest path length:
+/* The path formulas and path-type table below are adapted from OMPL's
+ * ReedsSheppStateSpace.cpp:
  *
  *  Software License Agreement (BSD License)
  *  Copyright (c) 2010, Rice University. All rights reserved.
@@ -271,6 +271,144 @@ double shortestUnitLength(double x, double y, double phi)
 
     return best;
 }
+// Segment types of each Reeds-Shepp path family ('N': unused slot), as in
+// OMPL's reedsSheppPathType table.
+constexpr std::array<std::array<char, 5>, 18> kPathTypes = {{
+    {'L', 'R', 'L', 'N', 'N'},  // 0
+    {'R', 'L', 'R', 'N', 'N'},  // 1
+    {'L', 'R', 'L', 'R', 'N'},  // 2
+    {'R', 'L', 'R', 'L', 'N'},  // 3
+    {'L', 'R', 'S', 'L', 'N'},  // 4
+    {'R', 'L', 'S', 'R', 'N'},  // 5
+    {'L', 'S', 'R', 'L', 'N'},  // 6
+    {'R', 'S', 'L', 'R', 'N'},  // 7
+    {'L', 'R', 'S', 'R', 'N'},  // 8
+    {'R', 'L', 'S', 'L', 'N'},  // 9
+    {'R', 'S', 'R', 'L', 'N'},  // 10
+    {'L', 'S', 'L', 'R', 'N'},  // 11
+    {'L', 'S', 'R', 'N', 'N'},  // 12
+    {'R', 'S', 'L', 'N', 'N'},  // 13
+    {'L', 'S', 'L', 'N', 'N'},  // 14
+    {'R', 'S', 'R', 'N', 'N'},  // 15
+    {'L', 'R', 'S', 'L', 'R'},  // 16
+    {'R', 'L', 'S', 'R', 'L'}  // 17
+}};
+
+// Shortest path so far, in unit-radius lengths.
+struct UnitPath
+{
+    int                   type  = -1;
+    std::array<double, 5> len   = {0, 0, 0, 0, 0};
+    double                total = std::numeric_limits<double>::max();
+};
+
+void keepIfShorter(UnitPath& best, int type, const std::array<double, 5>& len)
+{
+    double total = 0;
+    for (const double l : len) { total += std::abs(l); }
+    if (total < best.total)
+    {
+        best.type  = type;
+        best.len   = len;
+        best.total = total;
+    }
+}
+
+using lengths_t = std::array<double, 5>;
+using make_fn_t = lengths_t (*)(double, double, double);
+
+// Tries one path word on (x, y, phi); on success, maps its (t, u, v) to the
+// segment lengths of path type `type`.
+void tryPath(
+    word_fn_t fn, double x, double y, double phi, int type, make_fn_t make,
+    UnitPath& best)
+{
+    double t = 0;
+    double u = 0;
+    double v = 0;
+    if (fn(x, y, phi, t, u, v)) { keepIfShorter(best, type, make(t, u, v)); }
+}
+
+// Each word is tried under the four symmetries: identity (x, y, phi),
+// timeflip (-x, y, -phi) which negates the lengths, reflect (x, -y, -phi)
+// which swaps left and right (the next table entry), and both (-x, -y, phi).
+// `make` and `makeFlip` map (t, u, v) to lengths without and with timeflip.
+void tryWordPaths(
+    word_fn_t fn, double x, double y, double phi, int type, make_fn_t make,
+    make_fn_t makeFlip, UnitPath& best)
+{
+    tryPath(fn, x, y, phi, type, make, best);
+    tryPath(fn, -x, y, -phi, type, makeFlip, best);
+    tryPath(fn, x, -y, -phi, type + 1, make, best);
+    tryPath(fn, -x, -y, phi, type + 1, makeFlip, best);
+}
+
+constexpr double kHalfPi = .5 * kPi;
+
+lengths_t csc(double t, double u, double v) { return {t, u, v, 0, 0}; }
+lengths_t cscFlip(double t, double u, double v) { return {-t, -u, -v, 0, 0}; }
+lengths_t cccBack(double t, double u, double v) { return {v, u, t, 0, 0}; }
+lengths_t cccBackFlip(double t, double u, double v)
+{
+    return {-v, -u, -t, 0, 0};
+}
+lengths_t ccccUm(double t, double u, double v) { return {t, u, -u, v, 0}; }
+lengths_t ccccUmFlip(double t, double u, double v)
+{
+    return {-t, -u, u, -v, 0};
+}
+lengths_t ccccUu(double t, double u, double v) { return {t, u, u, v, 0}; }
+lengths_t ccccUuFlip(double t, double u, double v)
+{
+    return {-t, -u, -u, -v, 0};
+}
+lengths_t ccsc(double t, double u, double v) { return {t, -kHalfPi, u, v, 0}; }
+lengths_t ccscFlip(double t, double u, double v)
+{
+    return {-t, kHalfPi, -u, -v, 0};
+}
+lengths_t ccscBack(double t, double u, double v)
+{
+    return {v, u, -kHalfPi, t, 0};
+}
+lengths_t ccscBackFlip(double t, double u, double v)
+{
+    return {-v, -u, kHalfPi, -t, 0};
+}
+lengths_t ccscc(double t, double u, double v)
+{
+    return {t, -kHalfPi, u, -kHalfPi, v};
+}
+lengths_t ccsccFlip(double t, double u, double v)
+{
+    return {-t, kHalfPi, -u, kHalfPi, -v};
+}
+
+UnitPath shortestUnitPath(double x, double y, double phi)
+{
+    UnitPath best;
+    // Coordinates for the "backwards" words (path traversed in reverse):
+    const double xb = x * std::cos(phi) + y * std::sin(phi);
+    const double yb = x * std::sin(phi) - y * std::cos(phi);
+
+    // CSC
+    tryWordPaths(&LpSpLp, x, y, phi, 14, &csc, &cscFlip, best);
+    tryWordPaths(&LpSpRp, x, y, phi, 12, &csc, &cscFlip, best);
+    // CCC
+    tryWordPaths(&LpRmL, x, y, phi, 0, &csc, &cscFlip, best);
+    tryWordPaths(&LpRmL, xb, yb, phi, 0, &cccBack, &cccBackFlip, best);
+    // CCCC
+    tryWordPaths(&LpRupLumRm, x, y, phi, 2, &ccccUm, &ccccUmFlip, best);
+    tryWordPaths(&LpRumLumRp, x, y, phi, 2, &ccccUu, &ccccUuFlip, best);
+    // CCSC
+    tryWordPaths(&LpRmSmLm, x, y, phi, 4, &ccsc, &ccscFlip, best);
+    tryWordPaths(&LpRmSmRm, x, y, phi, 8, &ccsc, &ccscFlip, best);
+    tryWordPaths(&LpRmSmLm, xb, yb, phi, 6, &ccscBack, &ccscBackFlip, best);
+    tryWordPaths(&LpRmSmRm, xb, yb, phi, 10, &ccscBack, &ccscBackFlip, best);
+    // CCSCC
+    tryWordPaths(&LpRmSLmRp, x, y, phi, 16, &ccscc, &ccsccFlip, best);
+    return best;
+}
 }  // namespace
 
 double mpp::reeds_shepp_distance(
@@ -285,4 +423,62 @@ double mpp::reeds_shepp_distance(
     const double y  = -s * dx + c * dy;
     const double r  = turningRadius;
     return r * shortestUnitLength(x / r, y / r, to.phi - from.phi);
+}
+
+std::vector<mpp::ReedsSheppSegment> mpp::reeds_shepp_path(
+    const mrpt::math::TPose2D& from, const mrpt::math::TPose2D& to,
+    double turningRadius)
+{
+    const double dx  = to.x - from.x;
+    const double dy  = to.y - from.y;
+    const double c   = std::cos(from.phi);
+    const double s   = std::sin(from.phi);
+    const double r   = turningRadius;
+    const double x   = (c * dx + s * dy) / r;
+    const double y   = (-s * dx + c * dy) / r;
+    const double phi = to.phi - from.phi;
+
+    const UnitPath best = shortestUnitPath(x, y, phi);
+
+    std::vector<ReedsSheppSegment> out;
+    if (best.type < 0) { return out; }
+    for (size_t i = 0; i < 5; i++)
+    {
+        const char type = kPathTypes[best.type][i];
+        if (type == 'N') { break; }
+        if (std::abs(best.len[i]) <= kZero) { continue; }
+        out.push_back({type, best.len[i] * r});
+    }
+    return out;
+}
+
+mrpt::math::TPose2D mpp::reeds_shepp_apply(
+    const mrpt::math::TPose2D&            from,
+    const std::vector<ReedsSheppSegment>& segments, double turningRadius)
+{
+    const double        r = turningRadius;
+    mrpt::math::TPose2D p = from;
+    for (const auto& seg : segments)
+    {
+        const double v = seg.length / r;  // unit-radius signed length
+        if (seg.type == 'L')
+        {
+            p.x += r * (std::sin(p.phi + v) - std::sin(p.phi));
+            p.y += r * (-std::cos(p.phi + v) + std::cos(p.phi));
+            p.phi += v;
+        }
+        else if (seg.type == 'R')
+        {
+            p.x += r * (-std::sin(p.phi - v) + std::sin(p.phi));
+            p.y += r * (std::cos(p.phi - v) - std::cos(p.phi));
+            p.phi -= v;
+        }
+        else
+        {
+            p.x += seg.length * std::cos(p.phi);
+            p.y += seg.length * std::sin(p.phi);
+        }
+    }
+    p.normalizePhi();
+    return p;
 }

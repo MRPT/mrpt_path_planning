@@ -76,6 +76,20 @@ struct TPS_Astar_Parameters
      * v_max/w_max); otherwise the default heuristic is used. */
     bool use_reeds_shepp_heuristic = false;
 
+    /** For full-pose (SE(2)) goals, try a Reeds-Shepp shot from every expanded
+     * node within `reeds_shepp_expansion_max_length` [m] of the goal: the
+     * shortest Reeds-Shepp path to the goal pose, at the tightest turning
+     * radius of the PTGs, executed exactly as a chain of edges along the
+     * tightest-arc and straight trajectories of forward and reverse C-PTGs.
+     * Every edge is checked with the same certified TP-obstacle query as any
+     * other edge. A collision-free shot becomes a goal candidate of the
+     * deferred analytic expansion (so `use_analytic_expansion` must be
+     * enabled), which keeps the suboptimality bound. It requires forward and
+     * reverse DiffDrive_C PTGs with an odd number of trajectories (so that
+     * one is straight); otherwise it is ignored with a warning. */
+    bool   use_reeds_shepp_expansion        = false;
+    double reeds_shepp_expansion_max_length = 5.0;
+
     uint32_t                        max_ptg_trajectories_to_explore = 20;
     std::vector<duration_seconds_t> ptg_sample_timestamps     = {1.0, 3.0, 5.0};
     uint32_t                        max_ptg_speeds_to_explore = 3;
@@ -422,6 +436,39 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     /** Turning radius for the Reeds-Shepp heuristic [m], 0 = not applicable.
      * Set in plan() from the PTGs. */
     double reedsSheppTurningRadius_ = 0.0;
+
+    /** Trajectories of one C-PTG used by the Reeds-Shepp shot. */
+    struct RsExpansionPtg
+    {
+        size_t             ptgIndex  = 0;
+        trajectory_index_t kLeft     = 0;
+        trajectory_index_t kRight    = 0;
+        trajectory_index_t kStraight = 0;
+        bool               valid     = false;
+    };
+    RsExpansionPtg rsForward_, rsReverse_;
+    /** Tightest turning radius of the PTGs [m], 0 = shot not available. */
+    double rsExpansionRadius_ = 0.0;
+
+    /** Sets rsForward_, rsReverse_ and rsExpansionRadius_ from the PTGs.
+     * \return false if they do not support the Reeds-Shepp shot. */
+    bool prepare_reeds_shepp_expansion(const TrajectoriesAndRobotShape& trs);
+
+    /** One edge of a Reeds-Shepp shot, ready to be inserted in the tree. */
+    struct RsShotEdge
+    {
+        MoveEdgeSE2_TPS edge;
+        SE2_KinState    stateTo;
+    };
+
+    /** Builds the Reeds-Shepp shot from `from` to `goal` as certified PTG
+     * edges. \return An empty vector if there is none (too long, colliding,
+     * or leaving the world box). */
+    std::vector<RsShotEdge> reeds_shepp_shot(
+        const Node& from, const mrpt::math::TPose2D& goal,
+        const TrajectoriesAndRobotShape&                trs,
+        const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+        double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in);
 
     /** Cache of local obstacle maps, keyed by (ix, iy) grid cell (no yaw,
      *  since obstacle clipping only depends on xy position). Cleared at the
