@@ -169,3 +169,6 @@ with a planner thread, enqueued motion commands and `VehicleMotionInterface`.
   maneuvers through narrow gaps may be missed.
 - No global path smoothing or shortcutting beyond `refine_trajectory()`.
 - `TPS_RRTstar` in `wip-experimental/` is not maintained or built.
+- Edge times are `step * getPathStepDuration()`. MRPT's own `CPTG_DiffDrive_*`
+  PTGs store decimated samples, so that product underestimates their real
+  time; prefer the `mpp::ptg::` PTGs (as the example configs do).

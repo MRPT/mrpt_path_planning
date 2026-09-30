@@ -15,17 +15,27 @@ primitives.
 
 ## Features
 
-- **Motion primitives from PTGs**: every path is a sequence of trajectories the
-  vehicle can actually follow, for any footprint (circular or polygonal).
-- **SE(2) lattice A\*** (`mpp::TPS_Astar`) and a **bidirectional** variant
-  (`mpp::TPS_Astar_Bidir`). They optimize SE(2) cost (position + heading), not
-  just Euclidean length.
+- **Kinematically feasible by construction**: every path is a sequence of PTG
+  trajectories the vehicle can actually execute, respecting its turning and
+  speed limits. Several PTG families can be mixed in one search, and
+  speed-trimmable PTGs make the search velocity-aware.
+- **Any-shape vehicles**: circular or arbitrary polygonal footprints, including
+  concave ones. The footprint is baked once into per-PTG collision grids, so
+  the per-node collision cost does not grow with the footprint complexity: one
+  pass over the local obstacles gives the free distance along every candidate
+  trajectory.
+- **No costmap inflation**: the actual footprint is checked against the raw
+  obstacle points, with no inflation radius to tune.
+- **Deterministic SE(2) lattice A\*** (`mpp::TPS_Astar`) and a
+  **bidirectional** variant (`mpp::TPS_Astar_Bidir`). They optimize SE(2) cost
+  (position + heading), not just Euclidean length, with optional
+  bounded-suboptimal weighted A\* for faster queries.
 - **Pose or position goals**: SE(2) goals `[x y phi]` or heading-agnostic R(2)
   goals `[x y]`.
 - **Forward and reverse maneuvers**, with an optional **Reeds-Shepp** heuristic
   and analytic goal expansion for tight maneuvers such as parking.
-- **Certified collision checking**: the precomputed collision grids are
-  conservative, so a path reported as free is free for the continuous motion.
+- **Certified collision checking**: the collision grids are conservative, so a
+  path reported as free is free for the continuous swept motion.
 - **Pluggable cost layers**: obstacle-proximity cost maps and
   preferred-waypoint attractors.
 - **Navigation building blocks**: `NavEngine` (waypoint-sequence navigation
@@ -164,6 +174,7 @@ path-planner-cli \
 | Occupancy grid image as obstacles | `-s "[1 1 0]" -g "[8 6 90]" --obstacles map01.png --obstacles-gridimage-resolution 0.05` |
 | Attract the path through via-points | `--waypoints mvsim-demo-waypoints01.yaml --waypoints-parameters costmap-prefer-waypoints.yaml` |
 | Save a 2D SVG plot, no GUI | `--save-svg plan.svg --no-gui` |
+| Save an animated SVG of the robot following the path | `--save-svg plan.svg --svg-animate --no-gui` |
 | Verbose output, skip path refinement | `-v DEBUG --no-refine` |
 
 For non-holonomic vehicles, position-only goals are usually the natural choice:
@@ -268,6 +279,25 @@ targets them):
 
 
 </details>
+
+## Publications
+
+This library builds on the Trajectory Parameter Space (TP-Space) line of work:
+
+- J.L. Blanco, J. Gonzalez, J.A. Fernandez-Madrigal, "The Trajectory Parameter
+  Space (TP-Space): A New Space Representation for Non-Holonomic Mobile Robot
+  Reactive Navigation", *IEEE/RSJ Int. Conf. on Intelligent Robots and Systems
+  (IROS)*, pp. 1462-1468, 2006.
+  [doi:10.1109/IROS.2006.282518](https://doi.org/10.1109/IROS.2006.282518)
+- J.L. Blanco, J. Gonzalez, J.A. Fernandez-Madrigal, "Extending obstacle
+  avoidance methods through multiple parameter-space transformations",
+  *Autonomous Robots*, 24(1):29-48, 2008.
+- J.L. Blanco, M. Bellone, A. Gimenez-Fernandez, "TP-Space RRT: Kinematic
+  Path Planning of Non-Holonomic Any-Shape Vehicles", *International Journal
+  of Advanced Robotic Systems*, 12(5):55, 2015.
+  [doi:10.5772/60463](https://doi.org/10.5772/60463)
+- A paper describing the planner in this repository will be available on arXiv
+  (2026), soon. <!-- TODO: add arXiv reference and BibTeX -->
 
 ## License
 
