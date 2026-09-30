@@ -12,6 +12,7 @@
 #include <mrpt/math/CPolygon.h>
 #include <mrpt/nav/tpspace/CParameterizedTrajectoryGenerator.h>
 #include <mrpt/typemeta/TEnumType.h>
+#include <mrpt/version.h>
 
 #include <optional>
 #include <utility>
@@ -104,9 +105,15 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
      * frame: same result as calling updateTPObstacle() for each point, but it
      * reads a flattened copy of the collision grid and skips, without any
      * memory access, the points that no grid cell entry can reach. */
+#if MRPT_VERSION >= 0x030302  // virtual in the base class since MRPT 3.3.2
+    void updateTPObstacles(
+        const float* xs, const float* ys, size_t n,
+        std::vector<double>& tp_obstacles) const override;
+#else
     void updateTPObstacles(
         const float* xs, const float* ys, size_t n,
         std::vector<double>& tp_obstacles) const;
+#endif
 
     /** This family of PTGs ignores the dynamic states */
     void onNewNavDynamicState() override
