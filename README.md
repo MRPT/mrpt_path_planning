@@ -14,13 +14,23 @@ may genuinely have lower cost. See `TPS_Astar.h` for details on the cost model.
 ## Status on ROS build farm
 
 
-| Distro | Build dev | Build releases | Stable version |
-| ---    | ---       | ---            | ---         |
-| ROS 2 Humble (u22.04) | [![Build Status](https://build.ros2.org/job/Hdev__mrpt_path_planning__ubuntu_jammy_amd64/badge/icon)](https://build.ros2.org/job/Hdev__mrpt_path_planning__ubuntu_jammy_amd64/) | [![Build Status](https://build.ros2.org/job/Hbin_uJ64__mrpt_path_planning__ubuntu_jammy_amd64__binary/badge/icon)](https://build.ros2.org/job/Hbin_uJ64__mrpt_path_planning__ubuntu_jammy_amd64__binary/) | [![Version](https://img.shields.io/ros/v/humble/mrpt_path_planning)](https://index.ros.org/?search_packages=true&pkgs=mrpt_path_planning) |
-| ROS 2 Jazzy @ u24.04 | [![Build Status](https://build.ros2.org/job/Jdev__mrpt_path_planning__ubuntu_noble_amd64/badge/icon)](https://build.ros2.org/job/Jdev__mrpt_path_planning__ubuntu_noble_amd64/) | [![Build Status](https://build.ros2.org/job/Jbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/badge/icon)](https://build.ros2.org/job/Jbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/) | [![Version](https://img.shields.io/ros/v/jazzy/mrpt_path_planning)](https://index.ros.org/?search_packages=true&pkgs=mrpt_path_planning) | 
-| ROS 2 Kilted @ u24.04 | [![Build Status](https://build.ros2.org/job/Kdev__mrpt_path_planning__ubuntu_noble_amd64/badge/icon)](https://build.ros2.org/job/Kdev__mrpt_path_planning__ubuntu_noble_amd64/) | [![Build Status](https://build.ros2.org/job/Kbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/badge/icon)](https://build.ros2.org/job/Kbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/) | [![Version](https://img.shields.io/ros/v/kilted/mrpt_path_planning)](https://index.ros.org/?search_packages=true&pkgs=mrpt_path_planning) | 
-| ROS 2 Lyrical (u26.04) | [![Build Status](https://build.ros2.org/job/Ldev__mrpt_path_planning__ubuntu_resolute_amd64/badge/icon)](https://build.ros2.org/job/Ldev__mrpt_path_planning__ubuntu_resolute_amd64/) | [![Build Status](https://build.ros2.org/job/Lbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/badge/icon)](https://build.ros2.org/job/Lbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/) | [![Version](https://img.shields.io/ros/v/lyrical/mrpt_path_planning)](https://index.ros.org/?search_packages=true&pkgs=mrpt_path_planning) |
-| ROS 2 Rolling (u26.04) | [![Build Status](https://build.ros2.org/job/Rdev__mrpt_path_planning__ubuntu_resolute_amd64/badge/icon)](https://build.ros2.org/job/Rdev__mrpt_path_planning__ubuntu_resolute_amd64/) | [![Build Status](https://build.ros2.org/job/Rbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/badge/icon)](https://build.ros2.org/job/Rbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/) | [![Version](https://img.shields.io/ros/v/rolling/mrpt_path_planning)](https://index.ros.org/?search_packages=true&pkgs=mrpt_path_planning) |
+| Distro | Build dev | Release |
+| --- | --- | --- |
+| ROS 2 Humble (u22.04) | [![Build Status](https://build.ros2.org/job/Hdev__mrpt_path_planning__ubuntu_jammy_amd64/badge/icon)](https://build.ros2.org/job/Hdev__mrpt_path_planning__ubuntu_jammy_amd64/) | [![Version](https://img.shields.io/ros/v/humble/mrpt_path_planning)](https://index.ros.org/?pkgs=mrpt_path_planning&search_packages=true#humble) |
+| ROS 2 Jazzy (u24.04) | [![Build Status](https://build.ros2.org/job/Jdev__mrpt_path_planning__ubuntu_noble_amd64/badge/icon)](https://build.ros2.org/job/Jdev__mrpt_path_planning__ubuntu_noble_amd64/) | [![Version](https://img.shields.io/ros/v/jazzy/mrpt_path_planning)](https://index.ros.org/?pkgs=mrpt_path_planning&search_packages=true#jazzy) |
+| ROS 2 Kilted (u24.04) | [![Build Status](https://build.ros2.org/job/Kdev__mrpt_path_planning__ubuntu_noble_amd64/badge/icon)](https://build.ros2.org/job/Kdev__mrpt_path_planning__ubuntu_noble_amd64/) | [![Version](https://img.shields.io/ros/v/kilted/mrpt_path_planning)](https://index.ros.org/?pkgs=mrpt_path_planning&search_packages=true#kilted) |
+| ROS 2 Lyrical (u26.04) | [![Build Status](https://build.ros2.org/job/Ldev__mrpt_path_planning__ubuntu_resolute_amd64/badge/icon)](https://build.ros2.org/job/Ldev__mrpt_path_planning__ubuntu_resolute_amd64/) | [![Version](https://img.shields.io/ros/v/lyrical/mrpt_path_planning)](https://index.ros.org/?pkgs=mrpt_path_planning&search_packages=true#lyrical) |
+| ROS 2 Rolling (u26.04) | [![Build Status](https://build.ros2.org/job/Rdev__mrpt_path_planning__ubuntu_resolute_amd64/badge/icon)](https://build.ros2.org/job/Rdev__mrpt_path_planning__ubuntu_resolute_amd64/) | [![Version](https://img.shields.io/ros/v/rolling/mrpt_path_planning)](https://index.ros.org/?pkgs=mrpt_path_planning&search_packages=true#rolling) |
+
+Binary package build status per package, distro, OS and architecture
+(Ubuntu `amd64` and `arm64`, plus RHEL and Fedora `x86_64` where the distro
+targets them):
+
+| Package | ROS 2 Humble <br/> BinBuild | ROS 2 Jazzy <br/> BinBuild | ROS 2 Kilted <br/> BinBuild | ROS 2 Lyrical <br/> BinBuild | ROS 2 Rolling <br/> BinBuild |
+| --- | --- | --- | --- | --- | --- |
+| mrpt_path_planning | [![Build Status](https://build.ros2.org/job/Hbin_uJ64__mrpt_path_planning__ubuntu_jammy_amd64__binary/badge/icon)](https://build.ros2.org/job/Hbin_uJ64__mrpt_path_planning__ubuntu_jammy_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Hbin_ujv8_uJv8__mrpt_path_planning__ubuntu_jammy_arm64__binary/badge/icon)](https://build.ros2.org/job/Hbin_ujv8_uJv8__mrpt_path_planning__ubuntu_jammy_arm64__binary/) | [![Build Status](https://build.ros2.org/job/Jbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/badge/icon)](https://build.ros2.org/job/Jbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Jbin_unv8_uNv8__mrpt_path_planning__ubuntu_noble_arm64__binary/badge/icon)](https://build.ros2.org/job/Jbin_unv8_uNv8__mrpt_path_planning__ubuntu_noble_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Jbin_rhel_el964__mrpt_path_planning__rhel_9_x86_64__binary/badge/icon)](https://build.ros2.org/job/Jbin_rhel_el964__mrpt_path_planning__rhel_9_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Kbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/badge/icon)](https://build.ros2.org/job/Kbin_uN64__mrpt_path_planning__ubuntu_noble_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Kbin_unv8_uNv8__mrpt_path_planning__ubuntu_noble_arm64__binary/badge/icon)](https://build.ros2.org/job/Kbin_unv8_uNv8__mrpt_path_planning__ubuntu_noble_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Kbin_rhel_el964__mrpt_path_planning__rhel_9_x86_64__binary/badge/icon)](https://build.ros2.org/job/Kbin_rhel_el964__mrpt_path_planning__rhel_9_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Lbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/badge/icon)](https://build.ros2.org/job/Lbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_armv8_uRv8__mrpt_path_planning__ubuntu_resolute_arm64__binary/badge/icon)](https://build.ros2.org/job/Lbin_armv8_uRv8__mrpt_path_planning__ubuntu_resolute_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_rhel_el1064__mrpt_path_planning__rhel_10_x86_64__binary/badge/icon)](https://build.ros2.org/job/Lbin_rhel_el1064__mrpt_path_planning__rhel_10_x86_64__binary/) <br> [![Build Status](https://build.ros2.org/job/Lbin_fedora_fc4364__mrpt_path_planning__fedora_43_x86_64__binary/badge/icon)](https://build.ros2.org/job/Lbin_fedora_fc4364__mrpt_path_planning__fedora_43_x86_64__binary/) | [![Build Status](https://build.ros2.org/job/Rbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/badge/icon)](https://build.ros2.org/job/Rbin_uR64__mrpt_path_planning__ubuntu_resolute_amd64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_unv8_uRv8__mrpt_path_planning__ubuntu_resolute_arm64__binary/badge/icon)](https://build.ros2.org/job/Rbin_unv8_uRv8__mrpt_path_planning__ubuntu_resolute_arm64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_rhel_el1064__mrpt_path_planning__rhel_10_x86_64__binary/badge/icon)](https://build.ros2.org/job/Rbin_rhel_el1064__mrpt_path_planning__rhel_10_x86_64__binary/) <br> [![Build Status](https://build.ros2.org/job/Rbin_fedora_fc4464__mrpt_path_planning__fedora_44_x86_64__binary/badge/icon)](https://build.ros2.org/job/Rbin_fedora_fc4464__mrpt_path_planning__fedora_44_x86_64__binary/) |
+| mrpt_path_planning_core | not released yet | not released yet | not released yet | not released yet | not released yet |
+| mrpt_path_planning_apps | not released yet | not released yet | not released yet | not released yet | not released yet |
 
 | EOL Distro | Last version |
 | ---    | ---    |
@@ -34,38 +44,38 @@ This repository is split into three colcon/ROS 2 packages:
 
 - **`mrpt_path_planning_core`**: the headless C++ path-planning library (PTGs,
   `TPS_Astar`, `NavEngine`, `TrajectoryFollower`, ...). No GUI/display
-  dependency — depends only on `mrpt_libmaps`, `mrpt_libnav`, `mrpt_libgraphs`,
-  `mrpt_libcontainers`, `mrpt_libtclap`.
+  dependency: it depends only on the MRPT 3 modules `mrpt_maps`, `mrpt_nav`,
+  `mrpt_graphs`, and `mrpt_containers`.
 - **`mrpt_path_planning_apps`**: the CLI and GUI applications
   (`path-planner-cli`, which opens a 3D viz window, and
   `selfdriving-simulator-gui`, which requires `mvsim`). Depends on
-  `mrpt_path_planning_core` plus `mrpt_libgui` and `mvsim`.
+  `mrpt_path_planning_core` plus `mrpt_gui`, `cli11`, and `mvsim`.
 - **`mrpt_path_planning`**: a backward-compatible metapackage with no code of
-  its own — it just depends on the two packages above, so existing
+  its own: it just depends on the two packages above, so existing
   `<depend>mrpt_path_planning</depend>` consumers keep working unchanged. New
   consumers that only need the algorithms should depend on
-  `mrpt_path_planning_core` directly to avoid pulling in `mrpt_libgui`.
+  `mrpt_path_planning_core` directly to avoid pulling in `mrpt_gui`.
 
 ## Build requisites
 
-- [MRPT](https://github.com/MRPT/mrpt/) (>=2.12.0)
+- [MRPT](https://github.com/MRPT/mrpt/) 3.x (its colcon modules `mrpt_nav`,
+  `mrpt_maps`, ...).
 - [mvsim](https://github.com/MRPT/mvsim/) (optional to run the live control simulator).
-- [colcon](https://colcon.readthedocs.io/) — this repo is colcon-only; there is
+- [colcon](https://colcon.readthedocs.io/): this repo is colcon-only; there is
   no standalone top-level CMake build.
 
-In Ubuntu 22.04 or newer, installed it with:
+From the ROS 2 repositories (Humble or newer):
 
 ```
-sudo apt install libmrpt-dev python3-colcon-common-extensions
+sudo apt install ros-$ROS_DISTRO-mrpt-nav ros-$ROS_DISTRO-mrpt-gui python3-colcon-common-extensions
 ```
 
-For older versions of Ubuntu: 
+Or, without ROS, MRPT 3 from this PPA (as in this repository's CI):
 
 ```
-# MRPT from this PPA (or build from sources if preferred, or from ROS package `mrpt2`):
-sudo add-apt-repository ppa:joseluisblancoc/mrpt
+sudo add-apt-repository ppa:joseluisblancoc/mrpt3-stable
 sudo apt update
-sudo apt install libmrpt-dev python3-colcon-common-extensions
+sudo apt install libmrpt-dev libcli11-dev python3-colcon-common-extensions
 ```
 
 Build (from the directory containing this repo, e.g. a colcon workspace `src/`):
