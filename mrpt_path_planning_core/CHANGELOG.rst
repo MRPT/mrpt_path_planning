@@ -2,6 +2,54 @@
 Changelog for package mrpt_path_planning_core
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* add missing changelogs
+* Merge pull request `#44 <https://github.com/MRPT/mrpt_path_planning/issues/44>`_ from MRPT/feat/point-goal-shot
+* TPS_Astar: commit a pending Reeds-Shepp shot if the search stops before its commit test
+* Point-goal shots: other final headings and no shots where the robot cannot fit
+* Reeds-Shepp shot to position goals
+* Merge pull request `#43 <https://github.com/MRPT/mrpt_path_planning/issues/43>`_ from MRPT/docs/readme-agents-md
+* README: animated header images of the demo plans
+* Refined path outputs show the motion actually executed
+* viz_svg: optional animated robot footprint along the path
+* Merge pull request `#41 <https://github.com/MRPT/mrpt_path_planning/issues/41>`_ from MRPT/feat/mrpt-batched-tp-obstacles-compat
+* Mark updateTPObstacles() override with MRPT >= 3.3.2
+* Merge pull request `#40 <https://github.com/MRPT/mrpt_path_planning/issues/40>`_ from MRPT/feat/fast-collision-query
+* Interpolate Reeds-Shepp shot edges and keep exact edges when refining
+* Enable the Reeds-Shepp shot by default
+* Certified Reeds-Shepp shot to full-pose goals (opt-in)
+* Faster batched TP-obstacle query and open set in TPS_Astar
+* Merge pull request `#39 <https://github.com/MRPT/mrpt_path_planning/issues/39>`_ from MRPT/feat/reeds-shepp-heuristic
+* reeds_shepp: portable pi constant; document the radius precondition
+* Add an opt-in Reeds-Shepp heuristic for full-pose goals
+* Merge pull request `#38 <https://github.com/MRPT/mrpt_path_planning/issues/38>`_ from MRPT/ci/clang-format
+* Add clang-format CI check and apply clang-format-14 to all sources
+* Merge pull request `#37 <https://github.com/MRPT/mrpt_path_planning/issues/37>`_ from MRPT/feat/certified-collision-grid
+* Address PR review comments: bidir expanded-node count, final-step reach margin, one-edge path check
+* Collision grid: O(1) inside-footprint rejection in obstacle queries, faster build
+* Certified collision grid, footprint-aware obstacle clipping, consistent tree poses
+* Merge pull request `#36 <https://github.com/MRPT/mrpt_path_planning/issues/36>`_ from MRPT/feat/mrpt3
+* Address PR review comments and finish the getPathStepForDist port
+* Port to MRPT 3.x: re-port after the core/apps/viz repo split
+* TrajectoryFollower: latch ReachedGoal until a new trajectory is set
+* TrajectoryFollower: parameterize the control-pose filter at the vehicle
+* TrajectoryFollower: noise-robustness and accuracy hardening
+* More info in debug traces
+* add debug-level traces
+* more stable look ahead, cap max omega
+* TrajectoryFollower: evaluate off-path fault on true localized pose
+* TrajectoryFollower: run short-term tracking on wheel odometry via a slewed anchor
+* TrajectoryFollower: curvature-adaptive lookahead (replaces velocity schedule)
+* TrajectoryFollower: gate goal/arrival on arc-length, not Euclidean distance only
+* TrajectoryFollower: fix backward-propagated gear misclassifying a
+* TrajectoryFollower: support genuine mid-path gear reversals
+* follower: clamp curvature to min_turn_radius, decelerate before cusps too
+* follower: fix short cusped-reverse hang (lookahead across cusp + arrival latch)
+* Fix: viz.h must stay a properly exported public library, not a private CLI header
+* Split into mrpt_path_planning_core / _apps / metapackage; flatten follow/
+* Contributors: Jose Luis Blanco Claraco, Jose Luis Blanco-Claraco
+
 1.0.1 (2026-07-04)
 ------------------
 * feat: bidirectional TP-Space A* solver (TPS_Astar_Bidir) (`#32 <https://github.com/MRPT/mrpt_path_planning/issues/32>`_)

@@ -2,6 +2,21 @@
 Changelog for package mrpt_path_planning
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* add missing changelogs
+* Fix: viz.h must stay a properly exported public library, not a private CLI header
+* Split into mrpt_path_planning_core / _apps / metapackage; flatten follow/
+* Merge pull request `#35 <https://github.com/MRPT/mrpt_path_planning/issues/35>`_ from MRPT/feat/reverse-aware-trajectory-follower
+* TrajectoryFollower: reverse/gear-aware pursuit + terminal stop-latch
+* Merge pull request `#34 <https://github.com/MRPT/mrpt_path_planning/issues/34>`_ from MRPT/feat/trajectory-follower
+* fix(follow): seed speed ramp from last commanded speed, not odometry
+* feat(follow): predictive safety layer for TrajectoryFollower
+* build: list library sources explicitly instead of GLOB_RECURSE
+* feat(follow): TrajectoryFollower pursuit core + trajectory-serving interface
+* feat(costmap): footprint-aware CostEvaluatorCostMap (`#33 <https://github.com/MRPT/mrpt_path_planning/issues/33>`_)
+* Contributors: Jose Luis Blanco Claraco, Jose Luis Blanco-Claraco
+
 1.0.1 (2026-07-04)
 ------------------
 * feat: bidirectional TP-Space A* solver (TPS_Astar_Bidir) (`#32 <https://github.com/MRPT/mrpt_path_planning/issues/32>`_)

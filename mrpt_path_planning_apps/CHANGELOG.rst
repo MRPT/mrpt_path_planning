@@ -2,6 +2,21 @@
 Changelog for package mrpt_path_planning_apps
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* add missing changelogs
+* Merge pull request `#43 <https://github.com/MRPT/mrpt_path_planning/issues/43>`_ from MRPT/docs/readme-agents-md
+* README: animated header images of the demo plans
+* Refined path outputs show the motion actually executed
+* Ackermann demo: use mpp::ptg::DiffDrive_C; README features and publications
+* viz_svg: optional animated robot footprint along the path
+* Merge pull request `#36 <https://github.com/MRPT/mrpt_path_planning/issues/36>`_ from MRPT/feat/mrpt3
+* Port to MRPT 3.x: re-port after the core/apps/viz repo split
+* viz_nav_plan: reuse a single non-modal window, allow custom titles
+* Fix: viz.h must stay a properly exported public library, not a private CLI header
+* Split into mrpt_path_planning_core / _apps / metapackage; flatten follow/
+* Contributors: Jose Luis Blanco Claraco, Jose Luis Blanco-Claraco
+
 1.0.1 (2026-07-04)
 ------------------
 * feat: bidirectional TP-Space A* solver (TPS_Astar_Bidir) (`#32 <https://github.com/MRPT/mrpt_path_planning/issues/32>`_)
