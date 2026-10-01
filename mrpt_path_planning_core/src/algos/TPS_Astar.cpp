@@ -737,6 +737,15 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     }  // end while openSet!=empty
 
+    // A clear shot not committed yet (timeout or exhausted open set) still
+    // reaches the goal:
+    if (bestGoalCandidateShotId && po.goalNodeId != po.bestNodeId)
+    {
+        po.goalNodeId           = *bestGoalCandidateShotId;
+        po.bestNodeId           = po.goalNodeId;
+        po.bestNodeIdCostToGoal = 0;
+    }
+
     // If interpolation was deferred during the search, build it now for just
     // the final solution-path edges (needed for output / refinement / exec).
     if (deferInterpolation && po.bestNodeId.has_value() &&
