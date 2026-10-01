@@ -409,6 +409,21 @@ UnitPath shortestUnitPath(double x, double y, double phi)
     tryWordPaths(&LpRmSLmRp, x, y, phi, 16, &ccscc, &ccsccFlip, best);
     return best;
 }
+
+std::vector<mpp::ReedsSheppSegment> toSegments(
+    const UnitPath& path, double turningRadius)
+{
+    std::vector<mpp::ReedsSheppSegment> out;
+    if (path.type < 0) { return out; }
+    for (size_t i = 0; i < 5; i++)
+    {
+        const char type = kPathTypes[path.type][i];
+        if (type == 'N') { break; }
+        if (std::abs(path.len[i]) <= kZero) { continue; }
+        out.push_back({type, path.len[i] * turningRadius});
+    }
+    return out;
+}
 }  // namespace
 
 double mpp::reeds_shepp_distance(
@@ -438,18 +453,96 @@ std::vector<mpp::ReedsSheppSegment> mpp::reeds_shepp_path(
     const double y   = (-s * dx + c * dy) / r;
     const double phi = to.phi - from.phi;
 
-    const UnitPath best = shortestUnitPath(x, y, phi);
+    return toSegments(shortestUnitPath(x, y, phi), r);
+}
 
-    std::vector<ReedsSheppSegment> out;
-    if (best.type < 0) { return out; }
-    for (size_t i = 0; i < 5; i++)
+std::vector<mpp::ReedsSheppSegment> mpp::reeds_shepp_path_to_point(
+    const mrpt::math::TPose2D& from, const mrpt::math::TPoint2D& to,
+    double turningRadius)
+{
+    const double dx = to.x - from.x;
+    const double dy = to.y - from.y;
+    const double c  = std::cos(from.phi);
+    const double s  = std::sin(from.phi);
+    const double r  = turningRadius;
+    const double x  = (c * dx + s * dy) / r;
+    const double y  = (-s * dx + c * dy) / r;
+    if (std::hypot(x, y) <= kZero) { return {}; }
+
+    // Minimize the length over the final (relative) heading phi:
+    double bestPhi = 0;
+    double bestLen = std::numeric_limits<double>::max();
+    auto   tryPhi  = [&](double phi)
     {
-        const char type = kPathTypes[best.type][i];
-        if (type == 'N') { break; }
-        if (std::abs(best.len[i]) <= kZero) { continue; }
-        out.push_back({type, best.len[i] * r});
+        const double len = shortestUnitLength(x, y, phi);
+        if (len < bestLen)
+        {
+            bestLen = len;
+            bestPhi = phi;
+        }
+        return len;
+    };
+
+    // Arc-then-straight paths: the final heading is tangent to the turning
+    // circle centered at (0, side), forward or reverse, if the point lies
+    // outside that circle. If it lies outside both, the best of these is used:
+    // in a dense brute-force comparison it is the shortest path in most cases
+    // and at most 0.07 turning radii longer otherwise.
+    bool insideCircle = false;
+    for (const double side : {1.0, -1.0})
+    {
+        const double cx = x;
+        const double cy = y - side;
+        const double d  = std::hypot(cx, cy);
+        if (d < 1.0)
+        {
+            insideCircle = true;
+            continue;
+        }
+        const double beta = std::atan2(cy, cx);
+        const double a    = std::asin(1.0 / d);
+        tryPhi(beta + side * a);
+        tryPhi(beta + side * (kPi - a));
     }
-    return out;
+
+    // Close to the start, inside a turning circle, the shortest paths have
+    // other types (e.g., with a cusp): uniform sampling of the heading, then
+    // golden-section refinement around the best one found.
+    if (insideCircle)
+    {
+        constexpr int kSamples = 32;
+        const double  step     = kTwoPi / kSamples;
+        for (int i = 0; i < kSamples; i++) { tryPhi(i * step); }
+
+        constexpr double kInvPhi = 0.61803398874989484820;
+        double           lo      = bestPhi - step;
+        double           hi      = bestPhi + step;
+        double           m1      = hi - kInvPhi * (hi - lo);
+        double           m2      = lo + kInvPhi * (hi - lo);
+        double           f1      = tryPhi(m1);
+        double           f2      = tryPhi(m2);
+        for (int it = 0; it < 20; it++)
+        {
+            if (f1 < f2)
+            {
+                hi = m2;
+                m2 = m1;
+                f2 = f1;
+                m1 = hi - kInvPhi * (hi - lo);
+                f1 = tryPhi(m1);
+            }
+            else
+            {
+                lo = m1;
+                m1 = m2;
+                f1 = f2;
+                m2 = lo + kInvPhi * (hi - lo);
+                f2 = tryPhi(m2);
+            }
+        }
+    }
+
+    return toSegments(shortestUnitPath(x, y, bestPhi), r);
 }
 
 mrpt::math::TPose2D mpp::reeds_shepp_apply(

@@ -216,3 +216,72 @@ TEST(ReedsShepp, HeuristicConsistentAndAdmissibleInPlan)
     }
     EXPECT_GT(edgeCount, 0);
 }
+
+TEST(ReedsShepp, PathToPointClosedFormValues)
+{
+    const double R      = 2.0;
+    auto         length = [&](const mrpt::math::TPoint2D& p)
+    {
+        double total = 0;
+        for (const auto& s : mpp::reeds_shepp_path_to_point({0, 0, 0}, p, R))
+        {
+            total += std::abs(s.length);
+        }
+        return total;
+    };
+    EXPECT_NEAR(length({5, 0}), 5.0, 1e-9);
+    EXPECT_NEAR(length({-5, 0}), 5.0, 1e-9);
+    EXPECT_TRUE(mpp::reeds_shepp_path_to_point({1, 2, 0.3}, {1, 2}, R).empty());
+    // A quarter turn reaches (R, R):
+    EXPECT_LE(length({R, R}), M_PI * R / 2 + 1e-9);
+    // A point inside the left turning circle: backing up straight and then
+    // turning left is one feasible path.
+    EXPECT_LE(
+        length({0.1 * R, 0.5 * R}), (std::sqrt(0.75) - 0.1) * R + M_PI / 3 * R);
+}
+
+TEST(ReedsShepp, PathToPointReachesPointWithShortestLength)
+{
+    std::mt19937                           rng(456);
+    std::uniform_real_distribution<double> U(-5, 5);
+    std::uniform_real_distribution<double> A(-M_PI, M_PI);
+    const double                           R = 1.3;
+
+    for (int i = 0; i < 1000; i++)
+    {
+        const mrpt::math::TPose2D a(U(rng), U(rng), A(rng));
+        // Include points close to the start, inside its turning circles:
+        const double               scale = (i % 2 == 0) ? 1.0 : 0.3;
+        const mrpt::math::TPoint2D b(
+            a.x + scale * U(rng), a.y + scale * U(rng));
+
+        const auto segs = mpp::reeds_shepp_path_to_point(a, b, R);
+        ASSERT_FALSE(segs.empty());
+        ASSERT_LE(segs.size(), 5U);
+        double total = 0;
+        for (const auto& s : segs) { total += std::abs(s.length); }
+
+        const auto end = mpp::reeds_shepp_apply(a, segs, R);
+        EXPECT_NEAR(end.x, b.x, 1e-6) << "i=" << i;
+        EXPECT_NEAR(end.y, b.y, 1e-6) << "i=" << i;
+
+        // Compared with the shortest path over a dense set of final headings:
+        // never longer inside a turning circle of `a`, and at most 0.07 R
+        // longer outside both.
+        const double c = std::cos(a.phi);
+        const double s = std::sin(a.phi);
+        const double x = (c * (b.x - a.x) + s * (b.y - a.y)) / R;
+        const double y = (-s * (b.x - a.x) + c * (b.y - a.y)) / R;
+        const bool   inside =
+            std::hypot(x, y - 1) < 1 || std::hypot(x, y + 1) < 1;
+        double bruteForce = std::numeric_limits<double>::max();
+        for (int j = 0; j < 1440; j++)
+        {
+            const double phi = j * 2 * M_PI / 1440;
+            bruteForce       = std::min(
+                      bruteForce, mpp::reeds_shepp_distance(a, {b.x, b.y, phi}, R));
+        }
+        EXPECT_LE(total, bruteForce + (inside ? 1e-6 : 0.07 * R)) << "i=" << i;
+        EXPECT_GE(total + 1e-9, std::hypot(b.x - a.x, b.y - a.y));
+    }
+}

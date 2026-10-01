@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <mrpt/math/TPoint2D.h>
 #include <mrpt/math/TPose2D.h>
 
 #include <vector>
@@ -41,6 +42,18 @@ struct ReedsSheppSegment
  * reeds_shepp_distance(). Precondition: `turningRadius > 0`. */
 std::vector<ReedsSheppSegment> reeds_shepp_path(
     const mrpt::math::TPose2D& from, const mrpt::math::TPose2D& to,
+    double turningRadius);
+
+/** A short Reeds-Shepp path from `from` to the point `to`, with a free final
+ * heading, as a sequence of segments (empty if `to` is the position of
+ * `from`). It is the reeds_shepp_path() to `to` with the best of a few final
+ * headings: those of the four arc-then-straight paths, if `to` lies outside
+ * both turning circles of `from` (the shortest path in most cases, and at most
+ * 0.07 turning radii longer otherwise); else, a sampled and locally refined
+ * heading (the shortest path, up to the refinement tolerance).
+ * Precondition: `turningRadius > 0`. */
+std::vector<ReedsSheppSegment> reeds_shepp_path_to_point(
+    const mrpt::math::TPose2D& from, const mrpt::math::TPoint2D& to,
     double turningRadius);
 
 /** Applies a sequence of segments to `from` (exact circular-arc geometry). */

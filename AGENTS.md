@@ -107,9 +107,13 @@ maximum PTG speed so they are in time units. Optional: Reeds-Shepp distance
 (`use_reeds_shepp_heuristic`, requires all PTGs to be `DiffDrive_C`), and
 weighted A\* via `heuristic_epsilon` (default 1.0, i.e. exact A\*).
 
-**Reeds-Shepp shot** (`use_reeds_shepp_expansion`, pose goals). Near the goal,
-the shortest Reeds-Shepp path is executed as a chain of forward/reverse C-PTG
-edges, each collision-checked; a clear chain becomes a goal candidate.
+**Reeds-Shepp shot** (`use_reeds_shepp_expansion`). Near the goal, a
+Reeds-Shepp path is executed as a chain of forward/reverse C-PTG edges, each
+collision-checked; a clear chain becomes a goal candidate and ends at the goal
+itself, not only in its cell. Pose goals: the shortest path to the pose. Point
+goals: the shortest path to the point with a free final heading, else the
+shortest one to any sampled heading at which the footprint fits at the goal
+(none: no shots). A search reaching the goal cell first tries a shot from there.
 
 **Cost model.** Edge cost = PTG segment estimated execution time + the sum of
 cost evaluators: `CostEvaluatorCostMap` (obstacle-proximity penalty) and
@@ -135,7 +139,8 @@ with a planner thread, enqueued motion commands and `VehicleMotionInterface`.
 1. Create root node at the start pose; push it to the open set.
 2. While the open set is not empty and not timed out:
    a. Pop the node with the lowest f = g + eps*h.
-   b. If it is in the goal cell (or a Reeds-Shepp shot reaches the goal): done.
+   b. Done if a goal candidate costs no more than this node's f, or if the
+      node is in the goal cell and no Reeds-Shepp shot from it is clear.
    c. Transform and square-clip obstacles to the node's local frame.
    d. For each PTG: update its dynamic state, sample (k, time, speed) triples,
       compute free distances, keep the best collision-free edge per cell.
