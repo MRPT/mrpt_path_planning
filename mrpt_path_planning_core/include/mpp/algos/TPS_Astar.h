@@ -8,12 +8,14 @@
 
 #include <mpp/algos/CostEvaluator.h>
 #include <mpp/algos/Planner.h>
+#include <mpp/algos/reeds_shepp.h>
 #include <mpp/data/MotionPrimitivesTree.h>
 #include <mrpt/core/bits_math.h>  // 0.0_deg
 #include <mrpt/system/COutputLogger.h>
 #include <mrpt/system/CTimeLogger.h>
 
 #include <limits>
+#include <optional>
 #include <unordered_map>
 
 namespace mpp
@@ -76,22 +78,31 @@ struct TPS_Astar_Parameters
      * v_max/w_max); otherwise the default heuristic is used. */
     bool use_reeds_shepp_heuristic = false;
 
-    /** Try a Reeds-Shepp shot from every expanded node within
-     * `reeds_shepp_expansion_max_length` [m] of the goal: the shortest
-     * Reeds-Shepp path to the goal pose (full-pose goals) or to the goal point
-     * with a free final heading (position goals, see
-     * reeds_shepp_path_to_point()), at the tightest turning radius of the
-     * PTGs, executed exactly as a chain of edges along the tightest-arc and
-     * straight trajectories of forward and reverse C-PTGs. Every edge is
-     * checked with the same certified TP-obstacle query as any other edge. A
-     * collision-free shot becomes a goal candidate of the deferred analytic
-     * expansion (so `use_analytic_expansion` must be enabled), which keeps the
+    /** Try a Reeds-Shepp shot from expanded nodes within
+     * `reeds_shepp_expansion_max_length` [m] of the goal: a Reeds-Shepp path
+     * at the tightest turning radius of the PTGs, executed exactly as a chain
+     * of edges along the tightest-arc and straight trajectories of forward
+     * and reverse C-PTGs. Every edge is checked with the same certified
+     * TP-obstacle query as any other edge. A collision-free shot becomes a
+     * goal candidate of the deferred analytic expansion (so
+     * `use_analytic_expansion` must be enabled), which keeps the
      * suboptimality bound, and it ends at the goal itself, not only in the
-     * goal cell. A search that would end in the goal cell first tries a shot
-     * from there and, if it is clear, goes on until a shot is committed. It
-     * requires forward and reverse DiffDrive_C PTGs with an odd number of
-     * trajectories (so that one is straight); otherwise it is silently not
-     * used. */
+     * goal cell.
+     *
+     * From every expanded node: the shortest path to the goal pose
+     * (full-pose goals) or to the goal point with a free final heading
+     * (position goals, see reeds_shepp_path_to_point()).
+     *
+     * A search that would end in the goal cell first tries a shot from there
+     * and, if it is clear, goes on until a shot is committed. For a position
+     * goal, it then also tries the shortest paths ending at every other final
+     * heading (sampled every `grid_resolution_yaw`) at which the footprint
+     * fits at the goal, from that node and from its ancestors within reach,
+     * since a goal close to obstacles may only admit some headings, reached
+     * from farther away. If the footprint fits at no heading, no shots are
+     * tried for a position goal. It requires
+     * forward and reverse DiffDrive_C PTGs with an odd number of trajectories
+     * (so that one is straight); otherwise it is silently not used. */
     bool   use_reeds_shepp_expansion        = true;
     double reeds_shepp_expansion_max_length = 5.0;
 
@@ -426,6 +437,13 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 
     std::vector<float> localObsX_, localObsY_;
 
+    /** Free distance along every trajectory of each PTG (indexed as the PTGs)
+     * from `expandedTpObstaclesPose_`, the pose of the last node expanded by
+     * find_feasible_paths_to_neighbors(). Its Reeds-Shepp shots start there,
+     * so they reuse them instead of repeating the query. */
+    std::vector<std::vector<double>>   expandedTpObstacles_;
+    std::optional<mrpt::math::TPose2D> expandedTpObstaclesPose_;
+
     /** Distance from a node beyond which obstacles cannot affect any edge of
      * this PTG: trajectory length plus footprint radius (and clearance, for
      * collision-grid PTGs). Used to clip local obstacles soundly. */
@@ -459,6 +477,26 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
      * \return false if they do not support the Reeds-Shepp shot. */
     bool prepare_reeds_shepp_expansion(const TrajectoriesAndRobotShape& trs);
 
+    /** For a position goal, the obstacle points near it, relative to the
+     * goal point, the final headings at which the footprint, grown by the
+     * certified clearance of the shot PTGs, fits at the goal, and that
+     * clearance [m] (see prepare_point_goal_shots()). */
+    std::vector<mrpt::math::TPoint2D> rsGoalObstacles_;
+    std::vector<double>               rsGoalHeadings_;
+    double                            rsGoalClearance_ = 0;
+
+    /** Fills rsGoalObstacles_, rsGoalHeadings_ and rsGoalClearance_ for the
+     * goal point. */
+    void prepare_point_goal_shots(
+        const mrpt::math::TPoint2D& goal, const TrajectoriesAndRobotShape& trs,
+        const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles);
+
+    /** Whether the footprint, grown by the certified clearance, contains no
+     * point of rsGoalObstacles_ with the heading `phi` at the goal point.
+     * Shots ending at other headings cannot pass the certified check. */
+    bool footprint_fits_at_goal(
+        double phi, const TrajectoriesAndRobotShape& trs) const;
+
     /** One edge of a Reeds-Shepp shot, ready to be inserted in the tree. */
     struct RsShotEdge
     {
@@ -467,12 +505,23 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     };
 
     /** Builds the Reeds-Shepp shot from `from` to the goal pose or point as
-     * certified PTG edges. \return An empty vector if there is none (too
-     * long, colliding, leaving the world box, or `from` already at the goal
-     * point). */
+     * certified PTG edges (see use_reeds_shepp_expansion), no longer than
+     * `maxLength` [m]. For a position goal, the shortest path with a free
+     * final heading is tried and, with `allHeadings`, then those to every
+     * final heading at which the footprint fits. \return An empty vector if
+     * there is none (too long, colliding, leaving the world box, or `from`
+     * already at the goal point). */
     std::vector<RsShotEdge> reeds_shepp_shot(
-        const Node& from, const SE2orR2_KinState& goal,
-        const TrajectoriesAndRobotShape&                trs,
+        const Node& from, const SE2orR2_KinState& goal, double maxLength,
+        bool allHeadings, const TrajectoriesAndRobotShape& trs,
+        const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+        double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in);
+
+    /** Executes the Reeds-Shepp `segments` from `from` as certified PTG
+     * edges, which must end at the goal (see reeds_shepp_shot()). */
+    std::vector<RsShotEdge> execute_shot(
+        const Node& from, const std::vector<ReedsSheppSegment>& segments,
+        const SE2orR2_KinState& goal, const TrajectoriesAndRobotShape& trs,
         const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
         double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in);
 

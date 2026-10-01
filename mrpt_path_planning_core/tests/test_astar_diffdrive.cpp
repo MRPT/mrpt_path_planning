@@ -32,6 +32,7 @@
 #include <mrpt/math/wrap2pi.h>
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 // ---------------------------------------------------------------------------
@@ -720,4 +721,81 @@ TEST(AstarDiffDrive, PointGoalShotRespectsWalls)
     const auto out = planner.plan(in);
     EXPECT_FALSE(out.success)
         << "The Reeds-Shepp shot must not cross a solid wall";
+}
+
+TEST(AstarDiffDrive, PointGoalInSlotIsReachedExactly)
+{
+    // A goal at the bottom of a slot a little wider than the robot, open
+    // upward, so close to the bottom wall that the robot only fits there
+    // facing out of the slot (its rear is shorter than its front). Starting
+    // above the slot and facing into it, the shortest path to the point ends
+    // facing in, which collides: the shot must end at a heading that fits,
+    // backing into the slot. A finer collision grid leaves room to enter it.
+    const mrpt::math::TPoint2D goal(2.0, 1.37);
+
+    std::string ptgCfg = kCPtgForwardReverse;
+    for (size_t pos = 0;
+         (pos = ptgCfg.find("resolution  = 0.10", pos)) != std::string::npos;)
+    {
+        ptgCfg.replace(pos, 18, "resolution  = 0.05");
+    }
+
+    auto pts = mrpt::maps::CSimplePointsMap::Create();
+    for (double y = 1.1; y <= 2.6; y += 0.05)
+    {
+        pts->insertPoint(1.72f, static_cast<float>(y), 0.0f);
+        pts->insertPoint(2.28f, static_cast<float>(y), 0.0f);
+    }
+    for (double x = 1.72; x <= 2.28; x += 0.05)
+    {
+        pts->insertPoint(static_cast<float>(x), 1.1f, 0.0f);
+    }
+
+    auto planner                                     = buildPlanner();
+    planner.params_.reeds_shepp_expansion_max_length = 10.0;
+    auto in                                          = buildInput(
+                                                 goal.x, goal.y, ptgCfg.c_str(), /*bboxMin=*/{-2, -2, -M_PI},
+                                                 /*bboxMax=*/{6, 6, M_PI}, pts);
+    in.stateStart.pose = {2.0, 5.0, -M_PI / 2};
+
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success);
+    expectConsistentPath(out, in);
+
+    const auto end = executedEndPose(out, in);
+    EXPECT_NEAR(end.x, goal.x, 5e-3);
+    EXPECT_NEAR(end.y, goal.y, 5e-3);
+    EXPECT_NEAR(std::sin(end.phi), 1.0, 0.05)
+        << "The robot must end facing out of the slot";
+}
+
+TEST(AstarDiffDrive, PointGoalWithoutRoomSkipsTheShot)
+{
+    // An obstacle 0.1 m from the goal point lies inside the footprint at
+    // every heading, so no path can end exactly there: the search ends in the
+    // goal cell, exactly as without shots.
+    const mrpt::math::TPoint2D goal(2.0, 1.0);
+
+    auto pts = mrpt::maps::CSimplePointsMap::Create();
+    pts->insertPoint(2.1f, 1.0f, 0.0f);
+
+    auto plannerWith = [&](bool shot)
+    {
+        auto planner                              = buildPlanner();
+        planner.params_.use_reeds_shepp_expansion = shot;
+        return planner;
+    };
+    const auto in = buildInput(
+        goal.x, goal.y, kCPtgForwardReverse, /*bboxMin=*/{-2, -2, -M_PI},
+        /*bboxMax=*/{5, 5, M_PI}, pts);
+
+    auto       withShot    = plannerWith(true);
+    auto       withoutShot = plannerWith(false);
+    const auto out         = withShot.plan(in);
+    const auto outRef      = withoutShot.plan(in);
+    ASSERT_TRUE(out.success);
+    ASSERT_TRUE(outRef.success);
+    expectConsistentPath(out, in);
+    EXPECT_EQ(out.numExpandedNodes, outRef.numExpandedNodes);
+    EXPECT_NEAR(out.pathCost, outRef.pathCost, 1e-9);
 }

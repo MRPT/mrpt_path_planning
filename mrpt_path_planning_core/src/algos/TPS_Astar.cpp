@@ -184,6 +184,22 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     grid_.clear();
     localObstaclesCache_.clear();
+    expandedTpObstaclesPose_.reset();
+
+    rsGoalObstacles_.clear();
+    rsGoalHeadings_.clear();
+    if (rsExpansionRadius_ > 0 && in.stateGoal.state.isPoint())
+    {
+        prepare_point_goal_shots(
+            in.stateGoal.state.point(), in.ptgs, obstaclePoints);
+        if (rsGoalHeadings_.empty())
+        {
+            MRPT_LOG_DEBUG(
+                "Reeds-Shepp shot not used: the footprint fits at no heading "
+                "at the goal point.");
+            rsExpansionRadius_ = 0;
+        }
+    }
 
     // ----------------------------------------
     //
@@ -286,10 +302,17 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     // it is cheaper than the current one or, with `replace`, in any case (an
     // exact goal is preferred to a candidate anywhere in the goal cell).
     // Returns whether the shot is clear.
-    auto tryReedsSheppShot = [&](const Node& n, bool replace)
+    auto tryReedsSheppShot = [&](const Node& n, bool replace, bool allHeadings)
     {
+        double maxLength = params_.reeds_shepp_expansion_max_length;
+        if (!replace && bestGoalCandidateG < std::numeric_limits<cost_t>::max())
+        {
+            mrpt::keep_min(
+                maxLength, (bestGoalCandidateG - n.gScore) * maxLinSpeed_);
+        }
         const auto shot = reeds_shepp_shot(
-            n, in.stateGoal, in.ptgs, obstaclePoints, MAX_XY_DIST, in);
+            n, in.stateGoal, maxLength, allHeadings, in.ptgs, obstaclePoints,
+            MAX_XY_DIST, in);
         if (shot.empty()) { return false; }
         cost_t g = n.gScore;
         for (const auto& e : shot) { g += e.edge.cost; }
@@ -308,6 +331,30 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         bestGoalCandidateG      = g;
         bestGoalCandidateShotId = parent;
         return true;
+    };
+
+    // Before the search ends in the goal cell at `n`, tries to reach the goal
+    // itself with a shot from there. For a position goal, shots to every
+    // final heading at which the footprint fits are tried, from `n` and then
+    // from its ancestors within reach, so the goal can also be approached
+    // from farther away with the heading it requires:
+    auto tryShotBeforeEndingInGoalCell = [&](const Node& n)
+    {
+        if (in.stateGoal.state.isPose())
+        {
+            return tryReedsSheppShot(n, true, false);
+        }
+        for (const Node* a = &n; a != nullptr;
+             a             = a->cameFrom ? *a->cameFrom : nullptr)
+        {
+            if ((a->state.pose.translation() - in.stateGoal.state.point())
+                    .norm() > params_.reeds_shepp_expansion_max_length)
+            {
+                break;
+            }
+            if (tryReedsSheppShot(*a, true, true)) { return true; }
+        }
+        return false;
     };
 
     while (!openSet.empty())
@@ -346,7 +393,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             Node& gn = *bestGoalCandidate;
             // Reach the goal exactly from the candidate, if possible. The
             // shot is then committed by the rule above.
-            if (rsExpansionRadius_ > 0 && tryReedsSheppShot(gn, true))
+            if (rsExpansionRadius_ > 0 && tryShotBeforeEndingInGoalCell(gn))
             {
                 continue;
             }
@@ -382,8 +429,9 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         // without shots, before any goal-cell node has been expanded.
         if (const auto curNodeGridIdx = nodeGridCoords(current.state.pose);
             curNodeGridIdx.sameLocation(goalCellIndices) &&
-            !(rsExpansionRadius_ > 0 && (bestGoalCandidateShotId.has_value() ||
-                                         tryReedsSheppShot(current, true))))
+            !(rsExpansionRadius_ > 0 &&
+              (bestGoalCandidateShotId.has_value() ||
+               tryShotBeforeEndingInGoalCell(current))))
         {
             // Path found:
 
@@ -632,7 +680,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
                     bestGoalCandidateG &&
                 lowerBoundLength <= params_.reeds_shepp_expansion_max_length)
             {
-                tryReedsSheppShot(current, false);
+                tryReedsSheppShot(current, false, false);
             }
         }
 
@@ -846,6 +894,9 @@ TPS_Astar::list_paths_to_neighbors_t
     std::unordered_map<NodeCoords, path_to_neighbor_t, NodeCoordsHash>
         bestPaths;
 
+    expandedTpObstacles_.assign(trs.ptgs.size(), {});
+    expandedTpObstaclesPose_ = from.state.pose;
+
 #if 0
     size_t totalConsidered = 0, totalCollided = 0;
 #endif
@@ -1016,6 +1067,7 @@ TPS_Astar::list_paths_to_neighbors_t
                         localObsX_[i], localObsY_[i], tpObstacles);
                 }
             }
+            expandedTpObstacles_[ptgIdx] = tpObstacles;
         }
 
         // now, check which ones of those paths are not blocked by
@@ -1285,30 +1337,144 @@ bool TPS_Astar::prepare_reeds_shepp_expansion(
     return true;
 }
 
+void TPS_Astar::prepare_point_goal_shots(
+    const mrpt::math::TPoint2D& goal, const TrajectoriesAndRobotShape& trs,
+    const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles)
+{
+    const auto& ptg = dynamic_cast<const ptg::DiffDriveCollisionGridBased&>(
+        *trs.ptgs.at(rsForward_.ptgIndex));
+    rsGoalClearance_ = std::numeric_limits<double>::max();
+    for (const auto* m : {&rsForward_, &rsReverse_})
+    {
+        mrpt::keep_min(
+            rsGoalClearance_,
+            dynamic_cast<const ptg::DiffDriveCollisionGridBased&>(
+                *trs.ptgs.at(m->ptgIndex))
+                .getClearance());
+    }
+    const double reach = ptg.getMaxRobotRadius() + rsGoalClearance_;
+
+    for (const auto& obs : globalObstacles)
+    {
+        ASSERT_(obs);
+        const auto&  xs = obs->getPointsBufferRef_x();
+        const auto&  ys = obs->getPointsBufferRef_y();
+        const size_t n  = obs->size();
+        for (size_t i = 0; i < n; i++)
+        {
+            const double dx = xs[i] - goal.x;
+            const double dy = ys[i] - goal.y;
+            if (std::abs(dx) <= reach && std::abs(dy) <= reach)
+            {
+                rsGoalObstacles_.emplace_back(dx, dy);
+            }
+        }
+    }
+
+    const auto nHeadings = static_cast<size_t>(
+        std::max(1L, std::lround(2 * M_PI / params_.grid_resolution_yaw)));
+    for (size_t i = 0; i < nHeadings; i++)
+    {
+        const double phi = mrpt::math::wrapToPi(2 * M_PI * i / nHeadings);
+        if (footprint_fits_at_goal(phi, trs))
+        {
+            rsGoalHeadings_.push_back(phi);
+        }
+    }
+}
+
+bool TPS_Astar::footprint_fits_at_goal(
+    double phi, const TrajectoriesAndRobotShape& trs) const
+{
+    const auto& shape = dynamic_cast<const ptg::DiffDriveCollisionGridBased&>(
+                            *trs.ptgs.at(rsForward_.ptgIndex))
+                            .getRobotShape();
+    const double c = std::cos(phi);
+    const double s = std::sin(phi);
+    for (const auto& p : rsGoalObstacles_)
+    {
+        const mrpt::math::TPoint2D local(c * p.x + s * p.y, -s * p.x + c * p.y);
+        // distance() is zero inside the polygon:
+        if (shape.distance(local) <= rsGoalClearance_) { return false; }
+    }
+    return true;
+}
+
 std::vector<TPS_Astar::RsShotEdge> TPS_Astar::reeds_shepp_shot(
-    const Node& from, const SE2orR2_KinState& goal,
-    const TrajectoriesAndRobotShape&                trs,
+    const Node& from, const SE2orR2_KinState& goal, double maxLength,
+    bool allHeadings, const TrajectoriesAndRobotShape& trs,
     const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
     double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in)
 {
     mrpt::system::CTimeLoggerEntry tle(profiler_(), "reeds_shepp_shot");
 
-    std::vector<RsShotEdge> out;
-    const auto              segments =
-        goal.state.isPose()
-                         ? reeds_shepp_path(
-                               from.state.pose, goal.state.pose(), rsExpansionRadius_)
-                         : reeds_shepp_path_to_point(
-                               from.state.pose, goal.state.point(), rsExpansionRadius_);
-    double length = 0;
-    for (const auto& seg : segments) { length += std::abs(seg.length); }
-    if (segments.empty() || length > params_.reeds_shepp_expansion_max_length)
+    const auto tryPath = [&](const std::vector<ReedsSheppSegment>& segments)
     {
-        return out;
+        double length = 0;
+        for (const auto& seg : segments) { length += std::abs(seg.length); }
+        if (segments.empty() || length > maxLength)
+        {
+            return std::vector<RsShotEdge>();
+        }
+        return execute_shot(
+            from, segments, goal, trs, globalObstacles,
+            MAX_XY_OBSTACLES_CLIPPING_DIST, in);
+    };
+
+    if (goal.state.isPose())
+    {
+        return tryPath(reeds_shepp_path(
+            from.state.pose, goal.state.pose(), rsExpansionRadius_));
     }
 
-    SE2_KinState        state = from.state;
-    std::vector<double> tpObstacles;
+    // Position goal: the shortest path, with a free final heading, if the
+    // footprint fits at the goal with that heading:
+    const auto& goalPt = goal.state.point();
+    const auto  toPoint =
+        reeds_shepp_path_to_point(from.state.pose, goalPt, rsExpansionRadius_);
+    if (toPoint.empty()) { return {}; }
+    if (footprint_fits_at_goal(
+            reeds_shepp_apply(from.state.pose, toPoint, rsExpansionRadius_).phi,
+            trs))
+    {
+        if (auto out = tryPath(toPoint); !out.empty()) { return out; }
+    }
+    if (!allHeadings) { return {}; }
+
+    // Otherwise, the shortest clear one ending at a heading that fits:
+    std::vector<std::pair<double, double>> lengthAndHeading;
+    for (const double phi : rsGoalHeadings_)
+    {
+        const double length = reeds_shepp_distance(
+            from.state.pose, {goalPt.x, goalPt.y, phi}, rsExpansionRadius_);
+        if (length <= maxLength) { lengthAndHeading.emplace_back(length, phi); }
+    }
+    std::sort(lengthAndHeading.begin(), lengthAndHeading.end());
+    for (const auto& [length, phi] : lengthAndHeading)
+    {
+        auto out = tryPath(reeds_shepp_path(
+            from.state.pose, {goalPt.x, goalPt.y, phi}, rsExpansionRadius_));
+        if (!out.empty()) { return out; }
+    }
+    return {};
+}
+
+std::vector<TPS_Astar::RsShotEdge> TPS_Astar::execute_shot(
+    const Node& from, const std::vector<ReedsSheppSegment>& segments,
+    const SE2orR2_KinState& goal, const TrajectoriesAndRobotShape& trs,
+    const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+    double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in)
+{
+    // The chain of PTG edges, first without collision checks:
+    struct Chunk
+    {
+        size_t             ptgIndex = 0;
+        trajectory_index_t k        = 0;
+        uint32_t           step     = 0;
+        SE2_KinState       from, to;
+    };
+    std::vector<Chunk> chunks;
+    SE2_KinState       state = from.state;
     for (const auto& seg : segments)
     {
         const auto& m   = seg.length > 0 ? rsForward_ : rsReverse_;
@@ -1333,59 +1499,24 @@ std::vector<TPS_Astar::RsShotEdge> TPS_Astar::reeds_shepp_shot(
                 std::lround(totalSteps * double(c) / double(nChunks)));
             const auto s1 = static_cast<uint32_t>(
                 std::lround(totalSteps * double(c + 1) / double(nChunks)));
-            const auto step = std::optional<uint32_t>(s1 - s0);
-            if (*step == 0) { continue; }
-            const double dist = ptg.getPathDist(k, *step);
-
-            // Certified collision check from the current pose:
-            const size_t nObs = local_obstacles_to_buffers(
-                state.pose, globalObstacles, MAX_XY_OBSTACLES_CLIPPING_DIST);
-            const auto* gridPtg =
-                dynamic_cast<const ptg::DiffDriveCollisionGridBased*>(&ptg);
-            ASSERT_(gridPtg);
-            gridPtg->initTPObstacles(tpObstacles);
-            gridPtg->updateTPObstacles(
-                localObsX_.data(), localObsY_.data(), nObs, tpObstacles);
-            if (dist >= tpObstacles[k])
-            {
-                out.clear();
-                return out;
-            }
+            const uint32_t step = s1 - s0;
+            if (step == 0) { continue; }
 
             SE2_KinState next;
-            next.pose = state.pose + ptg.getPathPose(k, *step);
-            (next.vel = ptg.getPathTwist(k, *step)).rotate(state.pose.phi);
+            next.pose = state.pose + ptg.getPathPose(k, step);
+            (next.vel = ptg.getPathTwist(k, step)).rotate(state.pose.phi);
             if (next.pose.x < in.worldBboxMin.x ||
                 next.pose.y < in.worldBboxMin.y ||
                 next.pose.x > in.worldBboxMax.x ||
                 next.pose.y > in.worldBboxMax.y)
             {
-                out.clear();
-                return out;
+                return {};
             }
-
-            RsShotEdge e;
-            e.edge.ptgDist              = dist;
-            e.edge.ptgIndex             = m.ptgIndex;
-            e.edge.ptgPathIndex         = k;
-            e.edge.ptgTrimmableSpeed    = 1.0;
-            e.edge.ptgFinalGoalRelSpeed = 0;
-            e.edge.ptgFinalRelativeGoal =
-                goal.asSE2KinState().pose - state.pose;
-            e.edge.stateFrom    = state;
-            e.edge.stateTo      = next;
-            e.edge.ptgStepIndex = *step;
-            // Always interpolated (also sets estimatedExecTime): cost
-            // evaluators and refine_trajectory() need it, and shots are few.
-            edge_interpolated_path(
-                e.edge, trs, ptg.getPathPose(k, *step), *step,
-                params_.pathInterpolatedSegments);
-            e.edge.cost = cost_path_segment(e.edge);
-            e.stateTo   = next;
-            out.push_back(e);
+            chunks.push_back({m.ptgIndex, k, step, state, next});
             state = next;
         }
     }
+
     // The chain ends at the goal, up to the time discretization of the PTG
     // trajectories. (A same-cell test would reject shots to goals on a cell
     // boundary.)
@@ -1396,10 +1527,63 @@ std::vector<TPS_Astar::RsShotEdge> TPS_Astar::reeds_shepp_shot(
         goal.state.isPose()
             ? std::abs(mrpt::math::angDistance(state.pose.phi, goalPose.phi))
             : 0.0;
-    if (errXY > 0.5 * params_.grid_resolution_xy ||
+    if (chunks.empty() || errXY > 0.5 * params_.grid_resolution_xy ||
         errPhi > 0.5 * params_.grid_resolution_yaw)
     {
-        out.clear();
+        return {};
+    }
+
+    // Certified collision check of each edge from its start pose, reusing the
+    // query of the last expanded node if the shot starts there:
+    std::vector<double> tpObstacles;
+    for (const auto& ch : chunks)
+    {
+        const auto&                ptg      = *trs.ptgs.at(ch.ptgIndex);
+        const std::vector<double>* freeDist = &tpObstacles;
+        if (expandedTpObstaclesPose_ &&
+            expandedTpObstaclesPose_->x == ch.from.pose.x &&
+            expandedTpObstaclesPose_->y == ch.from.pose.y &&
+            expandedTpObstaclesPose_->phi == ch.from.pose.phi &&
+            !expandedTpObstacles_.at(ch.ptgIndex).empty())
+        {
+            freeDist = &expandedTpObstacles_[ch.ptgIndex];
+        }
+        else
+        {
+            const size_t nObs = local_obstacles_to_buffers(
+                ch.from.pose, globalObstacles, MAX_XY_OBSTACLES_CLIPPING_DIST);
+            const auto* gridPtg =
+                dynamic_cast<const ptg::DiffDriveCollisionGridBased*>(&ptg);
+            ASSERT_(gridPtg);
+            gridPtg->initTPObstacles(tpObstacles);
+            gridPtg->updateTPObstacles(
+                localObsX_.data(), localObsY_.data(), nObs, tpObstacles);
+        }
+        if (ptg.getPathDist(ch.k, ch.step) >= (*freeDist)[ch.k]) { return {}; }
+    }
+
+    std::vector<RsShotEdge> out;
+    for (const auto& ch : chunks)
+    {
+        const auto& ptg = *trs.ptgs.at(ch.ptgIndex);
+        RsShotEdge  e;
+        e.edge.ptgDist              = ptg.getPathDist(ch.k, ch.step);
+        e.edge.ptgIndex             = ch.ptgIndex;
+        e.edge.ptgPathIndex         = ch.k;
+        e.edge.ptgTrimmableSpeed    = 1.0;
+        e.edge.ptgFinalGoalRelSpeed = 0;
+        e.edge.ptgFinalRelativeGoal = goalPose - ch.from.pose;
+        e.edge.stateFrom            = ch.from;
+        e.edge.stateTo              = ch.to;
+        e.edge.ptgStepIndex         = ch.step;
+        // Always interpolated (also sets estimatedExecTime): cost
+        // evaluators and refine_trajectory() need it, and shots are few.
+        edge_interpolated_path(
+            e.edge, trs, ptg.getPathPose(ch.k, ch.step), ch.step,
+            params_.pathInterpolatedSegments);
+        e.edge.cost = cost_path_segment(e.edge);
+        e.stateTo   = ch.to;
+        out.push_back(e);
     }
     return out;
 }
