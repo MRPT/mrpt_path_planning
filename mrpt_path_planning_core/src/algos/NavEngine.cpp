@@ -1174,17 +1174,16 @@ void NavEngine::send_next_motion_cmd_or_nop()
         // required for the condPose below:
         std::optional<mrpt::math::TPose2D> poseCondDeltaForTolerance;
         {
-            uint32_t stepEnd = 0, stepAfter = 0;
-            bool     ok1 = ptg->getPathStepForDist(
-                    edge.ptgPathIndex, edge.ptgDist, stepEnd);
-            bool ok2 = ptg->getPathStepForDist(
+            const auto stepEnd =
+                ptg->getPathStepForDist(edge.ptgPathIndex, edge.ptgDist);
+            const auto stepAfter = ptg->getPathStepForDist(
                 edge.ptgPathIndex,
-                edge.ptgDist + config_.enqueuedActionsToleranceXY, stepAfter);
-            if (ok1 && ok2)
+                edge.ptgDist + config_.enqueuedActionsToleranceXY);
+            if (stepEnd && stepAfter)
             {
                 poseCondDeltaForTolerance =
-                    ptg->getPathPose(edge.ptgPathIndex, stepAfter) -
-                    ptg->getPathPose(edge.ptgPathIndex, stepEnd);
+                    ptg->getPathPose(edge.ptgPathIndex, *stepAfter) -
+                    ptg->getPathPose(edge.ptgPathIndex, *stepEnd);
             }
         }
 

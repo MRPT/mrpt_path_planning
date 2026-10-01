@@ -93,8 +93,8 @@ TEST(Trajectories, SingleEdge)
     // Last timestamp must be ≈ finalStep * ptg_dt.
     auto& ptg = trs.ptgs.at(edge.ptgIndex);
     ptg->updateNavDynamicState(edge.getPTGDynState());
-    uint32_t finalStep = 0;
-    ptg->getPathStepForDist(edge.ptgPathIndex, edge.ptgDist, finalStep);
+    const uint32_t finalStep =
+        ptg->getPathStepForDistClamped(edge.ptgPathIndex, edge.ptgDist);
     EXPECT_NEAR(traj.rbegin()->first, finalStep * ptg_dt, ptg_dt + 1e-9);
 
     // PTG index and path index must be preserved.
@@ -128,8 +128,8 @@ TEST(Trajectories, MultiEdgeTimeStitching)
     // Duration of edge1.
     auto& ptg = trs.ptgs.at(edge1.ptgIndex);
     ptg->updateNavDynamicState(edge1.getPTGDynState());
-    uint32_t step1 = 0;
-    ptg->getPathStepForDist(edge1.ptgPathIndex, edge1.ptgDist, step1);
+    const uint32_t step1 =
+        ptg->getPathStepForDistClamped(edge1.ptgPathIndex, edge1.ptgDist);
     const double T1 = step1 * ptg_dt;
 
     // The last timestamp must exceed T1 (second edge added time on top).
@@ -159,8 +159,8 @@ TEST(Trajectories, CoarserSampleFewerPoints)
     // Both must include the final step (ptgDist is always reached).
     auto& ptg = trs.ptgs.at(edge.ptgIndex);
     ptg->updateNavDynamicState(edge.getPTGDynState());
-    uint32_t finalStep = 0;
-    ptg->getPathStepForDist(edge.ptgPathIndex, edge.ptgDist, finalStep);
+    const uint32_t finalStep =
+        ptg->getPathStepForDistClamped(edge.ptgPathIndex, edge.ptgDist);
     const double T = finalStep * ptg_dt;
 
     EXPECT_NEAR(fine.rbegin()->first, T, ptg_dt + 1e-9);

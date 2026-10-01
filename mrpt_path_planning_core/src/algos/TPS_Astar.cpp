@@ -995,9 +995,11 @@ TPS_Astar::list_paths_to_neighbors_t
             {
                 const int                   relTrg_k    = trgInvMap->first;
                 const normalized_distance_t relTrg_d    = trgInvMap->second;
-                ptg_step_t                  relTrg_step = 0;
-                if (ptg->getPathStepForDist(relTrg_k, relTrg_d, relTrg_step))
+                if (const auto relTrgStepOpt =
+                        ptg->getPathStepForDist(relTrg_k, relTrg_d))
                 {
+                    const ptg_step_t relTrg_step = *relTrgStepOpt;
+
                     // Add direct path to target, and keep a copy of its value:
                     for (auto speed : speedsToConsider)
                     {

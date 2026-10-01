@@ -72,8 +72,8 @@ TEST(BestTrajectory, FindsBestPTG)
     // Reconstructed pose must be within 0.1 m of the requested target.
     auto& ptg = trs.ptgs.at(edge.ptgIndex);
     ptg->updateNavDynamicState(edge.getPTGDynState());
-    uint32_t step = 0;
-    ptg->getPathStepForDist(edge.ptgPathIndex, edge.ptgDist, step);
+    const uint32_t step =
+        ptg->getPathStepForDistClamped(edge.ptgPathIndex, edge.ptgDist);
     const auto reconstr = ptg->getPathPose(edge.ptgPathIndex, step);
     EXPECT_LT((reconstr - mrpt::math::TPose2D{1.0, 0.0, 0.0}).norm(), 0.10);
 }
@@ -102,8 +102,8 @@ TEST(BestTrajectory, DiagonalTarget)
 
     auto& ptg = trs.ptgs.at(edge.ptgIndex);
     ptg->updateNavDynamicState(edge.getPTGDynState());
-    uint32_t step = 0;
-    ptg->getPathStepForDist(edge.ptgPathIndex, edge.ptgDist, step);
+    const uint32_t step =
+        ptg->getPathStepForDistClamped(edge.ptgPathIndex, edge.ptgDist);
     const auto reconstr = ptg->getPathPose(edge.ptgPathIndex, step);
     EXPECT_LT((reconstr - mrpt::math::TPose2D{1.0, 1.0, 0.0}).norm(), 0.10);
 }

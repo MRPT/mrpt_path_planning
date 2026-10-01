@@ -87,8 +87,8 @@ static bool poseClose(
 {
     auto& ptg = trs.ptgs.at(edge.ptgIndex);
     ptg->updateNavDynamicState(edge.getPTGDynState());
-    uint32_t step = 0;
-    ptg->getPathStepForDist(edge.ptgPathIndex, edge.ptgDist, step);
+    const uint32_t step =
+        ptg->getPathStepForDistClamped(edge.ptgPathIndex, edge.ptgDist);
     return (ptg->getPathPose(edge.ptgPathIndex, step) - target).norm() < tol;
 }
 
@@ -192,8 +192,8 @@ TEST(RefineTrajectory, InterpolatedPathEndsAtReachedPose)
     const auto& edge = edges[0];
     auto&       ptg  = trs.ptgs.at(edge.ptgIndex);
     ptg->updateNavDynamicState(edge.getPTGDynState());
-    uint32_t step = 0;
-    ptg->getPathStepForDist(edge.ptgPathIndex, edge.ptgDist, step);
+    const uint32_t step =
+        ptg->getPathStepForDistClamped(edge.ptgPathIndex, edge.ptgDist);
     const auto reached = ptg->getPathPose(edge.ptgPathIndex, step);
 
     ASSERT_FALSE(edge.interpolatedPath.empty());

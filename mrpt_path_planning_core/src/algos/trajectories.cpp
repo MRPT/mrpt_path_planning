@@ -36,10 +36,10 @@ trajectory_t mpp::plan_to_trajectory(
             ptgTrim)
             ptgTrim->trimmableSpeed_ = edge->ptgTrimmableSpeed;
 
-        uint32_t ptgFinalStep = 0;
-        bool     ok           = ptg->getPathStepForDist(
-                          edge->ptgPathIndex, edge->ptgDist, ptgFinalStep);
-        ASSERT_(ok);
+        const auto ptgFinalStepOpt =
+            ptg->getPathStepForDist(edge->ptgPathIndex, edge->ptgDist);
+        ASSERT_(ptgFinalStepOpt.has_value());
+        const uint32_t ptgFinalStep = *ptgFinalStepOpt;
         uint32_t stepIncr =
             std::max<uint32_t>(1, mrpt::round(samplePeriod / ptg_dt));
 

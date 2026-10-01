@@ -58,8 +58,8 @@ bool mpp::bestTrajectory(
 
         // Evaluate distance to target:
         MRPT_TODO("add other optimality criteria?");
-        uint32_t ptg_step;
-        ptg->getPathStepForDist(ptg_k, ptg_dist, ptg_step);
+        const uint32_t ptg_step =
+            ptg->getPathStepForDistClamped(ptg_k, ptg_dist);
 
         const auto reconstr_pose = ptg->getPathPose(ptg_k, ptg_step);
 

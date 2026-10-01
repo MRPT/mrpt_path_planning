@@ -347,8 +347,7 @@ struct PoseDistanceMetric_TPS<SE2_KinState>
 
         if (tp_point_is_exact)
         {
-            uint32_t ptg_step;
-            ptg_.getPathStepForDist(k, d, ptg_step);
+            const uint32_t ptg_step      = ptg_.getPathStepForDistClamped(k, d);
             const auto   reconsRelPose = ptg_.getPathPose(k, ptg_step);
             const double headingError =
                 ignoreDstHeading ? .0
