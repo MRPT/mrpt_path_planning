@@ -40,7 +40,7 @@ trajectory_t mpp::plan_to_trajectory(
             ptg->getPathStepForDist(edge->ptgPathIndex, edge->ptgDist);
         ASSERT_(ptgFinalStepOpt.has_value());
         const uint32_t ptgFinalStep = *ptgFinalStepOpt;
-        uint32_t stepIncr =
+        uint32_t       stepIncr =
             std::max<uint32_t>(1, mrpt::round(samplePeriod / ptg_dt));
 
         for (uint32_t step = 0;; step += stepIncr)

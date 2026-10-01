@@ -348,11 +348,11 @@ struct PoseDistanceMetric_TPS<SE2_KinState>
         if (tp_point_is_exact)
         {
             const uint32_t ptg_step      = ptg_.getPathStepForDistClamped(k, d);
-            const auto   reconsRelPose = ptg_.getPathPose(k, ptg_step);
-            const double headingError =
+            const auto     reconsRelPose = ptg_.getPathPose(k, ptg_step);
+            const double   headingError =
                 ignoreDstHeading ? .0
-                                 : std::abs(mrpt::math::angDistance(
-                                       reconsRelPose.phi, relPose.phi));
+                                   : std::abs(mrpt::math::angDistance(
+                                         reconsRelPose.phi, relPose.phi));
 
             if (headingError > headingTolerance_) tp_point_is_exact = false;
         }

@@ -993,8 +993,8 @@ TPS_Astar::list_paths_to_neighbors_t
                 ptg->inverseMap_WS2TP(relGoal.x, relGoal.y, queryTolerance);
             if (trgInvMap.has_value())
             {
-                const int                   relTrg_k    = trgInvMap->first;
-                const normalized_distance_t relTrg_d    = trgInvMap->second;
+                const int                   relTrg_k = trgInvMap->first;
+                const normalized_distance_t relTrg_d = trgInvMap->second;
                 if (const auto relTrgStepOpt =
                         ptg->getPathStepForDist(relTrg_k, relTrg_d))
                 {
