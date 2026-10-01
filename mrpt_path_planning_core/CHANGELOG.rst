@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning_core
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+2.0.0 (2026-10-01)
+------------------
 * add missing changelogs
 * Merge pull request `#44 <https://github.com/MRPT/mrpt_path_planning/issues/44>`_ from MRPT/feat/point-goal-shot
 * TPS_Astar: commit a pending Reeds-Shepp shot if the search stops before its commit test

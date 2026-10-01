@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning_apps
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+2.0.0 (2026-10-01)
+------------------
 * add missing changelogs
 * Merge pull request `#43 <https://github.com/MRPT/mrpt_path_planning/issues/43>`_ from MRPT/docs/readme-agents-md
 * README: animated header images of the demo plans
