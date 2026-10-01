@@ -193,8 +193,10 @@ path-planner-cli \
 | Verbose output, skip path refinement | `-v DEBUG --no-refine` |
 
 With forward and reverse circular-arc PTGs (as in `ptgs_ackermann_vehicle.ini`),
-pose goals are reached exactly through Reeds-Shepp maneuvers. Position-only
-goals end within one lattice cell (`grid_resolution_xy`) of the goal point.
+pose and position goals are reached exactly through Reeds-Shepp maneuvers, if
+a collision-free one is found near the goal; otherwise (e.g., a position goal
+at which the robot fits at no heading), the path ends within one lattice cell
+(`grid_resolution_xy`) of the goal.
 Run `path-planner-cli --help` for all options.
 
 ### selfdriving-simulator-gui
