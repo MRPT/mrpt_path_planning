@@ -48,6 +48,7 @@ find_package(mrpt_maps REQUIRED)
 # re-triggers CMake configure).
 set(LIB_SRCS
 	src/algos/bestTrajectory.cpp
+	src/algos/CollisionGuard.cpp
 	src/algos/CostEvaluator.cpp
 	src/algos/CostEvaluatorCostMap.cpp
 	src/algos/CostEvaluatorPreferredWaypoint.cpp
@@ -84,6 +85,7 @@ set(LIB_SRCS
 
 set(LIB_PUBLIC_HDRS
 	include/mpp/algos/bestTrajectory.h
+	include/mpp/algos/CollisionGuard.h
 	include/mpp/algos/CostEvaluator.h
 	include/mpp/algos/CostEvaluatorCostMap.h
 	include/mpp/algos/CostEvaluatorPreferredWaypoint.h

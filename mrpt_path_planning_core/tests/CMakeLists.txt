@@ -111,6 +111,12 @@ selfdriving_add_test(
 )
 
 selfdriving_add_test(
+    TARGET  test_collision_guard
+    SOURCES test_collision_guard.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
+
+selfdriving_add_test(
     TARGET  test_robot_description
     SOURCES test_robot_description.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
