@@ -25,8 +25,9 @@ namespace mpp
  * heuristics remain admissible.
  *
  * Whether a trajectory moves backwards is determined from the sign of the
- * linear speed at its start, for each (PTG index, path index) pair, given
- * the PTGs with setPTGs().
+ * linear speed at its start, evaluated when each edge is evaluated (so it
+ * accounts for the current dynamic state of PTGs whose motion depends on it),
+ * with the PTGs given with setPTGs().
  */
 class CostEvaluatorReverseMotion : public CostEvaluator
 {
@@ -55,12 +56,12 @@ class CostEvaluatorReverseMotion : public CostEvaluator
     /** Evaluate cost of move-tree edge */
     double operator()(const MoveEdgeSE2_TPS& edge) const override;
 
-    /** Whether trajectory `pathIndex` of PTG `ptgIndex` moves backwards. */
+    /** Whether trajectory `pathIndex` of PTG `ptgIndex` moves backwards, in
+     * the current PTG dynamic state. */
     bool isReverse(int ptgIndex, int pathIndex) const;
 
    private:
-    /** [ptgIndex][pathIndex] */
-    std::vector<std::vector<bool>> isReverse_;
+    std::vector<std::shared_ptr<ptg_t>> ptgs_;
 };
 
 }  // namespace mpp

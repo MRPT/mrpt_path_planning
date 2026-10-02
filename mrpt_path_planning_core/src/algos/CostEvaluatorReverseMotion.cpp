@@ -7,6 +7,8 @@
 #include <mpp/algos/CostEvaluatorReverseMotion.h>
 #include <mrpt/config/CConfigFileBase.h>  // MCP_LOAD_*
 
+#include <cmath>
+
 IMPLEMENTS_MRPT_OBJECT(CostEvaluatorReverseMotion, CostEvaluator, mpp)
 
 using namespace mpp;
@@ -32,34 +34,28 @@ void CostEvaluatorReverseMotion::Parameters::load_from_yaml(
 {
     ASSERT_(c.isMap());
     MCP_LOAD_OPT(c, reverseTimeCostFactor);
+    ASSERT_(std::isfinite(reverseTimeCostFactor));
     ASSERT_GE_(reverseTimeCostFactor, 0.0);
 }
 
 void CostEvaluatorReverseMotion::setPTGs(const TrajectoriesAndRobotShape& ptgs)
 {
-    isReverse_.clear();
-    for (const auto& ptg : ptgs.ptgs)
-    {
-        auto& v = isReverse_.emplace_back();
-        if (!ptg) { continue; }
-        const auto nPaths = ptg->getPathCount();
-        v.resize(nPaths);
-        for (size_t k = 0; k < nPaths; k++)
-        {
-            v[k] = ptg->getPathTwist(k, 0).vx < 0;
-        }
-    }
+    ptgs_ = ptgs.ptgs;
 }
 
 bool CostEvaluatorReverseMotion::isReverse(int ptgIndex, int pathIndex) const
 {
     if (ptgIndex < 0 || pathIndex < 0 ||
-        static_cast<size_t>(ptgIndex) >= isReverse_.size())
+        static_cast<size_t>(ptgIndex) >= ptgs_.size())
     {
         return false;
     }
-    const auto& v = isReverse_[ptgIndex];
-    return static_cast<size_t>(pathIndex) < v.size() && v[pathIndex];
+    const auto& ptg = ptgs_[ptgIndex];
+    if (!ptg || static_cast<size_t>(pathIndex) >= ptg->getPathCount())
+    {
+        return false;
+    }
+    return ptg->getPathTwist(pathIndex, 0).vx < 0;
 }
 
 double CostEvaluatorReverseMotion::operator()(const MoveEdgeSE2_TPS& edge) const
