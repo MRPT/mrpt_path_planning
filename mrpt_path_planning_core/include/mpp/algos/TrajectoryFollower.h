@@ -332,6 +332,11 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         /** Safety speed scale applied this cycle (1 = unrestricted, 0 = stopped
          * by the predictive safety layer). */
         double safety_scale = 1.0;
+
+        /** [m] Travel distance to the first predicted contact along the
+         * command forecast and along the reference path (+inf if none). */
+        double contact_dist_forecast  = std::numeric_limits<double>::infinity();
+        double contact_dist_reference = std::numeric_limits<double>::infinity();
     };
 
     /** One control cycle: given the latest localization (map) and odometry

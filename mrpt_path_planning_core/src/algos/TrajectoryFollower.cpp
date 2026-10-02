@@ -1169,6 +1169,8 @@ TrajectoryFollower::Output TrajectoryFollower::step(
             referenceContactDistance(proj.s, refSweepDist, contactClearance);
         scale = std::min(
             contactDistanceToScale(dFwd), contactDistanceToScale(dRef));
+        out.contact_dist_forecast  = dFwd;
+        out.contact_dist_reference = dRef;
     }
     if (stopped_)
     {
