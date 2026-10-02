@@ -71,6 +71,28 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         double max_decel         = 0.7;  //!< [m/s^2] (goal + speed reductions)
         double max_lateral_accel = 1.0;  //!< [m/s^2] curvature speed limit
 
+        /** [s] Time constant of the platform speed response (e.g. a heavy
+         * vehicle whose speed controller behaves as a first-order lag): after
+         * a stop command it keeps moving about |v| * actuation_lag. Stops at
+         * the goal and at cusps are planned that much earlier, so the vehicle
+         * actually stops there instead of overshooting. 0 (default): an
+         * ideal platform. */
+        double actuation_lag = 0.0;
+
+        /** If true (default), the speed is also limited ahead of time by the
+         * path curvature (max_lateral_accel, max_omega) up to the braking
+         * distance ahead, so the vehicle has already slowed down when it
+         * enters a curve, whatever its speed. Without it, curvature only
+         * limits the speed once the vehicle is in the curve, which is too late
+         * at high speeds and leads to overshooting it. */
+        bool curvature_preview = true;
+
+        /** [rad/s] If > 0, max commanded angular speed. Enforced by lowering
+         * the linear speed (the commanded curvature is kept), so the path
+         * geometry is preserved on tight curves or near the goal, where pure
+         * pursuit may ask for a large curvature. <= 0 disables the limit. */
+        double max_omega = 0.0;
+
         /** [m] If > 0, the tightest turn radius the vehicle can physically
          * make (e.g. an Ackermann robot's steering-limited minimum radius).
          * The pure-pursuit curvature is clamped to 1/min_turn_radius before
@@ -234,7 +256,10 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         double safety_margin = 0.05;
 
         /** [m] If the nearest predicted contact is within this travel distance,
-         * command a full stop (speed scale 0). */
+         * command a full stop (speed scale 0). Beyond it, the speed is also
+         * capped so that the vehicle can always brake (at `max_decel`) before
+         * reaching this distance to the contact, so the behavior is consistent
+         * at any speed. */
         double stop_distance = 0.3;
 
         /** [m] If the nearest predicted contact is beyond this travel distance,
@@ -247,7 +272,8 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         double safety_horizon = 3.0;
 
         /** [m] How far ahead along the reference path to sweep the footprint.
-         */
+         * It is automatically extended to cover the braking distance at the
+         * current speed. */
         double reference_lookahead_dist = 2.5;
 
         /** [m] Step used to sample the footprint boundary and to march the
@@ -318,6 +344,7 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
    private:
     Trajectory          traj_;
     std::vector<double> cumS_;  //!< cumulative arc-length per point
+    std::vector<double> knotCurv_;  //!< |path curvature| per point [1/m]
     std::vector<double>
         cuspS_;  //!< arc-lengths where travel direction reverses
     std::vector<std::size_t>
@@ -462,20 +489,30 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     double footprintClearance(const mrpt::math::TPose2D& p) const;
 
     /** Rolls the command forecast forward from `startPose` (map frame) and
-     * returns the travel distance to the first predicted footprint contact;
-     * +inf if none within `safety_horizon`. `gear` is the interval gear
-     * already latched by \ref advanceGear for this cycle (the forecast does
-     * not re-decide it per predicted sample). */
+     * returns the travel distance to the first predicted footprint contact,
+     * i.e. a footprint clearance at or below `contactClearance`; +inf if none
+     * within `safety_horizon`. `gear` is the interval gear already latched by
+     * \ref advanceGear for this cycle (the forecast does not re-decide it per
+     * predicted sample). */
     double forecastContactDistance(
         const mrpt::math::TPose2D& startPose, double startV, double startOmega,
-        double startCurv, double startS, double gear) const;
+        double startCurv, double startS, double gear,
+        double contactClearance) const;
 
-    /** Sweeps the footprint along the reference path ahead of `startS` and
-     * returns the travel distance to the first predicted contact; +inf if none
-     * within `reference_lookahead_dist`. */
-    double referenceContactDistance(double startS) const;
+    /** Sweeps the footprint along the reference path ahead of `startS`, up to
+     * `maxDist`, and returns the travel distance to the first predicted
+     * contact (see forecastContactDistance()); +inf if none. */
+    double referenceContactDistance(
+        double startS, double maxDist, double contactClearance) const;
 
-    /** Maps a nearest-contact travel distance to a [0,1] speed scale. */
+    /** Max speed at arc-length `s` such that the vehicle can brake (at
+     * max_decel) to the curvature speed limit of every point ahead, up to
+     * `sMax` (see Parameters::curvature_preview). */
+    double curvaturePreviewCap(double s, double sMax) const;
+
+    /** Maps a nearest-contact travel distance to a [0,1] speed scale: linear
+     * between stop_distance and slow_distance, and never above the speed
+     * from which the vehicle can still brake before stop_distance. */
     double contactDistanceToScale(double d) const;
 };
 

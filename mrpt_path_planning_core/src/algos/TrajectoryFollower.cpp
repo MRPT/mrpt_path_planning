@@ -56,6 +56,9 @@ void TrajectoryFollower::Parameters::load_from_yaml(
     MCP_LOAD_OPT(c, max_accel);
     MCP_LOAD_OPT(c, max_decel);
     MCP_LOAD_OPT(c, max_lateral_accel);
+    MCP_LOAD_OPT(c, max_omega);
+    MCP_LOAD_OPT(c, curvature_preview);
+    MCP_LOAD_OPT(c, actuation_lag);
     MCP_LOAD_OPT(c, min_turn_radius);
     MCP_LOAD_OPT(c, max_omega_rate);
     MCP_LOAD_OPT(c, max_curvature_rate);
@@ -94,6 +97,9 @@ mrpt::containers::yaml TrajectoryFollower::Parameters::as_yaml() const
     MCP_SAVE(c, max_accel);
     MCP_SAVE(c, max_decel);
     MCP_SAVE(c, max_lateral_accel);
+    MCP_SAVE(c, max_omega);
+    MCP_SAVE(c, curvature_preview);
+    MCP_SAVE(c, actuation_lag);
     MCP_SAVE(c, min_turn_radius);
     MCP_SAVE(c, max_omega_rate);
     MCP_SAVE(c, max_curvature_rate);
@@ -137,7 +143,24 @@ TrajectoryFollower::Parameters TrajectoryFollower::Parameters::FromYAML(
 // ---------------------------------------------------------------- trajectory
 void TrajectoryFollower::setTrajectory(const Trajectory& traj)
 {
-    traj_ = traj;
+    // Merge (nearly) duplicated consecutive points, keeping the final pose:
+    // a tiny segment between them could point anywhere and be taken for a
+    // spurious direction reversal (cusp).
+    constexpr double kMinKnotDist = 0.01;  // [m]
+    traj_.clear();
+    for (std::size_t i = 0; i < traj.size(); i++)
+    {
+        const auto& p = traj[i];
+        if (!traj_.empty() &&
+            std::hypot(
+                p.pose.x - traj_.back().pose.x,
+                p.pose.y - traj_.back().pose.y) < kMinKnotDist)
+        {
+            if (i + 1 == traj.size() && traj_.size() > 1) { traj_.back() = p; }
+            continue;
+        }
+        traj_.push_back(p);
+    }
     cumS_.assign(traj_.size(), 0.0);
     for (std::size_t i = 1; i < traj_.size(); i++)
     {
@@ -177,17 +200,50 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
         }
     }
 
+    // Path curvature at each knot: heading change over a window of ~0.4 m
+    // around it (robust to short, noisy segments), not crossing cusps:
+    knotCurv_.assign(traj_.size(), 0.0);
+    {
+        std::size_t intervalStart = 0;
+        std::size_t cuspPos       = 0;
+        for (std::size_t i = 0; i < traj_.size(); i++)
+        {
+            while (cuspPos < cuspIdx_.size() && cuspIdx_[cuspPos] <= i)
+            {
+                intervalStart = cuspIdx_[cuspPos];
+                cuspPos++;
+            }
+            const std::size_t intervalEnd = cuspPos < cuspIdx_.size()
+                                                ? cuspIdx_[cuspPos]
+                                                : traj_.size() - 1;
+            constexpr double  kWindow     = 0.4;  // [m]
+            std::size_t       j           = i;
+            std::size_t       k           = i;
+            while (cumS_[k] - cumS_[j] < kWindow &&
+                   (j > intervalStart || k < intervalEnd))
+            {
+                if (j > intervalStart) { j--; }
+                if (k < intervalEnd && cumS_[k] - cumS_[j] < kWindow) { k++; }
+            }
+            const double ds = cumS_[k] - cumS_[j];
+            if (ds > 0.05)
+            {
+                knotCurv_[i] = std::abs(mrpt::math::wrapToPi(
+                                   traj_[k].pose.phi - traj_[j].pose.phi)) /
+                               ds;
+            }
+        }
+    }
+
     // Driving gear per cusp-bounded interval, decided independently for each
     // interval's own end boundary (no dependency between intervals): reverse
     // when the vehicle's recorded heading approaching that boundary is
     // opposed to the boundary's own approach direction (e.g. a
     // differential-drive planner backs the robot in), forward when it
     // matches (an open-space approach the robot can drive nose-first).
-    // Measured over a <=0.7 m window so a jagged micro-tail does not decide
-    // it; the window is anchored at the boundary and reaches backward as far
-    // as needed (even past an earlier cusp) rather than being clipped to the
-    // interval's own extent, so a short interval still gets a robust
-    // decision instead of being dominated by its own noise.
+    // Measured over a <=0.7 m window anchored at the boundary, so a jagged
+    // micro-tail does not decide it, and clipped to the interval's own extent
+    // (see below).
     //
     // The heading compared against is the *previous* knot's, not the
     // boundary knot's own: at an intermediate cusp, comparing against the
@@ -207,11 +263,20 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
             const double      sEnd   = isLast ? totalLength() : cuspS_[k];
             const std::size_t endHIdx =
                 isLast ? traj_.size() - 1 : cuspIdx_[k] - 1;
-            const double endH  = traj_[endHIdx].pose.phi;
-            const double w     = std::min(sEnd, 0.7);
-            const auto   pB    = pointAtArc(sEnd);
-            const auto   pA    = pointAtArc(sEnd - w);
-            const double chord = std::hypot(pB.x - pA.x, pB.y - pA.y);
+            const double endH = traj_[endHIdx].pose.phi;
+            // The window must not reach into the previous interval: across a
+            // cusp, the chord to a short leg doubling back over the previous
+            // one would point the wrong way. Except for legs shorter than the
+            // min turning radius: micro-maneuvers a steering-limited vehicle
+            // cannot execute are judged together with the previous leg.
+            const double sBegin = k == 0 ? 0.0 : cuspS_[k - 1];
+            const double legLen = sEnd - sBegin;
+            const double w      = legLen >= params.min_turn_radius
+                                      ? std::min(legLen, 0.7)
+                                      : std::min(sEnd, 0.7);
+            const auto   pB     = pointAtArc(sEnd);
+            const auto   pA     = pointAtArc(sEnd - w);
+            const double chord  = std::hypot(pB.x - pA.x, pB.y - pA.y);
             const double tang =
                 chord > 1e-3 ? std::atan2(pB.y - pA.y, pB.x - pA.x) : endH;
             gearPerInterval_[k] =
@@ -594,7 +659,20 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
     if (std::abs(curvDesired) > 1e-3)
         cap = std::min(
             cap, std::sqrt(params.max_lateral_accel / std::abs(curvDesired)));
+    // Angular speed limit, enforced through the linear speed so that the
+    // commanded curvature (the path geometry) is kept:
+    if (params.max_omega > 0.0 && std::abs(curv) > 1e-6)
+    {
+        cap = std::min(cap, params.max_omega / std::abs(curv));
+    }
+    // A lagging platform keeps moving ~|v|*lag after a stop command:
+    distToStop =
+        std::max(0.0, distToStop - std::abs(currentV) * params.actuation_lag);
     cap = std::min(cap, std::sqrt(2.0 * params.max_decel * distToStop));
+    if (params.curvature_preview)
+    {
+        cap = std::min(cap, curvaturePreviewCap(proj.s, nextCuspS));
+    }
 
     // Predictive-safety speed scale (caps the target before rate-limiting so
     // decel stays bounded by max_decel).
@@ -684,7 +762,7 @@ double TrajectoryFollower::footprintClearance(
 
 double TrajectoryFollower::forecastContactDistance(
     const mrpt::math::TPose2D& startPose, double startV, double startOmega,
-    double startCurv, double startS, double gear) const
+    double startCurv, double startS, double gear, double contactClearance) const
 {
     double              L  = 0;
     mrpt::math::TPose2D p  = startPose;
@@ -699,7 +777,7 @@ double TrajectoryFollower::forecastContactDistance(
 
     for (int k = 0; k <= nSteps; k++)
     {
-        if (footprintClearance(p) <= params.safety_margin) return L;
+        if (footprintClearance(p) <= contactClearance) return L;
 
         const Command cmd =
             pursuit(p, v, om, cv, s, params.sample_period, gear, 1.0);
@@ -718,16 +796,37 @@ double TrajectoryFollower::forecastContactDistance(
     return std::numeric_limits<double>::infinity();
 }
 
-double TrajectoryFollower::referenceContactDistance(double startS) const
+double TrajectoryFollower::referenceContactDistance(
+    double startS, double maxDist, double contactClearance) const
 {
     const double step = std::max(0.02, params.footprint_sample_resolution);
-    for (double ds = 0; ds <= params.reference_lookahead_dist; ds += step)
+    for (double ds = 0; ds <= maxDist; ds += step)
     {
         const double s = startS + ds;
         if (s > totalLength()) break;
-        if (footprintClearance(poseAtArc(s)) <= params.safety_margin) return ds;
+        if (footprintClearance(poseAtArc(s)) <= contactClearance) return ds;
     }
     return std::numeric_limits<double>::infinity();
+}
+
+double TrajectoryFollower::curvaturePreviewCap(double s, double sMax) const
+{
+    const double a     = std::max(1e-3, params.max_decel);
+    const double reach = params.max_speed * params.max_speed / (2 * a) + 0.5;
+    const double sEnd  = std::min({s + reach, sMax, totalLength()});
+    double       cap   = std::numeric_limits<double>::infinity();
+    for (std::size_t k = 0; k < traj_.size() && cumS_[k] <= sEnd; k++)
+    {
+        if (cumS_[k] <= s || knotCurv_[k] < 1e-3) { continue; }
+        double vCurve = std::sqrt(params.max_lateral_accel / knotCurv_[k]);
+        if (params.max_omega > 0)
+        {
+            vCurve = std::min(vCurve, params.max_omega / knotCurv_[k]);
+        }
+        cap =
+            std::min(cap, std::sqrt(vCurve * vCurve + 2 * a * (cumS_[k] - s)));
+    }
+    return cap;
 }
 
 double TrajectoryFollower::contactDistanceToScale(double d) const
@@ -735,7 +834,16 @@ double TrajectoryFollower::contactDistanceToScale(double d) const
     if (!std::isfinite(d)) return 1.0;
     const double span =
         std::max(1e-3, params.slow_distance - params.stop_distance);
-    return std::clamp((d - params.stop_distance) / span, 0.0, 1.0);
+    const double linearScale =
+        std::clamp((d - params.stop_distance) / span, 0.0, 1.0);
+
+    // Never faster than the speed from which the vehicle can still brake
+    // before getting within stop_distance of the contact:
+    const double vBrake = std::sqrt(
+        2.0 * params.max_decel * std::max(0.0, d - params.stop_distance));
+    const double brakeScale = vBrake / std::max(1e-3, params.max_speed);
+
+    return std::min(linearScale, brakeScale);
 }
 
 // --------------------------------------------------------------- control pose
@@ -929,10 +1037,41 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     // obstacles.
     if (nearPathEnd)
     {
-        minDistToGoal_ = std::min(minDistToGoal_, distToGoal);
-        if (!arrived_ && distToGoal <= params.arrival_radius &&
-            distToGoal > minDistToGoal_ + 0.03)
-            arrived_ = true;
+        // Moving away from the goal only means the closest approach was
+        // passed if the reference path itself approaches the goal here: a
+        // final maneuver may first lead away from it (e.g. up to a cusp, to
+        // then back into the goal pose), and latching there would skip it.
+        // (Not looking past the next cusp, where the path turns back.)
+        constexpr double kDs       = 0.05;  // [m]
+        const double     nextCuspS = currentInterval_ < cuspS_.size()
+                                         ? cuspS_[currentInterval_]
+                                         : std::numeric_limits<double>::infinity();
+        const double     sAhead    = std::min(proj.s + kDs, nextCuspS);
+        const auto       pHere     = pointAtArc(proj.s);
+        const auto       pAhead    = pointAtArc(sAhead);
+        const bool       pathApproaches =
+            (proj.s + kDs >= totalLength() && !std::isfinite(nextCuspS)) ||
+            (sAhead > proj.s + 1e-3 &&
+             std::hypot(pAhead.x - goalPt.x, pAhead.y - goalPt.y) <
+                 std::hypot(pHere.x - goalPt.x, pHere.y - goalPt.y));
+
+        // Likewise, while still braking in the previous gear right after a
+        // cusp (overshoot), moving away is expected:
+        const bool movingInGear = gear * lastCommandedSpeed_ > 0.02;
+
+        if (!pathApproaches || !movingInGear)
+        {
+            minDistToGoal_ = std::numeric_limits<double>::infinity();
+        }
+        else
+        {
+            minDistToGoal_ = std::min(minDistToGoal_, distToGoal);
+            if (!arrived_ && distToGoal <= params.arrival_radius &&
+                distToGoal > minDistToGoal_ + 0.03)
+            {
+                arrived_ = true;
+            }
+        }
     }
     if (arrived_)
     {
@@ -1006,11 +1145,27 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     double scale = 1.0;
     if (!obstacles_.empty())
     {
+        // If the vehicle is already within the safety margin of an obstacle
+        // (e.g. it was parked close to a wall), only predict contact for
+        // motions that get it even closer; otherwise it could never leave.
+        const double clearanceNow = footprintClearance(ctrlPose);
+        const double contactClearance =
+            std::min(params.safety_margin, 0.5 * clearanceNow);
+
+        // The reference sweep must reach, at least, beyond the braking
+        // distance at the current speed:
+        const double refSweepDist = std::max(
+            params.reference_lookahead_dist,
+            params.slow_distance +
+                predV * predV / (2.0 * std::max(1e-3, params.max_decel)));
+
         const double dFwd = forecastContactDistance(
-            ctrlPose, predV, predOmega, predCurv, proj.s, gear);
-        const double dRef = referenceContactDistance(proj.s);
-        scale             = std::min(
-                        contactDistanceToScale(dFwd), contactDistanceToScale(dRef));
+            ctrlPose, predV, predOmega, predCurv, proj.s, gear,
+            contactClearance);
+        const double dRef =
+            referenceContactDistance(proj.s, refSweepDist, contactClearance);
+        scale = std::min(
+            contactDistanceToScale(dFwd), contactDistanceToScale(dRef));
     }
     if (stopped_)
     {
