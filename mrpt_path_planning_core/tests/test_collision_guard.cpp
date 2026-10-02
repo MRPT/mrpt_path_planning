@@ -183,6 +183,15 @@ TEST(CollisionGuard, StaleOrMissingData)
     // Stopping is never modified:
     EXPECT_FALSE(g.filter(0.0, 0.0, mrpt::Clock::fromDouble(1e9)).limited);
 
+    // Never any obstacle data, even with the age check disabled: stop.
+    {
+        auto g2                     = makeGuard();
+        g2.params.max_obstacles_age = 0;
+        const auto r2               = g2.filter(1.0, 0.0, kNow);
+        EXPECT_TRUE(r2.stale);
+        EXPECT_EQ(r2.v, 0.0);
+    }
+
     // Disabled check:
     g.params.max_obstacles_age = 0;
     r                          = g.filter(

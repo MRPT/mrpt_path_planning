@@ -76,7 +76,8 @@ class CollisionGuard
         double margin = 0.05;
 
         /** [s] Obstacle data older than this leads to a full stop. <= 0
-         * disables the check. */
+         * disables the age check (but never having received any obstacle
+         * data always leads to a full stop). */
         double max_obstacles_age = 0.5;
 
         static Parameters      FromYAML(const mrpt::containers::yaml& c);
@@ -178,11 +179,13 @@ class CollisionGuard
     Motion checkMotion(double v, double omega, double vStop, double tR) const;
 
     /** Sweeps the footprint along the poses given by `poseAt(t)` for
-     * `t = 0, dt, 2*dt, ... <= maxT` and returns the last `t` before contact,
-     * or +inf. */
+     * `t` in `(0, maxT]` and returns the last `t` before contact, or +inf.
+     * `dispPerUnit` is the max displacement of any footprint point per unit
+     * of `t`, used to choose the sampling step. */
     template <typename POSE_AT>
     double sweep(
-        POSE_AT poseAt, double dt, double maxT, double reach, bool* inContact,
+        POSE_AT poseAt, double dispPerUnit, double maxT, double reach,
+        bool*                                inContact,
         std::optional<mrpt::math::TPoint2D>* contactPoint) const;
 };
 

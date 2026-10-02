@@ -150,8 +150,8 @@ double CollisionGuard::signedDistance(const mrpt::math::TPoint2D& p) const
 
 template <typename POSE_AT>
 double CollisionGuard::sweep(
-    POSE_AT poseAt, double dt, double maxT, double reach, bool* inContact,
-    std::optional<mrpt::math::TPoint2D>* contactPoint) const
+    POSE_AT poseAt, double dispPerUnit, double maxT, double reach,
+    bool* inContact, std::optional<mrpt::math::TPoint2D>* contactPoint) const
 {
     // Only obstacles the footprint could reach:
     const double reachR  = reach + maxRadius_ + params.margin;
@@ -176,6 +176,13 @@ double CollisionGuard::sweep(
     const double thr = std::min(params.margin, 0.5 * clearanceNow);
     if (inContact) { *inContact = contact; }
     if (candidates.empty() || maxT <= 0) { return kInf; }
+
+    // Step such that no footprint point moves more than thr/2 between
+    // samples, so a point cannot cross the threshold unnoticed (with a floor
+    // of 1 mm of displacement, to bound the cost for a near-zero threshold):
+    constexpr double kMinDisp = 1e-3;  // [m]
+    const double     dt =
+        std::max(kMinDisp, 0.5 * thr) / std::max(dispPerUnit, 1e-6);
 
     for (double t = dt;; t += dt)
     {
@@ -209,14 +216,11 @@ double CollisionGuard::freeDistance(
     ASSERT_(v != 0);
     const double sgn  = v > 0 ? 1.0 : -1.0;
     const double curv = omega / v;
-    // Step such that no footprint point moves more than margin/2 between
-    // samples, so a point cannot cross into the footprint unnoticed:
-    const double ds = std::max(
-        1e-3, 0.5 * std::max(params.margin, 0.01) /
-                  (1.0 + std::abs(curv) * maxRadius_));
+    // Max displacement of any footprint point per unit of arc length:
+    const double dispPerUnit = 1.0 + std::abs(curv) * maxRadius_;
     return sweep(
-        [&](double s) { return arcPose(sgn * s, curv); }, ds, maxDist, maxDist,
-        inContact, contactPoint);
+        [&](double s) { return arcPose(sgn * s, curv); }, dispPerUnit, maxDist,
+        maxDist, inContact, contactPoint);
 }
 
 double CollisionGuard::freeAngle(
@@ -225,11 +229,10 @@ double CollisionGuard::freeAngle(
 {
     ASSERT_(omega != 0);
     const double sgn = omega > 0 ? 1.0 : -1.0;
-    const double da  = std::max(
-         1e-4, 0.5 * std::max(params.margin, 0.01) / std::max(maxRadius_, 1e-3));
+    // Max displacement of any footprint point per radian:
     return sweep(
-        [&](double a) { return mrpt::math::TPose2D(0, 0, sgn * a); }, da,
-        maxAngle, 0.0, inContact, contactPoint);
+        [&](double a) { return mrpt::math::TPose2D(0, 0, sgn * a); },
+        std::max(maxRadius_, 1e-3), maxAngle, 0.0, inContact, contactPoint);
 }
 
 // ------------------------------------------------------------------- filter
@@ -285,7 +288,8 @@ CollisionGuard::Result CollisionGuard::filter(
     double age = 0;
     if (obstaclesStamp_ == INVALID_TIMESTAMP)
     {
-        r.stale = params.max_obstacles_age > 0;
+        // Never received any obstacle data: always fail safe.
+        r.stale = true;
     }
     else
     {
