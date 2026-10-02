@@ -489,6 +489,12 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      * `s`. */
     mrpt::math::TPose2D poseAtArc(double s) const;
 
+    /** Pose of the vehicle body at arc-length `s` on the reference path: the
+     * position, and the heading interpolated from the reference poses (which,
+     * unlike the path tangent, is the body heading also on reverse
+     * segments). */
+    mrpt::math::TPose2D bodyPoseAtArc(double s) const;
+
     /** Min distance from the footprint (at map-frame pose `p`) to the nearest
      * obstacle point; +inf if no obstacles are set. */
     double footprintClearance(const mrpt::math::TPose2D& p) const;

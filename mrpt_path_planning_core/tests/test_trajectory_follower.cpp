@@ -1829,3 +1829,38 @@ TEST(TrajectoryFollower, NearDuplicateFinalPointIsNotACusp)
     EXPECT_LT(std::hypot(r.finalPose.x - 2.0, r.finalPose.y), 0.15)
         << "final pose: " << r.finalPose.asString();
 }
+
+TEST(TrajectoryFollower, ReferenceSweepUsesBodyHeadingWhenReversing)
+{
+    // A car-like footprint, very asymmetric around its origin (rear axle),
+    // backs up 3 m to a goal 0.35 m in front of a wall behind it. Sweeping the
+    // footprint along the path tangent (heading flipped on reverse segments)
+    // would wrongly put its front into the wall.
+    mpp::Trajectory tr;
+    for (int i = 0; i <= 30; i++)
+    {
+        tr.emplace_back(TPose2D(3.0 - 0.1 * i, 0, 0), 0.5);  // reverse
+    }
+
+    mrpt::math::TPolygon2D shape;
+    shape.emplace_back(-0.3, -0.5);
+    shape.emplace_back(1.8, -0.5);
+    shape.emplace_back(1.8, 0.5);
+    shape.emplace_back(-0.3, 0.5);
+
+    std::vector<TPoint2D> wall;
+    for (double y = -2.0; y <= 2.0; y += 0.05) { wall.emplace_back(-0.65, y); }
+
+    mpp::TrajectoryFollower f;
+    f.params.max_speed          = 0.5;
+    f.params.min_lookahead_dist = 0.8;
+    f.setRobotShape(shape);
+    f.setObstacles(wall);
+    f.setTrajectory(tr);
+
+    std::vector<TPoint2D> pts;
+    for (const auto& p : tr) { pts.emplace_back(p.pose.x, p.pose.y); }
+    const auto r = simulate(f, {3.0, 0, 0}, pts, 4000);
+    EXPECT_TRUE(r.reached) << "final pose: " << r.finalPose.asString();
+    EXPECT_LT(std::abs(r.finalPose.x), 0.2);
+}

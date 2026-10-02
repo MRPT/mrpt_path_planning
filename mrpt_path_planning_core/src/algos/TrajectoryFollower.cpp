@@ -425,6 +425,22 @@ mrpt::math::TPose2D TrajectoryFollower::poseAtArc(double s) const
     return {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), heading};
 }
 
+mrpt::math::TPose2D TrajectoryFollower::bodyPoseAtArc(double s) const
+{
+    if (traj_.empty()) return {0, 0, 0};
+    s             = std::clamp(s, 0.0, totalLength());
+    std::size_t i = 0;
+    while (i + 2 < traj_.size() && cumS_[i + 1] < s) i++;
+    const auto&  a      = traj_[i].pose;
+    const auto&  b      = traj_[i + 1].pose;
+    const double segLen = cumS_[i + 1] - cumS_[i];
+    const double t      = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
+    const double phi    = a.phi + t * mrpt::math::wrapToPi(b.phi - a.phi);
+    return {
+        a.x + t * (b.x - a.x), a.y + t * (b.y - a.y),
+        mrpt::math::wrapToPi(phi)};
+}
+
 double TrajectoryFollower::speedCapAt(double s) const
 {
     if (traj_.empty()) return params.max_speed;
@@ -804,7 +820,10 @@ double TrajectoryFollower::referenceContactDistance(
     {
         const double s = startS + ds;
         if (s > totalLength()) break;
-        if (footprintClearance(poseAtArc(s)) <= contactClearance) return ds;
+        if (footprintClearance(bodyPoseAtArc(s)) <= contactClearance)
+        {
+            return ds;
+        }
     }
     return std::numeric_limits<double>::infinity();
 }
