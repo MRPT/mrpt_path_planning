@@ -6,10 +6,10 @@
 
 #include <mpp/data/TrajectoriesAndRobotShape.h>
 #include <mpp/ptgs/DiffDrive_C.h>
-#include <mrpt/system/filesystem.h>
 #include <mrpt/system/os.h>
 
 #include <cstdlib>
+#include <filesystem>
 #include <functional>
 
 using namespace mpp;
@@ -30,11 +30,10 @@ std::string ptgCacheDirectory()
     }
     if (base.empty()) { return "."; }
     const std::string dir = base + "/mrpt_path_planning";
-    if (!mrpt::system::directoryExists(dir) &&
-        !mrpt::system::createDirectory(dir))
-    {
-        return ".";
-    }
+    // Best effort: the cache is optional, so never throw from here.
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (ec || !std::filesystem::is_directory(dir, ec)) { return "."; }
     return dir;
 }
 
