@@ -50,11 +50,12 @@ mvsim-demo-astar-planner-params.yaml for demo-holonomic.svg) -->
   and analytic goal expansion for tight maneuvers such as parking.
 - **Certified collision checking**: the collision grids are conservative, so a
   path reported as free is free for the continuous swept motion.
-- **Pluggable cost layers**: obstacle-proximity cost maps and
-  preferred-waypoint attractors.
+- **Pluggable cost layers**: obstacle-proximity cost maps,
+  preferred-waypoint attractors, and a penalty for driving in reverse.
 - **Navigation building blocks**: `NavEngine` (waypoint-sequence navigation
-  with replanning) and `TrajectoryFollower` (pure pursuit with predictive
-  safety).
+  with replanning), `TrajectoryFollower` (pure pursuit with predictive
+  safety, valid at any speed), and `CollisionGuard` (last-resort velocity
+  filter ensuring the robot can always stop before sensed obstacles).
 - **Headless core**: the algorithms library has no GUI dependency.
 
 ## Quick start
@@ -191,6 +192,7 @@ path-planner-cli \
 | Save an animated SVG of the robot following the path | `--save-svg plan.svg --svg-animate --no-gui` |
 | Cleaner SVG for figures: no search tree, box or label, custom width | `--svg-no-tree --svg-no-bbox --svg-no-status --svg-width 600` |
 | Verbose output, skip path refinement | `-v DEBUG --no-refine` |
+| Penalize driving in reverse (extra cost per second) | `--reverse-cost-factor 1.0` |
 
 With forward and reverse circular-arc PTGs (as in `ptgs_ackermann_vehicle.ini`),
 pose and position goals are reached exactly through Reeds-Shepp maneuvers, if
