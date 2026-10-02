@@ -36,7 +36,10 @@ enum class FollowerStatus : uint8_t
      * in the safety stage; never emitted by the pursuit core alone). */
     Blocked,
     /** Cross-track error exceeded the configured limit. */
-    OffPathExceeded
+    OffPathExceeded,
+    /** Stopped at its closest approach to the goal (see `arrival_radius`),
+     * but with a heading error above `arrival_ang_tol`. */
+    MissedGoal
 };
 
 /** Pure-pursuit trajectory follower core with predictive safety (ROS-free).
@@ -241,6 +244,13 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
          * so it never drives back away from a goal it cannot perfectly seat (no
          * runaway / thrashing on a kinematically infeasible final pose). */
         double arrival_radius = 0.3;
+
+        /** [rad] If > 0, settling at the closest approach (see
+         * `arrival_radius`) with a larger heading error than this reports
+         * `MissedGoal` instead of `ReachedGoal`, so the caller can replan a
+         * corrective maneuver. <= 0: always `ReachedGoal` (best-effort
+         * heading). */
+        double arrival_ang_tol = 0.0;
 
         double control_period = 0.05;  //!< [s] nominal call period (20 Hz)
         double horizon        = 1.5;  //!< [s] emitted chunk length
