@@ -1864,3 +1864,41 @@ TEST(TrajectoryFollower, ReferenceSweepUsesBodyHeadingWhenReversing)
     EXPECT_TRUE(r.reached) << "final pose: " << r.finalPose.asString();
     EXPECT_LT(std::abs(r.finalPose.x), 0.2);
 }
+
+// When the robot settles at its closest approach to the goal with a large
+// heading error (here, a final heading the path does not lead to), it reports
+// ReachedGoal by default, or MissedGoal if `arrival_ang_tol` is set.
+TEST(TrajectoryFollower, ArrivalHeadingToleranceReportsMissedGoal)
+{
+    const std::vector<TPoint2D> pts  = {{0, 0}, {5, 0}};
+    auto                        traj = polyToTraj(pts, 0.5);
+    traj.back().pose.phi             = mrpt::DEG2RAD(60.0);
+
+    const auto finalStatus = [&](double arrivalAngTolDeg)
+    {
+        mpp::TrajectoryFollower f;
+        f.params.arrival_ang_tol = mrpt::DEG2RAD(arrivalAngTolDeg);
+        f.setTrajectory(traj);
+        TPose2D             robot(0, 0, 0);
+        double              v      = 0;
+        mpp::FollowerStatus status = mpp::FollowerStatus::Idle;
+        for (int k = 0; k < 2000; k++)
+        {
+            const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+            status         = out.status;
+            if (status != mpp::FollowerStatus::Running) { break; }
+            v = 0;
+            if (!out.command.points.empty())
+            {
+                const auto tw = out.command.points.front().twist;
+                robot =
+                    integrate(robot, tw.vx, tw.omega, f.params.control_period);
+                v = tw.vx;
+            }
+        }
+        return status;
+    };
+
+    EXPECT_EQ(finalStatus(0.0), mpp::FollowerStatus::ReachedGoal);
+    EXPECT_EQ(finalStatus(30.0), mpp::FollowerStatus::MissedGoal);
+}

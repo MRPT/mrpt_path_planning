@@ -76,6 +76,7 @@ void TrajectoryFollower::Parameters::load_from_yaml(
     MCP_LOAD_OPT(c, anchor_max_lin_divergence);
     MCP_LOAD_OPT(c, anchor_max_ang_divergence);
     MCP_LOAD_OPT(c, arrival_radius);
+    MCP_LOAD_OPT_DEG(c, arrival_ang_tol);
     MCP_LOAD_OPT(c, control_period);
     MCP_LOAD_OPT(c, horizon);
     MCP_LOAD_OPT(c, sample_period);
@@ -117,6 +118,7 @@ mrpt::containers::yaml TrajectoryFollower::Parameters::as_yaml() const
     MCP_SAVE(c, anchor_max_lin_divergence);
     MCP_SAVE(c, anchor_max_ang_divergence);
     MCP_SAVE(c, arrival_radius);
+    MCP_SAVE_DEG(c, arrival_ang_tol);
     MCP_SAVE(c, control_period);
     MCP_SAVE(c, horizon);
     MCP_SAVE(c, sample_period);
@@ -1100,9 +1102,14 @@ TrajectoryFollower::Output TrajectoryFollower::step(
         // than hold `Running` forever -- which hangs the caller with the robot
         // parked and no resolution -- report the goal as reached (position
         // best-effort). Any residual heading is left to the downstream maneuver
-        // (e.g. the reactive corridor-follower that backs into the row).
+        // (e.g. a reactive controller for the last meters), unless
+        // `arrival_ang_tol` asks to report it as missed.
+        const bool headingMissed =
+            params.arrival_ang_tol > 0 &&
+            std::abs(out.heading_err) > params.arrival_ang_tol;
         lastCommandedSpeed_ = 0;
-        out.status          = FollowerStatus::ReachedGoal;
+        out.status          = headingMissed ? FollowerStatus::MissedGoal
+                                            : FollowerStatus::ReachedGoal;
         out.target_speed    = 0;
         return out;  // empty command => node stops
     }
