@@ -1283,16 +1283,26 @@ bool TPS_Astar::start_edge_is_clear(
     const double rejectR = maxR + thr;
 
     // Only obstacles reachable by the footprint along this edge:
-    const double reach = ptg.getPathDist(k, step) + rejectR;
+    const double reach = ptg.getPathDist(k, step) + rejectR + 0.5;
     std::vector<mrpt::math::TPoint2D> pts;
     for (const auto& p : startLocalObstacles_)
     {
         if (p.sqrNorm() <= reach * reach) { pts.push_back(p); }
     }
 
+    // Checked at every PTG step, with the threshold increased by half the max
+    // displacement of any footprint point since the previous step, so the
+    // motion in between cannot get closer than `thr` unnoticed:
+    mrpt::math::TPose2D prevPose = ptg.getPathPose(k, 0);
     for (uint32_t s = 1; s <= step; s++)
     {
         const auto   pose = ptg.getPathPose(k, s);
+        const double disp =
+            std::hypot(pose.x - prevPose.x, pose.y - prevPose.y) +
+            std::abs(mrpt::math::angDistance(pose.phi, prevPose.phi)) * maxR;
+        prevPose          = pose;
+        const double thrS = thr + 0.5 * disp;
+        const double rejS = rejectR + 0.5 * disp;
         const double c    = std::cos(pose.phi);
         const double sn   = std::sin(pose.phi);
         for (const auto& p : pts)
@@ -1301,8 +1311,8 @@ bool TPS_Astar::start_edge_is_clear(
             const double dy = p.y - pose.y;
             const double qx = c * dx + sn * dy;
             const double qy = -sn * dx + c * dy;
-            if (qx * qx + qy * qy > rejectR * rejectR) { continue; }
-            if (signedDistanceToShape(qx, qy, startRobotShape_) <= thr)
+            if (qx * qx + qy * qy > rejS * rejS) { continue; }
+            if (signedDistanceToShape(qx, qy, startRobotShape_) <= thrS)
             {
                 return false;
             }

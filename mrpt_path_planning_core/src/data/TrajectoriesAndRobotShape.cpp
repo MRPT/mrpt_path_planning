@@ -95,6 +95,11 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
             c.read_double(s, "RobotModel_circular_shape_radius", -1.0, false);
         robot_radius > 0)
     {
+        ASSERTMSG_(
+            xs.empty(),
+            "Both a polygonal (RobotModel_shape2D_*) and a circular "
+            "(RobotModel_circular_shape_radius) robot shape are defined: "
+            "define only one.");
         auto& r = robotShape.emplace<robot_radius_t>();
         r       = robot_radius;
     }
