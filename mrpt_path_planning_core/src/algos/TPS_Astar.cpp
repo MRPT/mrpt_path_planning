@@ -28,6 +28,46 @@ IMPLEMENTS_MRPT_OBJECT(TPS_Astar, Planner, mpp)
 
 using namespace mpp;
 
+namespace
+{
+// Signed distance from a robot-frame point to the robot footprint (negative
+// inside). Point robots: distance to the origin.
+double signedDistanceToShape(double x, double y, const RobotShape& shape)
+{
+    if (const auto* r = std::get_if<robot_radius_t>(&shape))
+    {
+        return std::hypot(x, y) - *r;
+    }
+    const auto* poly = std::get_if<mrpt::math::TPolygon2D>(&shape);
+    if (!poly || poly->size() < 3) { return std::hypot(x, y); }
+
+    bool   inside = false;
+    double minD2  = std::numeric_limits<double>::infinity();
+    for (size_t i = 0, j = poly->size() - 1; i < poly->size(); j = i++)
+    {
+        const auto& a = (*poly)[j];
+        const auto& b = (*poly)[i];
+        if (((b.y > y) != (a.y > y)) &&
+            (x < (a.x - b.x) * (y - b.y) / (a.y - b.y) + b.x))
+        {
+            inside = !inside;
+        }
+        const double ex = b.x - a.x;
+        const double ey = b.y - a.y;
+        const double l2 = ex * ex + ey * ey;
+        const double t =
+            l2 > 0
+                ? std::clamp(((x - a.x) * ex + (y - a.y) * ey) / l2, 0.0, 1.0)
+                : 0.0;
+        const double dx = x - (a.x + t * ex);
+        const double dy = y - (a.y + t * ey);
+        minD2           = std::min(minD2, dx * dx + dy * dy);
+    }
+    const double d = std::sqrt(minD2);
+    return inside ? -d : d;
+}
+}  // namespace
+
 mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
 {
     mrpt::containers::yaml c = mrpt::containers::yaml::Map();
@@ -128,6 +168,26 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     po.originalInput = in;
 
     auto& tree = po.motionTree;  // shortcut
+
+    // Detection of a start pose closer than the PTG clearance to obstacles
+    // (see local_obstacles_to_buffers()). The collision grid cell size is
+    // added, since cells are marked conservatively:
+    startPose_            = in.stateStart.pose;
+    startRobotShape_      = in.ptgs.robotShape;
+    startClearance_       = 0;
+    startWithinClearance_ = false;
+    startLocalObstacles_.clear();
+    for (const auto& ptg : in.ptgs.ptgs)
+    {
+        if (const auto* g =
+                dynamic_cast<const ptg::DiffDriveCollisionGridBased*>(
+                    ptg.get()))
+        {
+            mrpt::keep_max(
+                startClearance_,
+                g->getClearance() + 2 * g->getCollisionGridResolution());
+        }
+    }
 
     // clipping dist for all ptgs:
     double MAX_XY_DIST = 0;
@@ -1119,7 +1179,9 @@ TPS_Astar::list_paths_to_neighbors_t
             // this trajectory direction (built once above for all candidates).
             const distance_t freeDistance = tpObstacles[tpsPt.k];
 
-            if (relTrgDist >= freeDistance)
+            if (relTrgDist >= freeDistance ||
+                (startWithinClearance_ && from.state.pose == *startPose_ &&
+                 !start_edge_is_clear(*ptg, tpsPt.k, tpsPt.step)))
             {
                 // we would need to move farther away than what is possible
                 // without colliding: discard this trajectory.
@@ -1203,6 +1265,52 @@ TPS_Astar::list_paths_to_neighbors_t
     return neighbors;
 }
 
+bool TPS_Astar::start_edge_is_clear(
+    const ptg_t& ptg, trajectory_index_t k, uint32_t step) const
+{
+    double maxR = 0;
+    if (const auto* r = std::get_if<robot_radius_t>(&startRobotShape_))
+    {
+        maxR = *r;
+    }
+    else if (
+        const auto* poly =
+            std::get_if<mrpt::math::TPolygon2D>(&startRobotShape_))
+    {
+        for (const auto& v : *poly) { mrpt::keep_max(maxR, v.norm()); }
+    }
+    const double thr     = startSweepThreshold_;
+    const double rejectR = maxR + thr;
+
+    // Only obstacles reachable by the footprint along this edge:
+    const double reach = ptg.getPathDist(k, step) + rejectR;
+    std::vector<mrpt::math::TPoint2D> pts;
+    for (const auto& p : startLocalObstacles_)
+    {
+        if (p.sqrNorm() <= reach * reach) { pts.push_back(p); }
+    }
+
+    for (uint32_t s = 1; s <= step; s++)
+    {
+        const auto   pose = ptg.getPathPose(k, s);
+        const double c    = std::cos(pose.phi);
+        const double sn   = std::sin(pose.phi);
+        for (const auto& p : pts)
+        {
+            const double dx = p.x - pose.x;
+            const double dy = p.y - pose.y;
+            const double qx = c * dx + sn * dy;
+            const double qy = -sn * dx + c * dy;
+            if (qx * qx + qy * qy > rejectR * rejectR) { continue; }
+            if (signedDistanceToShape(qx, qy, startRobotShape_) <= thr)
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 mrpt::maps::CPointsMap::Ptr TPS_Astar::cached_local_obstacles(
     const mrpt::math::TPose2D&                      queryPose,
     const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
@@ -1253,6 +1361,48 @@ size_t TPS_Astar::local_obstacles_to_buffers(
         inv.composePoint(xs[i], ys[i], ox, oy);
         localObsX_[i] = static_cast<float>(ox);
         localObsY_[i] = static_cast<float>(oy);
+    }
+
+    // From the start pose: if it is closer than the clearance to some
+    // obstacle, use an exact sweep instead (see start_edge_is_clear()), so the
+    // robot can still move away from it:
+    if (startPose_.has_value() && queryPose == *startPose_ &&
+        startClearance_ > 0)
+    {
+        double dMin = std::numeric_limits<double>::infinity();
+        for (size_t i = 0; i < n; i++)
+        {
+            mrpt::keep_min(
+                dMin, signedDistanceToShape(
+                          localObsX_[i], localObsY_[i], startRobotShape_));
+        }
+        if (dMin <= 0)
+        {
+            MRPT_LOG_THROTTLE_WARN(
+                1.0, "Start pose is in collision: no path can be found.");
+        }
+        else if (dMin < startClearance_)
+        {
+            if (!startWithinClearance_)
+            {
+                MRPT_LOG_DEBUG_STREAM(
+                    "Start pose is " << dMin
+                                     << " m from obstacles, closer than the "
+                                        "clearance: using an exact sweep for "
+                                        "edges leaving it.");
+            }
+            startWithinClearance_ = true;
+            startSweepThreshold_  = std::min(startClearance_, 0.5 * dMin);
+            startLocalObstacles_.resize(n);
+            for (size_t i = 0; i < n; i++)
+            {
+                startLocalObstacles_[i] = {localObsX_[i], localObsY_[i]};
+            }
+            // The exact sweep replaces the grid check:
+            localObsX_.clear();
+            localObsY_.clear();
+            return 0;
+        }
     }
     return n;
 }
@@ -1571,6 +1721,11 @@ std::vector<TPS_Astar::RsShotEdge> TPS_Astar::execute_shot(
                 localObsX_.data(), localObsY_.data(), nObs, tpObstacles);
         }
         if (ptg.getPathDist(ch.k, ch.step) >= (*freeDist)[ch.k]) { return {}; }
+        if (startWithinClearance_ && ch.from.pose == *startPose_ &&
+            !start_edge_is_clear(ptg, ch.k, ch.step))
+        {
+            return {};
+        }
     }
 
     std::vector<RsShotEdge> out;

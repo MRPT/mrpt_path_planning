@@ -115,3 +115,9 @@ selfdriving_add_test(
     SOURCES test_robot_description.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
 )
+
+selfdriving_add_test(
+    TARGET  test_astar_start_clearance
+    SOURCES test_astar_start_clearance.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
