@@ -105,6 +105,12 @@ selfdriving_add_test(
 )
 
 selfdriving_add_test(
+    TARGET  test_cost_evaluator_reverse
+    SOURCES test_cost_evaluator_reverse.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
+
+selfdriving_add_test(
     TARGET  test_robot_description
     SOURCES test_robot_description.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main

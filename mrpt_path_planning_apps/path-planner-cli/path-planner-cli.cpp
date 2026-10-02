@@ -6,6 +6,7 @@
 
 #include <mpp/algos/CostEvaluatorCostMap.h>
 #include <mpp/algos/CostEvaluatorPreferredWaypoint.h>
+#include <mpp/algos/CostEvaluatorReverseMotion.h>
 #include <mpp/algos/TPS_Astar.h>
 #include <mpp/algos/refine_trajectory.h>
 #include <mpp/algos/trajectories.h>
@@ -51,6 +52,7 @@ static bool         argRandomSeed_set{false};
 static std::string  arg_plugins;
 static std::string  arg_costMap;
 static bool         arg_costMap_set{false};
+static double       arg_reverseCostFactor{0.0};
 static std::string  arg_waypoints;
 static bool         arg_waypoints_set{false};
 static std::string  arg_waypointsParams;
@@ -211,6 +213,15 @@ static void do_plan_path()
             *obsPts, costMapParams, pi.stateStart.pose, pi.ptgs.robotShape);
 
         planner->costEvaluators_.push_back(costmap);
+    }
+
+    // Reverse motion penalty:
+    if (arg_reverseCostFactor > 0)
+    {
+        auto costEval = mpp::CostEvaluatorReverseMotion::Create();
+        costEval->params_.reverseTimeCostFactor = arg_reverseCostFactor;
+        costEval->setPTGs(pi.ptgs);
+        planner->costEvaluators_.push_back(costEval);
     }
 
     // Preferred waypoints:
@@ -442,6 +453,10 @@ int main(int argc, char** argv)
             "Creates a costmap from obstacle point clouds with the given "
             "parameters from a YAML "
             "file.");
+        app.add_option(
+            "--reverse-cost-factor", arg_reverseCostFactor,
+            "If >0, adds this extra cost per second of reverse motion "
+            "(CostEvaluatorReverseMotion).");
         app.add_option(
             "--waypoints", arg_waypoints,
             "This creates a preferred-waypoints costlayer, from the waypoint "

@@ -51,6 +51,7 @@ set(LIB_SRCS
 	src/algos/CostEvaluator.cpp
 	src/algos/CostEvaluatorCostMap.cpp
 	src/algos/CostEvaluatorPreferredWaypoint.cpp
+	src/algos/CostEvaluatorReverseMotion.cpp
 	src/algos/edge_interpolated_path.cpp
 	src/algos/NavEngine.cpp
 	src/algos/Planner.cpp
@@ -86,6 +87,7 @@ set(LIB_PUBLIC_HDRS
 	include/mpp/algos/CostEvaluator.h
 	include/mpp/algos/CostEvaluatorCostMap.h
 	include/mpp/algos/CostEvaluatorPreferredWaypoint.h
+	include/mpp/algos/CostEvaluatorReverseMotion.h
 	include/mpp/algos/edge_interpolated_path.h
 	include/mpp/algos/NavEngine.h
 	include/mpp/algos/Planner.h
