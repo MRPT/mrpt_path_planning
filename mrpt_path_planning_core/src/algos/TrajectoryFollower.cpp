@@ -1146,11 +1146,14 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     if (!obstacles_.empty())
     {
         // If the vehicle is already within the safety margin of an obstacle
-        // (e.g. it was parked close to a wall), only predict contact for
-        // motions that get it even closer; otherwise it could never leave.
-        const double clearanceNow = footprintClearance(ctrlPose);
-        const double contactClearance =
-            std::min(params.safety_margin, 0.5 * clearanceNow);
+        // (e.g. it was parked close to a wall), predict contact for motions
+        // that get it closer (beyond a small tolerance for sliding along it);
+        // otherwise it could never leave.
+        constexpr double kApproachTolerance = 0.01;  // [m]
+        const double     clearanceNow       = footprintClearance(ctrlPose);
+        const double     contactClearance   = std::min(
+                  params.safety_margin,
+                  std::max(0.0, clearanceNow - kApproachTolerance));
 
         // The reference sweep must reach, at least, beyond the braking
         // distance at the current speed:
