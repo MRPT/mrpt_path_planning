@@ -34,8 +34,9 @@ Three colcon/ROS 2 packages, each with its own `package.xml` and
 mrpt_path_planning_core/        Headless library. CMake package and target:
 │                               find_package(mrpt_path_planning) / mpp::mrpt_path_planning
 ├── include/mpp/algos/          Planners (TPS_Astar, TPS_Astar_Bidir), cost evaluators,
-│                               NavEngine, TrajectoryFollower, collision/interpolation
-│                               helpers, 3D scene and SVG rendering (no windowing)
+│                               NavEngine, TrajectoryFollower, CollisionGuard,
+│                               collision/interpolation helpers, 3D scene and SVG
+│                               rendering (no windowing)
 ├── include/mpp/data/           Planner I/O, SE(2) states, motion tree, trajectories
 ├── include/mpp/interfaces/     Obstacle sources, vehicle interfaces
 ├── include/mpp/ptgs/           PTG implementations (DiffDrive_C, HolonomicBlend)
@@ -115,9 +116,17 @@ goals: the shortest path to the point with a free final heading, else the
 shortest one to any sampled heading at which the footprint fits at the goal
 (none: no shots). A search reaching the goal cell first tries a shot from there.
 
+**Robot description.** The PTG `.ini` section (`TrajectoriesAndRobotShape`)
+holds the PTGs, the footprint (`RobotModel_shape2D_*` or a radius) and the
+vehicle's physical `RobotModel_min_turning_radius`; C-PTGs turning tighter are
+rejected when loaded. It is the single source of truth shared by planner and
+follower. PTG collision grids are cached in `~/.cache/mrpt_path_planning`
+(or `$XDG_CACHE_HOME`), named by a hash of their configuration.
+
 **Cost model.** Edge cost = PTG segment estimated execution time + the sum of
-cost evaluators: `CostEvaluatorCostMap` (obstacle-proximity penalty) and
-`CostEvaluatorPreferredWaypoint` (reward near given waypoints).
+cost evaluators: `CostEvaluatorCostMap` (obstacle-proximity penalty),
+`CostEvaluatorPreferredWaypoint` (reward near given waypoints) and
+`CostEvaluatorReverseMotion` (extra cost per second driven in reverse).
 
 **Bidirectional A\* (`TPS_Astar_Bidir`).** Searches forward from the start and
 backward from the goal (predecessors from inverted PTG relative poses) until
@@ -130,8 +139,13 @@ connect the exact node poses; `plan_to_trajectory()` samples the path in time.
 **Navigation.** `NavEngine` is a state machine for waypoint-sequence navigation
 with a planner thread, enqueued motion commands and `VehicleMotionInterface`.
 `TrajectoryFollower` is a ROS-free pure-pursuit core with predictive safety
-(footprint sweep against live obstacles), consuming a `Trajectory` and emitting
-`SampledTrajectory` chunks via `TrajectoryVehicleInterface`.
+(footprint sweep against live obstacles, braking-distance aware), consuming a
+`Trajectory` and emitting `SampledTrajectory` chunks via
+`TrajectoryVehicleInterface`. Its speed profile anticipates path curvature and
+stops (goal, cusps) over the braking distance, so the same parameters work at
+any speed. `CollisionGuard` is an independent last-resort filter for velocity
+commands: using only robot-frame sensed points, it caps the speed so the robot
+can always stop along the commanded arc before contact (stale data: stop).
 
 ## TPS_Astar::plan() flow
 
@@ -164,6 +178,12 @@ with a planner thread, enqueued motion commands and `VehicleMotionInterface`.
   (`refDistance + robotRadius + clearance`).
 - **Goal semantics.** R(2) goals match position only (`sameLocation()`); SE(2)
   goals match all three coordinates.
+- **Start within clearance.** If the start pose is closer than the PTG clearance
+  to obstacles (but not in collision), edges leaving it use an exact footprint
+  sweep that only forbids getting closer (`tests/test_astar_start_clearance.cpp`).
+- **Collision guard soundness.** With a reaction time covering the control
+  period and actuation lag, the guard never lets a vehicle with the assumed
+  braking reach an obstacle (`tests/test_collision_guard.cpp`, closed loop).
 - **Admissibility.** With `heuristic_epsilon = 1`, heuristics must stay
   admissible and consistent (`tests/test_heuristic.cpp`,
   `tests/test_reeds_shepp.cpp`).

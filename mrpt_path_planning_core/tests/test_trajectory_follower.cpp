@@ -1661,3 +1661,206 @@ TEST(TrajectoryFollower, OffPathDebounceSuppressesTransientSpike)
     EXPECT_EQ(out.status, mpp::FollowerStatus::OffPathExceeded)
         << "a sustained deviation must still trip the fault";
 }
+
+TEST(TrajectoryFollower, ExecutesFinalReverseManeuverNearGoal)
+{
+    // Forward 4 m, then back up 0.24 m (body heading kept, i.e. driving in
+    // reverse) to the goal: the cusp is within arrival_radius of the goal,
+    // but the final reverse maneuver must still be executed.
+    mpp::Trajectory tr;
+    for (double x = 0; x <= 4.0 + 1e-9; x += 0.1)
+    {
+        tr.emplace_back(TPose2D(x, 0, 0), 0.5);
+    }
+    const TPose2D goal(3.76, -0.03, 0.0);
+    for (int i = 1; i <= 4; i++)
+    {
+        const double t = i / 4.0;
+        tr.emplace_back(
+            TPose2D(4.0 + t * (goal.x - 4.0), t * goal.y, 0.0), 0.5);
+    }
+
+    mpp::TrajectoryFollower f;
+    f.params.max_speed          = 0.5;
+    f.params.min_lookahead_dist = 0.8;
+    f.params.max_omega          = 1.0;
+    f.setTrajectory(tr);
+
+    std::vector<TPoint2D> pts;
+    for (const auto& p : tr) { pts.emplace_back(p.pose.x, p.pose.y); }
+    const auto r = simulateVerbose(f, {0, 0, 0}, pts, goal);
+    ASSERT_TRUE(r.reached);
+    EXPECT_LT(std::hypot(r.finalPose.x - goal.x, r.finalPose.y - goal.y), 0.15)
+        << "final pose: " << r.finalPose.asString();
+}
+
+namespace
+{
+// 10 m straight, then a left arc of radius 1 m (quarter turn), then straight.
+mpp::Trajectory straightThenCurve()
+{
+    mpp::Trajectory tr;
+    for (double x = 0; x < 10.0; x += 0.1)
+    {
+        tr.emplace_back(TPose2D(x, 0, 0), 0);
+    }
+    for (double a = 0; a <= M_PI / 2 + 1e-9; a += M_PI / 40)
+    {
+        tr.emplace_back(TPose2D(10 + std::sin(a), 1 - std::cos(a), a), 0);
+    }
+    for (double y = 1.1; y < 5.0; y += 0.1)
+    {
+        tr.emplace_back(TPose2D(11, y, M_PI / 2), 0);
+    }
+    return tr;
+}
+
+// Commanded speed when entering the curve (x ~ 10).
+double speedEnteringCurve(bool preview)
+{
+    mpp::TrajectoryFollower f;
+    f.params.max_speed         = 3.0;
+    f.params.max_accel         = 2.0;
+    f.params.max_decel         = 1.0;
+    f.params.max_lateral_accel = 1.0;
+    f.params.curvature_preview = preview;
+    f.setTrajectory(straightThenCurve());
+
+    TPose2D      robot = {0, 0, 0};
+    double       v     = 0;
+    const double dt    = f.params.control_period;
+    for (int k = 0; k < 2000; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        if (out.command.points.empty()) { break; }
+        const auto tw = out.command.points.front().twist;
+        if (robot.x >= 9.95) { return tw.vx; }
+        robot = integrate(robot, tw.vx, tw.omega, dt);
+        v     = tw.vx;
+    }
+    return -1;
+}
+}  // namespace
+
+TEST(TrajectoryFollower, CurvaturePreviewSlowsDownBeforeCurves)
+{
+    const double vWith    = speedEnteringCurve(true);
+    const double vWithout = speedEnteringCurve(false);
+    // Lateral accel limit on R=1 m: v = sqrt(1.0 * 1) = 1 m/s (plus a margin,
+    // since the curvature is estimated over a window around each point):
+    EXPECT_GT(vWith, 0.5);
+    EXPECT_LT(vWith, 1.4);
+    EXPECT_GT(vWithout, 2.0) << "the test is only meaningful if, without "
+                                "preview, the curve is entered fast";
+}
+
+namespace
+{
+// Final distance past the goal of a straight 8 m path, driven by a platform
+// whose speed follows the command as a first-order lag of time constant tau.
+double overshootWithLaggedPlatform(double tau, double actuationLagParam)
+{
+    std::vector<TPoint2D> pts;
+    for (double x = 0; x <= 8.0 + 1e-9; x += 0.1) { pts.emplace_back(x, 0); }
+
+    mpp::TrajectoryFollower f;
+    f.params.max_speed     = 2.0;
+    f.params.max_accel     = 0.5;
+    f.params.max_decel     = 0.5;
+    f.params.actuation_lag = actuationLagParam;
+    f.setTrajectory(polyToTraj(pts, 0));
+
+    TPose2D      robot = {0, 0, 0};
+    double       vAct  = 0;
+    double       vCmd  = 0;
+    bool         done  = false;
+    const double dt    = f.params.control_period;
+    for (int k = 0; k < 4000; k++)
+    {
+        if (!done)
+        {
+            const auto out = f.step(mkLoc(robot), mkOdo(robot, vAct));
+            done           = out.status == mpp::FollowerStatus::ReachedGoal;
+            vCmd           = done || out.command.points.empty()
+                                 ? 0.0
+                                 : out.command.points.front().twist.vx;
+        }
+        vAct += (vCmd - vAct) * dt / tau;
+        robot = integrate(robot, vAct, 0, dt);
+        if (done && std::abs(vAct) < 1e-3) { break; }
+    }
+    return robot.x - 8.0;
+}
+}  // namespace
+
+TEST(TrajectoryFollower, ActuationLagAvoidsOvershootingTheGoal)
+{
+    const double tau = 0.7;
+    EXPECT_LT(std::abs(overshootWithLaggedPlatform(tau, tau)), 0.25);
+    EXPECT_GT(overshootWithLaggedPlatform(tau, 0.0), 0.5)
+        << "the test is only meaningful if the lag causes an overshoot";
+}
+
+TEST(TrajectoryFollower, NearDuplicateFinalPointIsNotACusp)
+{
+    // A path ending in reverse, whose final point is (almost) duplicated, as
+    // when a planner appends the exact goal after its last path sample: the
+    // tiny last segment must not be taken for a cusp switching to forward.
+    mpp::Trajectory tr;
+    for (double x = 0; x <= 3.0 + 1e-9; x += 0.1)
+    {
+        tr.emplace_back(TPose2D(x, 0, 0), 0.5);
+    }
+    for (int i = 1; i <= 10; i++)  // back up 1 m
+    {
+        tr.emplace_back(TPose2D(3.0 - 0.1 * i, 0, 0), 0.5);
+    }
+    tr.emplace_back(TPose2D(2.0 - 0.0005, 0.0005, 0), 0.5);  // ~1 mm
+
+    mpp::TrajectoryFollower f;
+    f.params.max_speed          = 0.5;
+    f.params.min_lookahead_dist = 0.8;
+    f.setTrajectory(tr);
+
+    std::vector<TPoint2D> pts;
+    for (const auto& p : tr) { pts.emplace_back(p.pose.x, p.pose.y); }
+    const auto r = simulate(f, {0, 0, 0}, pts, 4000);
+    ASSERT_TRUE(r.reached);
+    EXPECT_LT(std::hypot(r.finalPose.x - 2.0, r.finalPose.y), 0.15)
+        << "final pose: " << r.finalPose.asString();
+}
+
+TEST(TrajectoryFollower, ReferenceSweepUsesBodyHeadingWhenReversing)
+{
+    // A car-like footprint, very asymmetric around its origin (rear axle),
+    // backs up 3 m to a goal 0.35 m in front of a wall behind it. Sweeping the
+    // footprint along the path tangent (heading flipped on reverse segments)
+    // would wrongly put its front into the wall.
+    mpp::Trajectory tr;
+    for (int i = 0; i <= 30; i++)
+    {
+        tr.emplace_back(TPose2D(3.0 - 0.1 * i, 0, 0), 0.5);  // reverse
+    }
+
+    mrpt::math::TPolygon2D shape;
+    shape.emplace_back(-0.3, -0.5);
+    shape.emplace_back(1.8, -0.5);
+    shape.emplace_back(1.8, 0.5);
+    shape.emplace_back(-0.3, 0.5);
+
+    std::vector<TPoint2D> wall;
+    for (double y = -2.0; y <= 2.0; y += 0.05) { wall.emplace_back(-0.65, y); }
+
+    mpp::TrajectoryFollower f;
+    f.params.max_speed          = 0.5;
+    f.params.min_lookahead_dist = 0.8;
+    f.setRobotShape(shape);
+    f.setObstacles(wall);
+    f.setTrajectory(tr);
+
+    std::vector<TPoint2D> pts;
+    for (const auto& p : tr) { pts.emplace_back(p.pose.x, p.pose.y); }
+    const auto r = simulate(f, {3.0, 0, 0}, pts, 4000);
+    EXPECT_TRUE(r.reached) << "final pose: " << r.finalPose.asString();
+    EXPECT_LT(std::abs(r.finalPose.x), 0.2);
+}

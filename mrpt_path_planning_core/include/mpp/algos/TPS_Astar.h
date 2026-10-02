@@ -437,6 +437,26 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
 
     std::vector<float> localObsX_, localObsY_;
 
+    /** Start pose of the current plan, and handling of a start closer than
+     * the PTG clearance to some obstacle (e.g. a robot that stopped close to
+     * a wall): the clearance-inflated collision grids would then block every
+     * motion, so edges leaving the start are instead checked with an exact
+     * footprint sweep that only forbids getting closer than
+     * `startSweepThreshold_` (half the current distance, at most the
+     * clearance) to any obstacle. See local_obstacles_to_buffers() and
+     * start_edge_is_clear(). */
+    std::optional<mrpt::math::TPose2D> startPose_;
+    RobotShape                         startRobotShape_;
+    double                             startClearance_       = 0;
+    bool                               startWithinClearance_ = false;
+    double                             startSweepThreshold_  = 0;
+    std::vector<mrpt::math::TPoint2D>  startLocalObstacles_;
+
+    /** Exact sweep check of an edge leaving the start pose (only used if
+     * startWithinClearance_). */
+    bool start_edge_is_clear(
+        const ptg_t& ptg, trajectory_index_t k, uint32_t step) const;
+
     /** Free distance along every trajectory of each PTG (indexed as the PTGs)
      * from `expandedTpObstaclesPose_`, the pose of the last node expanded by
      * find_feasible_paths_to_neighbors(). Its Reeds-Shepp shots start there,
