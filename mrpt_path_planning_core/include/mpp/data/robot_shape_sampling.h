@@ -28,4 +28,17 @@ namespace mpp
 std::vector<mrpt::math::TPoint2D> footprintSamplePoints(
     const RobotShape& shape, double resolution, std::size_t maxSamples = 128);
 
+/** Returns the robot footprint as a polygon: the polygon itself, a regular
+ * `circleSegments`-gon inscribing the circle for a radius, or an empty polygon
+ * for a `std::monostate` shape. Useful to publish or compare footprints. */
+mrpt::math::TPolygon2D robotShapeAsPolygon(
+    const RobotShape& shape, std::size_t circleSegments = 16);
+
+/** Whether two footprints are the same, within `tolerance` [m]: every vertex
+ * of each polygon (see robotShapeAsPolygon()) must be within `tolerance` of
+ * the other polygon boundary. */
+bool sameRobotShape(
+    const mrpt::math::TPolygon2D& a, const mrpt::math::TPolygon2D& b,
+    double tolerance = 0.01);
+
 }  // namespace mpp

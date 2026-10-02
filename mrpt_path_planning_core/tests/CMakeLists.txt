@@ -103,3 +103,9 @@ selfdriving_add_test(
     SOURCES test_reeds_shepp.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
 )
+
+selfdriving_add_test(
+    TARGET  test_robot_description
+    SOURCES test_robot_description.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
