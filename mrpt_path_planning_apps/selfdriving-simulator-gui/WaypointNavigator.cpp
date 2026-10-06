@@ -101,17 +101,25 @@ std::string WaypointNavigator::status_text() const
     return status_;
 }
 
-bool WaypointNavigator::begin_planning()
+std::optional<uint64_t> WaypointNavigator::begin_planning()
 {
     if (planning_)
     {
         MRPT_LOG_WARN("Ignoring request: still planning a previous one.");
-        return false;
+        return std::nullopt;
     }
     if (plannerThread_.joinable()) { plannerThread_.join(); }
     planning_ = true;
     set_status("Planning...");
-    return true;
+
+    auto lck = mrpt::lockHelper(mtx_);
+    return ++requestGen_;
+}
+
+bool WaypointNavigator::is_current_request(uint64_t gen) const
+{
+    auto lck = mrpt::lockHelper(mtx_);
+    return gen == requestGen_ && !closing_;
 }
 
 void WaypointNavigator::request_navigation(const WaypointSequence& wps)
@@ -121,10 +129,11 @@ void WaypointNavigator::request_navigation(const WaypointSequence& wps)
         MRPT_LOG_WARN("Ignoring navigation request: no waypoints.");
         return;
     }
-    if (!begin_planning()) { return; }
+    const auto gen = begin_planning();
+    if (!gen) { return; }
 
     plannerThread_ = std::thread(
-        [this, wps]()
+        [this, wps, gen = *gen]()
         {
             try
             {
@@ -135,7 +144,8 @@ void WaypointNavigator::request_navigation(const WaypointSequence& wps)
                 start.pose = loc.pose;
 
                 Trajectory fullPath;
-                for (size_t i = 0; i < wps.waypoints.size() && !closing_; i++)
+                for (size_t i = 0;
+                     i < wps.waypoints.size() && is_current_request(gen); i++)
                 {
                     const auto& wp = wps.waypoints[i];
 
@@ -175,7 +185,7 @@ void WaypointNavigator::request_navigation(const WaypointSequence& wps)
                     start      = SE2_KinState();
                     start.pose = fullPath.back().pose;
                 }
-                if (!closing_) { set_reference_path(fullPath); }
+                set_reference_path(fullPath, gen);
             }
             catch (const std::exception& e)
             {
@@ -189,18 +199,28 @@ void WaypointNavigator::request_navigation(const WaypointSequence& wps)
 void WaypointNavigator::request_single_plan(
     const SE2_KinState& start, const SE2orR2_KinState& goal)
 {
-    if (!begin_planning()) { return; }
+    const auto gen = begin_planning();
+    if (!gen) { return; }
 
     plannerThread_ = std::thread(
-        [this, start, goal]()
+        [this, start, goal, gen = *gen]()
         {
             try
             {
-                auto out = plan_single(start, goal);
-                set_status(out.success ? "Plan ready" : "Planning failed");
+                const auto out = plan_single(start, goal);
 
-                auto lck        = mrpt::lockHelper(mtx_);
-                lastSinglePlan_ = std::move(out);
+                // Converted here, so following it later does not need the
+                // PTGs while another plan may be running:
+                Trajectory path;
+                if (out.success) { path = plan_to_reference_path(out, 0.0); }
+                if (is_current_request(gen))
+                {
+                    {
+                        auto lck        = mrpt::lockHelper(mtx_);
+                        lastSinglePath_ = std::move(path);
+                    }
+                    set_status(out.success ? "Plan ready" : "Planning failed");
+                }
             }
             catch (const std::exception& e)
             {
@@ -213,17 +233,17 @@ void WaypointNavigator::request_single_plan(
 
 void WaypointNavigator::follow_last_plan()
 {
-    std::optional<PlannerOutput> plan;
+    Trajectory path;
     {
         auto lck = mrpt::lockHelper(mtx_);
-        plan     = lastSinglePlan_;
+        path     = lastSinglePath_;
     }
-    if (!plan || !plan->success)
+    if (path.empty())
     {
         MRPT_LOG_WARN("There is no successful plan to follow.");
         return;
     }
-    set_reference_path(plan_to_reference_path(*plan, 0.0));
+    set_reference_path(path);
 }
 
 void WaypointNavigator::suspend()
@@ -244,14 +264,17 @@ void WaypointNavigator::cancel()
         auto lck = mrpt::lockHelper(mtx_);
         follower.reset();
         suspended_ = false;
+        requestGen_++;  // discards any plan being computed
     }
     set_status("Canceled");
 }
 
-void WaypointNavigator::set_reference_path(const Trajectory& path)
+bool WaypointNavigator::set_reference_path(
+    const Trajectory& path, std::optional<uint64_t> gen)
 {
     {
         auto lck = mrpt::lockHelper(mtx_);
+        if (gen && (*gen != requestGen_ || closing_)) { return false; }
         follower.setTrajectory(path);
         suspended_ = false;
         status_    = "Navigating";
@@ -260,6 +283,7 @@ void WaypointNavigator::set_reference_path(const Trajectory& path)
         "New reference path: " << path.size() << " points, "
                                << follower.totalLength() << " m");
     viz_reference_path(path);
+    return true;
 }
 
 PlannerOutput WaypointNavigator::plan(
@@ -330,6 +354,9 @@ Trajectory WaypointNavigator::plan_to_reference_path(
 {
     ASSERT_(plan.success);
     ASSERT_(plan.bestNodeId.has_value());
+
+    // Uses the PTGs, shared with any plan running meanwhile:
+    auto lck = mrpt::lockHelper(planMtx);
 
     auto [path, edges] = plan.motionTree.backtrack_path(*plan.bestNodeId);
 

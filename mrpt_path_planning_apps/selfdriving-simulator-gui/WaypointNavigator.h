@@ -19,6 +19,7 @@
 #include <mrpt/viz/CSetOfObjects.h>
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -102,14 +103,21 @@ class WaypointNavigator : public mrpt::system::COutputLogger
     std::atomic_bool   suspended_{false};
     mutable std::mutex mtx_;  //!< follower, status, staticObstacles_
 
-    mrpt::maps::CPointsMap::Ptr  staticObstacles_;
-    std::string                  status_        = "Idle";
-    bool                         driving_       = false;
-    mrpt::system::TTimeStamp     lastScanStamp_ = INVALID_TIMESTAMP;
-    std::optional<PlannerOutput> lastSinglePlan_;
+    mrpt::maps::CPointsMap::Ptr staticObstacles_;
+    std::string                 status_        = "Idle";
+    bool                        driving_       = false;
+    mrpt::system::TTimeStamp    lastScanStamp_ = INVALID_TIMESTAMP;
+    /// Reference path from the last successful request_single_plan():
+    Trajectory lastSinglePath_;
 
-    /** Returns false if a plan is already being computed. */
-    bool begin_planning();
+    /** Incremented by each planning request and by cancel(), so a planner
+     * thread only installs its result if nothing happened meanwhile. */
+    uint64_t requestGen_ = 0;
+
+    /** Returns the request generation, or nothing if a plan is already being
+     * computed. */
+    std::optional<uint64_t> begin_planning();
+    bool                    is_current_request(uint64_t gen) const;
 
     void control_loop();
     void control_step();
@@ -127,7 +135,10 @@ class WaypointNavigator : public mrpt::system::COutputLogger
     Trajectory plan_to_reference_path(
         const PlannerOutput& plan, double targetSpeed) const;
 
-    void set_reference_path(const Trajectory& path);
+    /** Starts following `path`, unless `gen` is given and it is no longer the
+     * current request. Returns false in that case. */
+    bool set_reference_path(
+        const Trajectory& path, std::optional<uint64_t> gen = std::nullopt);
 
     void viz_replace(const mrpt::viz::CSetOfObjects::Ptr& obj);
     void viz_reference_path(const Trajectory& path);
