@@ -16,7 +16,7 @@
 
 namespace mpp
 {
-/** Data returned by VehicleMotionInterface::get_localization() */
+/** Data returned by TrajectoryVehicleInterface::get_localization() */
 struct VehicleLocalizationState
 {
     /** Set to true if data could be retrieved from the robot system

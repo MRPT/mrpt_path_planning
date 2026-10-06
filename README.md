@@ -52,8 +52,7 @@ mvsim-demo-astar-planner-params.yaml for demo-holonomic.svg) -->
   path reported as free is free for the continuous swept motion.
 - **Pluggable cost layers**: obstacle-proximity cost maps,
   preferred-waypoint attractors, and a penalty for driving in reverse.
-- **Navigation building blocks**: `NavEngine` (waypoint-sequence navigation
-  with replanning), `TrajectoryFollower` (pure pursuit with predictive
+- **Navigation building blocks**: `TrajectoryFollower` (pure pursuit with predictive
   safety, valid at any speed), and `CollisionGuard` (last-resort velocity
   filter ensuring the robot can always stop before sensed obstacles).
 - **Headless core**: the algorithms library has no GUI dependency.
@@ -84,7 +83,7 @@ path-planner-cli \
 
 | Package | Contents | Depend on it when... |
 | --- | --- | --- |
-| `mrpt_path_planning_core` | C++ library (namespace `mpp`): PTGs, planners, cost evaluators, `NavEngine`, `TrajectoryFollower`. Depends only on `mrpt_nav`, `mrpt_maps`, `mrpt_graphs`, `mrpt_containers`. | You only need the algorithms (most users). |
+| `mrpt_path_planning_core` | C++ library (namespace `mpp`): PTGs, planners, cost evaluators, `TrajectoryFollower`. Depends only on `mrpt_nav`, `mrpt_maps`, `mrpt_graphs`, `mrpt_containers`. | You only need the algorithms (most users). |
 | `mrpt_path_planning_apps` | `path-planner-cli`, `selfdriving-simulator-gui`, example config files. Adds `mrpt_gui`, `cli11`, `mvsim`. | You want the command-line and GUI tools. |
 | `mrpt_path_planning` | Metapackage depending on the two above. | Backward compatibility with existing consumers. |
 

@@ -54,7 +54,6 @@ set(LIB_SRCS
 	src/algos/CostEvaluatorPreferredWaypoint.cpp
 	src/algos/CostEvaluatorReverseMotion.cpp
 	src/algos/edge_interpolated_path.cpp
-	src/algos/NavEngine.cpp
 	src/algos/Planner.cpp
 	src/algos/reeds_shepp.cpp
 	src/algos/refine_trajectory.cpp
@@ -75,8 +74,6 @@ set(LIB_SRCS
 	src/data/TrajectoriesAndRobotShape.cpp
 	src/data/Waypoints.cpp
 	src/interfaces/ObstacleSource.cpp
-	src/interfaces/TargetApproachController.cpp
-	src/interfaces/VehicleMotionInterface.cpp
 	src/ptgs/DiffDrive_C.cpp
 	src/ptgs/DiffDriveCollisionGridBased.cpp
 	src/ptgs/HolonomicBlend.cpp
@@ -91,7 +88,6 @@ set(LIB_PUBLIC_HDRS
 	include/mpp/algos/CostEvaluatorPreferredWaypoint.h
 	include/mpp/algos/CostEvaluatorReverseMotion.h
 	include/mpp/algos/edge_interpolated_path.h
-	include/mpp/algos/NavEngine.h
 	include/mpp/algos/Planner.h
 	include/mpp/algos/reeds_shepp.h
 	include/mpp/algos/refine_trajectory.h
@@ -107,7 +103,6 @@ set(LIB_PUBLIC_HDRS
 	include/mpp/algos/within_bbox.h
 	include/mpp/data/basic_types.h
 	include/mpp/data/const_ref_t.h
-	include/mpp/data/EnqueuedMotionCmd.h
 	include/mpp/data/MotionPrimitivesTree.h
 	include/mpp/data/MoveEdgeSE2_TPS.h
 	include/mpp/data/PlannerInput.h
@@ -126,9 +121,7 @@ set(LIB_PUBLIC_HDRS
 	include/mpp/data/Waypoints.h
 	include/mpp/interfaces/LidarSource.h
 	include/mpp/interfaces/ObstacleSource.h
-	include/mpp/interfaces/TargetApproachController.h
 	include/mpp/interfaces/TrajectoryVehicleInterface.h
-	include/mpp/interfaces/VehicleMotionInterface.h
 	include/mpp/ptgs/DiffDrive_C.h
 	include/mpp/ptgs/DiffDriveCollisionGridBased.h
 	include/mpp/ptgs/HolonomicBlend.h

@@ -24,8 +24,7 @@ enum class StopKind : uint8_t
 
 /** The ROS-free boundary between the TrajectoryFollower and a real platform.
  *
- * Unlike the older `VehicleMotionInterface` (PTG immediate/next command slots),
- * this interface is served a short **sampled predicted trajectory** to execute:
+ * This interface is served a short **sampled predicted trajectory** to execute:
  * the follower has already closed the loop on localization, so the platform
  * side only needs a thin, fast inner servo that tracks the handed chunk
  * (feedforward `twist` + a small pose feedback) until the next one arrives.

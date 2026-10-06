@@ -34,7 +34,7 @@ Three colcon/ROS 2 packages, each with its own `package.xml` and
 mrpt_path_planning_core/        Headless library. CMake package and target:
 │                               find_package(mrpt_path_planning) / mpp::mrpt_path_planning
 ├── include/mpp/algos/          Planners (TPS_Astar, TPS_Astar_Bidir), cost evaluators,
-│                               NavEngine, TrajectoryFollower, CollisionGuard,
+│                               TrajectoryFollower, CollisionGuard,
 │                               collision/interpolation helpers, 3D scene and SVG
 │                               rendering (no windowing)
 ├── include/mpp/data/           Planner I/O, SE(2) states, motion tree, trajectories
@@ -137,9 +137,7 @@ only; the core always runs exact A\*.
 **Post-processing.** `refine_trajectory()` re-fits PTG parameters so edges
 connect the exact node poses; `plan_to_trajectory()` samples the path in time.
 
-**Navigation.** `NavEngine` is a state machine for waypoint-sequence navigation
-with a planner thread, enqueued motion commands and `VehicleMotionInterface`.
-`TrajectoryFollower` is a ROS-free pure-pursuit core with predictive safety
+**Navigation.** `TrajectoryFollower` is a ROS-free pure-pursuit core with predictive safety
 (footprint sweep against live obstacles, braking-distance aware), consuming a
 `Trajectory` and emitting `SampledTrajectory` chunks via
 `TrajectoryVehicleInterface`. Its speed profile anticipates path curvature and

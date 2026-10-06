@@ -8,8 +8,6 @@
 #include <mpp/algos/CostEvaluatorPreferredWaypoint.h>
 #include <mpp/algos/CostEvaluatorReverseMotion.h>
 #include <mpp/algos/TPS_Astar.h>
-#include <mpp/interfaces/TargetApproachController.h>
-#include <mpp/interfaces/VehicleMotionInterface.h>
 #include <mpp/ptgs/DiffDrive_C.h>
 #include <mpp/ptgs/HolonomicBlend.h>
 #include <mrpt/core/initializer.h>
@@ -30,8 +28,6 @@ MRPT_INITIALIZER(selfdriving_register)
     registerClass(CLASS_ID(TPS_Astar));
 
     // Interfaces:
-    registerClass(CLASS_ID(VehicleMotionInterface));
-    registerClass(CLASS_ID(TargetApproachController));
 
     // PTGs:
     registerClass(CLASS_ID(ptg::HolonomicBlend));
