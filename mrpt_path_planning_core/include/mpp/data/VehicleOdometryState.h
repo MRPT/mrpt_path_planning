@@ -14,7 +14,7 @@
 
 namespace mpp
 {
-/** Data returned by VehicleMotionInterface::get_odometry() */
+/** Data returned by TrajectoryVehicleInterface::get_odometry() */
 struct VehicleOdometryState
 {
     /** Set to true if data could be retrieved from the robot system
@@ -35,12 +35,6 @@ struct VehicleOdometryState
     /** The timestamp for the read pose and velocity values. Use
      * mrpt::Clock::now() unless you have something more accurate. */
     mrpt::system::TTimeStamp timestamp;
-
-    /** There exists an action waiting for execution after the current
-     * under-execution one.
-     * See: VehicleMotionInterface::motion_execute() for a discussion.
-     */
-    bool pendedActionExists = false;
 };
 
 }  // namespace mpp

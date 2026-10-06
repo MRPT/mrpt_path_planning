@@ -34,7 +34,7 @@ Three colcon/ROS 2 packages, each with its own `package.xml` and
 mrpt_path_planning_core/        Headless library. CMake package and target:
 │                               find_package(mrpt_path_planning) / mpp::mrpt_path_planning
 ├── include/mpp/algos/          Planners (TPS_Astar, TPS_Astar_Bidir), cost evaluators,
-│                               NavEngine, TrajectoryFollower, CollisionGuard,
+│                               TrajectoryFollower, CollisionGuard,
 │                               collision/interpolation helpers, 3D scene and SVG
 │                               rendering (no windowing)
 ├── include/mpp/data/           Planner I/O, SE(2) states, motion tree, trajectories
@@ -47,7 +47,8 @@ mrpt_path_planning_core/        Headless library. CMake package and target:
 mrpt_path_planning_apps/        Needs mrpt_gui, cli11, mvsim (optional)
 ├── path-planner-cli/           Planning CLI (3D viz window, or --no-gui)
 ├── mrpt_path_planning_viz/     Private 3D visualization helpers for the apps
-├── selfdriving-simulator-gui/  Live navigation demo on mvsim
+├── selfdriving-simulator-gui/  Live navigation demo on mvsim (TPS_Astar + TrajectoryFollower,
+│                               GUI panel via mvsim's declarative panel API)
 └── share/                      Example PTG .ini, planner/costmap .yaml, maps (installed)
 mrpt_path_planning/             Backward-compatible metapackage, no code
 docs/images/                    README images (animated SVGs from path-planner-cli --save-svg)
@@ -136,9 +137,7 @@ only; the core always runs exact A\*.
 **Post-processing.** `refine_trajectory()` re-fits PTG parameters so edges
 connect the exact node poses; `plan_to_trajectory()` samples the path in time.
 
-**Navigation.** `NavEngine` is a state machine for waypoint-sequence navigation
-with a planner thread, enqueued motion commands and `VehicleMotionInterface`.
-`TrajectoryFollower` is a ROS-free pure-pursuit core with predictive safety
+**Navigation.** `TrajectoryFollower` is a ROS-free pure-pursuit core with predictive safety
 (footprint sweep against live obstacles, braking-distance aware), consuming a
 `Trajectory` and emitting `SampledTrajectory` chunks via
 `TrajectoryVehicleInterface`. Its speed profile anticipates path curvature and

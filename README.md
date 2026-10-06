@@ -52,8 +52,7 @@ mvsim-demo-astar-planner-params.yaml for demo-holonomic.svg) -->
   path reported as free is free for the continuous swept motion.
 - **Pluggable cost layers**: obstacle-proximity cost maps,
   preferred-waypoint attractors, and a penalty for driving in reverse.
-- **Navigation building blocks**: `NavEngine` (waypoint-sequence navigation
-  with replanning), `TrajectoryFollower` (pure pursuit with predictive
+- **Navigation building blocks**: `TrajectoryFollower` (pure pursuit with predictive
   safety, valid at any speed), and `CollisionGuard` (last-resort velocity
   filter ensuring the robot can always stop before sensed obstacles).
 - **Headless core**: the algorithms library has no GUI dependency.
@@ -84,7 +83,7 @@ path-planner-cli \
 
 | Package | Contents | Depend on it when... |
 | --- | --- | --- |
-| `mrpt_path_planning_core` | C++ library (namespace `mpp`): PTGs, planners, cost evaluators, `NavEngine`, `TrajectoryFollower`. Depends only on `mrpt_nav`, `mrpt_maps`, `mrpt_graphs`, `mrpt_containers`. | You only need the algorithms (most users). |
+| `mrpt_path_planning_core` | C++ library (namespace `mpp`): PTGs, planners, cost evaluators, `TrajectoryFollower`. Depends only on `mrpt_nav`, `mrpt_maps`, `mrpt_graphs`, `mrpt_containers`. | You only need the algorithms (most users). |
 | `mrpt_path_planning_apps` | `path-planner-cli`, `selfdriving-simulator-gui`, example config files. Adds `mrpt_gui`, `cli11`, `mvsim`. | You want the command-line and GUI tools. |
 | `mrpt_path_planning` | Metapackage depending on the two above. | Backward compatibility with existing consumers. |
 
@@ -160,7 +159,7 @@ Example files in [`mrpt_path_planning_apps/share/`](mrpt_path_planning_apps/shar
 | `costmap-obstacles.yaml` | Obstacle-proximity cost map parameters. |
 | `costmap-prefer-waypoints.yaml` | Preferred-waypoints cost layer parameters. |
 | `mvsim-demo-waypoints*.yaml` | Example waypoint sequences. |
-| `nav-engine-params.yaml` | `NavEngine` parameters. |
+| `follower-params.yaml` | `TrajectoryFollower` parameters for the simulator demo. |
 | `obstacles_01.txt`, `map0*.png` | Example obstacles: point list or occupancy grid image. |
 | `mvsim-demo.xml` | [mvsim](https://github.com/MRPT/mvsim/) world for the simulator demo. |
 
@@ -203,23 +202,26 @@ Run `path-planner-cli --help` for all options.
 
 ### selfdriving-simulator-gui
 
-Live navigation in the [mvsim](https://github.com/MRPT/mvsim/) simulator, with
-`NavEngine` and A\* replanning.
+Live navigation in the [mvsim](https://github.com/MRPT/mvsim/) simulator: each
+leg between waypoints is planned with `TPS_Astar`, and `TrajectoryFollower`
+drives the robot along the joined path. A dockable "SelfDriving" panel
+requests, suspends, resumes or cancels the navigation, and plans single paths to
+a goal picked with the mouse. The demo robot uses mvsim's ideal twist controller,
+so path following is not affected by the low-level speed control.
+Another mvsim world can be given with `-s` (default: `mvsim-demo.xml`); its
+first vehicle is the one navigated.
 
 <details>
 <summary>Commands</summary>
 
 ```bash
-# Holonomic robot (use ptgs_ackermann_vehicle.ini for an Ackermann vehicle):
 selfdriving-simulator-gui \
   --waypoints mvsim-demo-waypoints01.yaml \
   -s mvsim-demo.xml \
-  -p ptgs_holonomic_robot.ini \
-  --nav-engine-parameters nav-engine-params.yaml \
-  --planner-parameters mvsim-demo-astar-planner-params.yaml \
-  --prefer-waypoints-parameters costmap-prefer-waypoints.yaml \
+  -p ptgs_ackermann_vehicle.ini \
+  --planner-parameters mvsim-demo-astar-planner-params-ackermann.yaml \
   --global-costmap-parameters costmap-obstacles.yaml \
-  --local-costmap-parameters costmap-obstacles.yaml
+  --follower-parameters follower-params.yaml
 ```
 
 </details>
