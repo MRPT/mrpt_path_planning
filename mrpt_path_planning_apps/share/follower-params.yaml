@@ -1,0 +1,31 @@
+# Parameters for mpp::TrajectoryFollower in selfdriving-simulator-gui.
+# See mpp/algos/TrajectoryFollower.h for all of them and their meaning.
+
+# --- Kinematic limits ---
+max_speed: 0.8             # [m/s]
+max_accel: 0.5             # [m/s^2]
+max_decel: 0.7             # [m/s^2]
+max_lateral_accel: 1.0     # [m/s^2] curvature speed limit
+max_omega: 1.0             # [rad/s]
+
+# --- Pure-pursuit lookahead ---
+lookahead_max: 1.5         # [m]
+lookahead_bend: 25.0       # [deg]
+min_lookahead_dist: 0.5    # [m]
+
+# --- Goal / tracking tolerances ---
+goal_dist_tol: 0.15        # [m]
+goal_ang_tol: 12.0         # [deg]
+max_cross_track: 1.0       # [m]
+arrival_radius: 0.3        # [m]
+
+# --- Loop timing ---
+control_period: 0.05       # [s]
+horizon: 1.5               # [s]
+sample_period: 0.1         # [s]
+
+# --- Predictive safety, against the lidar points ---
+safety_margin: 0.05        # [m]
+stop_distance: 0.3         # [m]
+slow_distance: 1.5         # [m]
+block_timeout: 5.0         # [s]

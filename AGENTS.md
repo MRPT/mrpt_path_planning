@@ -47,7 +47,8 @@ mrpt_path_planning_core/        Headless library. CMake package and target:
 mrpt_path_planning_apps/        Needs mrpt_gui, cli11, mvsim (optional)
 ├── path-planner-cli/           Planning CLI (3D viz window, or --no-gui)
 ├── mrpt_path_planning_viz/     Private 3D visualization helpers for the apps
-├── selfdriving-simulator-gui/  Live navigation demo on mvsim
+├── selfdriving-simulator-gui/  Live navigation demo on mvsim (TPS_Astar + TrajectoryFollower,
+│                               GUI panel via mvsim's declarative panel API)
 └── share/                      Example PTG .ini, planner/costmap .yaml, maps (installed)
 mrpt_path_planning/             Backward-compatible metapackage, no code
 docs/images/                    README images (animated SVGs from path-planner-cli --save-svg)

@@ -59,13 +59,10 @@
 			  </shape>
 			</chassis>
 
-			<!--   Motor controller -->
-			<controller class="twist_pid">
-				<!-- Params -->
-				<KP>100</KP>  <KI>5</KI> <I_MAX>10</I_MAX> <KD>0</KD>
-				<V>0.0</V><W>0</W>
-				<max_torque>25</max_torque>
-			</controller>
+			<!-- Ideal kinematics: commanded twists are executed exactly, so
+			     planning and path following can be tested apart from the
+			     low-level speed control ("twist_pid" for a realistic one). -->
+			<controller class="twist_ideal" />
 
 		</dynamics>
 

@@ -10,9 +10,16 @@ selfdriving_add_executable(
   SOURCES
     selfdriving-simulator-gui.cpp
     MVSIM_VehicleInterface.h
+    WaypointNavigator.cpp
+    WaypointNavigator.h
   LINK_LIBRARIES
     CLI11::CLI11
     mpp::mrpt_path_planning
     mvsim::mvsim-simulator
     mvsim::mvsim-comms
+)
+
+# Default world file, installed with the other demo files:
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+  MPP_APPS_SHARE_DIR="${CMAKE_INSTALL_PREFIX}/share/mrpt_path_planning_apps"
 )
