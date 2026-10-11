@@ -179,6 +179,7 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
     stoppedSince_       = INVALID_TIMESTAMP;
     offPathSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
+    overshotGoal_       = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
     ctrlPoseInit_       = false;
 
@@ -328,6 +329,7 @@ void TrajectoryFollower::reset()
     stoppedSince_       = INVALID_TIMESTAMP;
     offPathSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
+    overshotGoal_       = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
     ctrlPoseInit_       = false;
 }
@@ -1086,11 +1088,21 @@ TrajectoryFollower::Output TrajectoryFollower::step(
         }
         else
         {
-            minDistToGoal_ = std::min(minDistToGoal_, distToGoal);
-            if (!arrived_ && distToGoal <= params.arrival_radius &&
-                distToGoal > minDistToGoal_ + 0.03)
+            minDistToGoal_        = std::min(minDistToGoal_, distToGoal);
+            const bool movingAway = distToGoal > minDistToGoal_ + 0.03;
+            if (!arrived_ && movingAway && distToGoal <= params.arrival_radius)
             {
                 arrived_ = true;
+            }
+            // Failsafe: past the path end (the projection is pinned to it)
+            // and moving away from the goal, but farther than
+            // `arrival_radius` (e.g. passing it to one side). Beyond this
+            // point the follower would only drive farther away, so settle
+            // here and report the goal as missed.
+            if (!arrived_ && movingAway && proj.s >= totalLength() - 1e-6)
+            {
+                arrived_      = true;
+                overshotGoal_ = true;
             }
         }
     }
@@ -1108,8 +1120,9 @@ TrajectoryFollower::Output TrajectoryFollower::step(
             params.arrival_ang_tol > 0 &&
             std::abs(out.heading_err) > params.arrival_ang_tol;
         lastCommandedSpeed_ = 0;
-        out.status          = headingMissed ? FollowerStatus::MissedGoal
-                                            : FollowerStatus::ReachedGoal;
+        out.status          = headingMissed || overshotGoal_
+                                  ? FollowerStatus::MissedGoal
+                                  : FollowerStatus::ReachedGoal;
         out.target_speed    = 0;
         return out;  // empty command => node stops
     }

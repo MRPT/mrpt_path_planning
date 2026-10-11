@@ -38,7 +38,8 @@ enum class FollowerStatus : uint8_t
     /** Cross-track error exceeded the configured limit. */
     OffPathExceeded,
     /** Stopped at its closest approach to the goal (see `arrival_radius`),
-     * but with a heading error above `arrival_ang_tol`. */
+     * but with a heading error above `arrival_ang_tol`; or stopped past the
+     * path end, moving away from a goal farther than `arrival_radius`. */
     MissedGoal
 };
 
@@ -242,7 +243,9 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         /** [m] Once the robot settles within this distance of the goal and has
          * passed its closest approach, it latches "arrived" and holds a stop,
          * so it never drives back away from a goal it cannot perfectly seat (no
-         * runaway / thrashing on a kinematically infeasible final pose). */
+         * runaway / thrashing on a kinematically infeasible final pose). If it
+         * instead passes the path end farther than this from the goal, it
+         * also stops there, reporting `MissedGoal`. */
         double arrival_radius = 0.3;
 
         /** [rad] If > 0, settling at the closest approach (see
@@ -397,6 +400,10 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      * from then on it holds a stop instead of driving back away from a pose it
      * cannot perfectly seat. */
     bool arrived_ = false;
+
+    /** Set if `arrived_` was latched past the path end, farther than
+     * `arrival_radius` from the goal: reported as `MissedGoal`. */
+    bool overshotGoal_ = false;
 
     /** Closest distance to the goal point reached so far, used to detect when
      * the robot has passed its closest approach and would start driving away.

@@ -1902,3 +1902,34 @@ TEST(TrajectoryFollower, ArrivalHeadingToleranceReportsMissedGoal)
     EXPECT_EQ(finalStatus(0.0), mpp::FollowerStatus::ReachedGoal);
     EXPECT_EQ(finalStatus(30.0), mpp::FollowerStatus::MissedGoal);
 }
+
+// A robot passing the goal to one side, farther than `arrival_radius` (here,
+// one whose steering has no effect), must stop shortly after passing the path
+// end and report MissedGoal, instead of driving away until it is off path.
+TEST(TrajectoryFollower, PassingTheGoalToOneSideReportsMissedGoal)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {5, 0}};
+    mpp::TrajectoryFollower     f;
+    f.params.arrival_radius  = 0.3;
+    f.params.max_cross_track = 1.0;
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    TPose2D             robot(0, 0.4, 0);
+    double              v      = 0;
+    mpp::FollowerStatus status = mpp::FollowerStatus::Idle;
+    for (int k = 0; k < 2000; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        status         = out.status;
+        if (status != mpp::FollowerStatus::Running) { break; }
+        v = 0;
+        if (!out.command.points.empty())
+        {
+            v     = out.command.points.front().twist.vx;
+            robot = integrate(robot, v, 0, f.params.control_period);
+        }
+    }
+    EXPECT_EQ(status, mpp::FollowerStatus::MissedGoal);
+    EXPECT_GT(robot.x, 5.0);
+    EXPECT_LT(robot.x, 5.3);
+}

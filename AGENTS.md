@@ -142,9 +142,11 @@ connect the exact node poses; `plan_to_trajectory()` samples the path in time.
 `Trajectory` and emitting `SampledTrajectory` chunks via
 `TrajectoryVehicleInterface`. Its speed profile anticipates path curvature and
 stops (goal, cusps) over the braking distance, so the same parameters work at
-any speed. `CollisionGuard` is an independent last-resort filter for velocity
-commands: using only robot-frame sensed points, it caps the speed so the robot
-can always stop along the commanded arc before contact (stale data: stop).
+any speed. Passing the path end away from the goal, outside the arrival radius,
+it stops and reports `MissedGoal` so the caller can replan. `CollisionGuard` is
+an independent last-resort filter for velocity commands: using only robot-frame
+sensed points, it caps the speed so the robot can always stop along the
+commanded arc before contact (stale data: stop).
 
 ## TPS_Astar::plan() flow
 
