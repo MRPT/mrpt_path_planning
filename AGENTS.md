@@ -68,6 +68,9 @@ colcon test --base-paths . && colcon test-result --all --verbose
   PPA, and checks formatting.
 - Format C++ with `clang-format-14` using the repo `.clang-format`.
 - New algorithms need GTest coverage in `mrpt_path_planning_core/tests/`.
+- `tests/test_trajectory_follower_closed_loop.cpp` judges the follower on the
+  simulated ground truth, with localization latency, noise and actuation delays
+  (`MPP_FOLLOWER_TRACE_DIR` dumps traces for `tests/plot_follower_traces.py`).
 
 ## Conventions
 
