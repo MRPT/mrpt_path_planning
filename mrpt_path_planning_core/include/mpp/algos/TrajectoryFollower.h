@@ -430,6 +430,9 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      * `arrival_radius` from the goal: reported as `MissedGoal`. */
     bool overshotGoal_ = false;
 
+    /** Rotating in place at the goal (see Parameters::rotate_at_goal). */
+    bool rotatingAtGoal_ = false;
+
     /** Closest distance to the goal point reached so far, used to detect when
      * the robot has passed its closest approach and would start driving away.
      */

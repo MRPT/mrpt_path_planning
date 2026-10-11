@@ -218,6 +218,7 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
     offPathSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
     overshotGoal_       = false;
+    rotatingAtGoal_     = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
     ctrlPoseInit_       = false;
 
@@ -389,6 +390,7 @@ void TrajectoryFollower::reset()
     offPathSince_       = INVALID_TIMESTAMP;
     arrived_            = false;
     overshotGoal_       = false;
+    rotatingAtGoal_     = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
     ctrlPoseInit_       = false;
     recentCmds_.clear();
@@ -1263,7 +1265,8 @@ TrajectoryFollower::Output TrajectoryFollower::step(
                          params.min_lookahead_dist <= 0;
     const bool atGoalPosition =
         nearPathEnd && distToGoal <= params.goal_dist_tol && settled;
-    if (atGoalPosition && std::abs(out.heading_err) <= params.goal_ang_tol)
+    if (atGoalPosition && std::abs(out.heading_err) <= params.goal_ang_tol &&
+        !rotatingAtGoal_)
     {
         // Latch: ReachedGoal is terminal until a new trajectory is set. The
         // caller typically hands the vehicle to another controller on this
@@ -1338,8 +1341,11 @@ TrajectoryFollower::Output TrajectoryFollower::step(
             }
         }
     }
+    // Once rotating, finish well within the tolerance, not at its edge:
+    const double rotateUntil =
+        rotatingAtGoal_ ? 0.25 * params.goal_ang_tol : params.goal_ang_tol;
     if (arrived_ && canRotate && !overshotGoal_ &&
-        std::abs(out.heading_err) > params.goal_ang_tol)
+        std::abs(out.heading_err) > rotateUntil)
     {
         // Rotate in place to the goal heading, if the footprint is clear of
         // obstacles over the whole rotation:
@@ -1374,6 +1380,7 @@ TrajectoryFollower::Output TrajectoryFollower::step(
             lastCommandedSpeed_ = 0;
             lastCommandedOmega_ = w;
             lastCommandedCurv_  = 0;
+            rotatingAtGoal_     = true;
             out.status          = FollowerStatus::Running;
             return out;
         }
