@@ -1933,3 +1933,53 @@ TEST(TrajectoryFollower, PassingTheGoalToOneSideReportsMissedGoal)
     EXPECT_GT(robot.x, 5.0);
     EXPECT_LT(robot.x, 5.3);
 }
+
+// A planner may leave a back-and-forth spike of a few centimeters where two
+// path edges join: it must not be taken for two cusps (stop, reverse a little,
+// go forward again).
+namespace
+{
+// Drives a car-like vehicle along a straight path up to 1.5 m, then the given
+// spike knots, then on to 4 m.
+void expectSpikeIgnored(const std::vector<double>& spikeXs)
+{
+    std::vector<TPoint2D> pts;
+    for (double x = 0; x <= 1.5 + 1e-9; x += 0.25) { pts.emplace_back(x, 0); }
+    for (const double x : spikeXs) { pts.emplace_back(x, 0); }
+    for (double x = 1.75; x <= 4.0 + 1e-9; x += 0.25)
+    {
+        pts.emplace_back(x, 0);
+    }
+
+    mpp::Trajectory tr;
+    for (const auto& p : pts) { tr.emplace_back(TPose2D(p.x, p.y, 0.0), 0.0); }
+
+    mpp::TrajectoryFollower f;
+    f.params.min_turn_radius = 2.25;  // car-like
+    f.setTrajectory(tr);
+
+    TPose2D robot = {0, 0, 0};
+    double  v     = 0;
+    double  minV  = 0;
+    bool    done  = false;
+    for (int k = 0; k < 2000 && !done; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        done           = out.status == mpp::FollowerStatus::ReachedGoal;
+        if (done || out.command.points.empty()) { break; }
+        const auto tw = out.command.points.front().twist;
+        minV          = std::min(minV, tw.vx);
+        robot = integrate(robot, tw.vx, tw.omega, f.params.control_period);
+        v     = tw.vx;
+    }
+    EXPECT_TRUE(done);
+    EXPECT_GT(minV, -1e-3) << "commanded a reverse motion";
+    EXPECT_NEAR(robot.x, 4.0, 0.2);
+}
+}  // namespace
+
+TEST(TrajectoryFollower, CentimeterBackAndForthLegIsIgnored)
+{
+    expectSpikeIgnored({1.46});  // 4 cm back
+    expectSpikeIgnored({1.46, 1.499});  // 4 cm back, then just short of 1.5
+}

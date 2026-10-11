@@ -68,6 +68,9 @@ colcon test --base-paths . && colcon test-result --all --verbose
   PPA, and checks formatting.
 - Format C++ with `clang-format-14` using the repo `.clang-format`.
 - New algorithms need GTest coverage in `mrpt_path_planning_core/tests/`.
+- `tests/test_trajectory_follower_closed_loop.cpp` judges the follower on the
+  simulated ground truth, with localization latency, noise and actuation delays
+  (`MPP_FOLLOWER_TRACE_DIR` dumps traces for `tests/plot_follower_traces.py`).
 
 ## Conventions
 
@@ -137,16 +140,22 @@ only; the core always runs exact A\*.
 **Post-processing.** `refine_trajectory()` re-fits PTG parameters so edges
 connect the exact node poses; `plan_to_trajectory()` samples the path in time.
 
-**Navigation.** `TrajectoryFollower` is a ROS-free pure-pursuit core with predictive safety
+**Navigation.** `TrajectoryFollower` is a ROS-free path tracker: reference
+curvature feedforward plus pure-pursuit feedback, with predictive safety
 (footprint sweep against live obstacles, braking-distance aware), consuming a
 `Trajectory` and emitting `SampledTrajectory` chunks via
-`TrajectoryVehicleInterface`. Its speed profile anticipates path curvature and
-stops (goal, cusps) over the braking distance, so the same parameters work at
-any speed. Passing the path end away from the goal, outside the arrival radius,
-it stops and reports `MissedGoal` so the caller can replan. `CollisionGuard` is
-an independent last-resort filter for velocity commands: using only robot-frame
-sensed points, it caps the speed so the robot can always stop along the
-commanded arc before contact (stale data: stop).
+`TrajectoryVehicleInterface`. Delayed localizations are brought to the present
+with odometry using their timestamps (callers must pass the sensor time, on the
+same clock as the odometry), and `control_delay` predicts past known dead times.
+Arc-length progress never skips or goes back across a cusp. Its speed profile
+anticipates path curvature and stops (goal, cusps) over the braking distance, so
+the same parameters work at any speed. Passing the path end away from the goal,
+outside the arrival radius, it stops and reports `MissedGoal` so the caller can
+replan; `rotate_at_goal` lets differential-drive robots finish by rotating in
+place to the goal heading. `CollisionGuard` is an independent last-resort filter
+for velocity commands: using only robot-frame sensed points, it caps the speed
+so the robot can always stop along the commanded arc before contact (stale data:
+stop).
 
 ## TPS_Astar::plan() flow
 

@@ -19,7 +19,9 @@
 #include <mrpt/system/COutputLogger.h>
 
 #include <cstdint>
+#include <deque>
 #include <limits>
+#include <optional>
 #include <vector>
 
 namespace mpp
@@ -83,6 +85,13 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
          * ideal platform. */
         double actuation_lag = 0.0;
 
+        /** [s] Dead time between the pose given to step() and the effect of
+         * the commands it returns: odometry age plus command transport and
+         * actuation delays. The control pose is predicted this far ahead
+         * with the commands already sent, so that curvature changes and
+         * stops are commanded on time. 0 (default): no prediction. */
+        double control_delay = 0.0;
+
         /** If true (default), the speed is also limited ahead of time by the
          * path curvature (max_lateral_accel, max_omega) up to the braking
          * distance ahead, so the vehicle has already slowed down when it
@@ -90,6 +99,13 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
          * limits the speed once the vehicle is in the curve, which is too late
          * at high speeds and leads to overshooting it. */
         bool curvature_preview = true;
+
+        /** If true (default), the commanded curvature is the reference path
+         * curvature at the vehicle plus a pure-pursuit correction of the
+         * deviation from the path (zero when on it). Pure pursuit alone
+         * starts turning as soon as its lookahead point enters a curve, and
+         * so cuts it. */
+        bool curvature_feedforward = true;
 
         /** [rad/s] If > 0, max commanded angular speed. Enforced by lowering
          * the linear speed (the commanded curvature is kept), so the path
@@ -255,6 +271,13 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
          * heading). */
         double arrival_ang_tol = 0.0;
 
+        /** If true, a vehicle that can turn in place (differential drive,
+         * i.e. `min_turn_radius` <= 0; ignored otherwise) finishes by rotating
+         * in place to the goal heading once it is at the goal position (or
+         * settled within `arrival_radius`), if the footprint is free of
+         * obstacles along that rotation. Default: false. */
+        bool rotate_at_goal = false;
+
         double control_period = 0.05;  //!< [s] nominal call period (20 Hz)
         double horizon        = 1.5;  //!< [s] emitted chunk length
         double sample_period  = 0.1;  //!< [s] emitted chunk sampling
@@ -363,6 +386,8 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     Trajectory          traj_;
     std::vector<double> cumS_;  //!< cumulative arc-length per point
     std::vector<double> knotCurv_;  //!< |path curvature| per point [1/m]
+    /** Signed turning angle of the path tangent at each point [rad] */
+    std::vector<double> vertexTurn_;
     std::vector<double>
         cuspS_;  //!< arc-lengths where travel direction reverses
     std::vector<std::size_t>
@@ -405,6 +430,9 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
      * `arrival_radius` from the goal: reported as `MissedGoal`. */
     bool overshotGoal_ = false;
 
+    /** Rotating in place at the goal (see Parameters::rotate_at_goal). */
+    bool rotatingAtGoal_ = false;
+
     /** Closest distance to the goal point reached so far, used to detect when
      * the robot has passed its closest approach and would start driving away.
      */
@@ -424,6 +452,22 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     mrpt::poses::CPose2D lastOdom_;
 
     bool ctrlPoseInit_ = false;
+
+    /** Commands (v, omega) of the last control cycles, newest last, for the
+     * \ref Parameters::control_delay prediction. */
+    std::deque<std::pair<double, double>> recentCmds_;
+
+    /** Recent odometry poses, to bring delayed localizations to the present
+     * (see compensateLatency()). */
+    std::deque<std::pair<mrpt::system::TTimeStamp, mrpt::poses::CPose2D>>
+        odoHistory_;
+
+    /** The localization pose moved forward from its own timestamp to the
+     * odometry timestamp, with the odometry motion in between. Returns the
+     * raw localization pose if either timestamp is missing, and nothing if
+     * the localization is older than the odometry history. */
+    std::optional<mrpt::math::TPose2D> compensateLatency(
+        const VehicleLocalizationState& loc, const VehicleOdometryState& odo);
 
     // Predictive safety state:
     std::vector<mrpt::math::TPoint2D>
@@ -453,11 +497,25 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
 
     /** Smooth control pose (map frame): \ref ctrlPose_ dead-reckoned with the
      * latest wheel-odometry increment, then corrected toward the raw
-     * localization by a complementary filter applied at the vehicle; mutates
-     * the filter state. Falls back to the raw localization pose when no
-     * odometry is available. */
+     * localization by a complementary filter applied at the vehicle (unless
+     * `correct` is false: dead-reckoning only); mutates the filter state. Falls
+     * back to the raw localization pose when no odometry is available. */
     mrpt::math::TPose2D controlPose(
-        const VehicleLocalizationState& loc, const VehicleOdometryState& odo);
+        const VehicleLocalizationState& loc, const VehicleOdometryState& odo,
+        bool correct = true);
+
+    /** Reference path curvature [1/m] at arc-length `s`, for the driving
+     * `gear` (+1 forward, -1 reverse). */
+    double refCurvatureAt(double s, double gear) const;
+
+    /** Pure-pursuit curvature [1/m] from `fromPose`, whose projection on the
+     * path is at arc-length `sStart`, with the lookahead point (output, also
+     * its arc-length, distance `Ld` and lateral offset `yr` in the vehicle
+     * frame) placed within `[sStart, capS]`. */
+    double pursuitCurvature(
+        const mrpt::math::TPose2D& fromPose, double sStart, double capS,
+        mrpt::math::TPoint2D& lookahead, double& lookaheadS, double& Ld,
+        double& yr) const;
 
     /** Curvature-adaptive lookahead arc-length: marches forward from `sStart`
      * accumulating the path's |turned angle| and returns the arc-length where

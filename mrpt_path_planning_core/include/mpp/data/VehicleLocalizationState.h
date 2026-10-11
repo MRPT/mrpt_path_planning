@@ -28,8 +28,10 @@ struct VehicleLocalizationState
      * in global map coordinates. (x,y: meters, phi: radians) */
     mrpt::math::TPose2D pose;
 
-    /** The timestamp for the read pose.
-     * Use mrpt::Clock::now() unless you have something more accurate. */
+    /** The timestamp for the read pose: that of the sensor data it was
+     * estimated from, if available (TrajectoryFollower uses it, together
+     * with odometry timestamps from the same clock, to compensate the
+     * localization latency). Otherwise, mrpt::Clock::now(). */
     mrpt::system::TTimeStamp timestamp = INVALID_TIMESTAMP;
 
     /** Optional: if available, place here the (x,y,phi) covariance matrix

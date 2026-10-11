@@ -18,6 +18,12 @@ goal_dist_tol: 0.15        # [m]
 goal_ang_tol: 12.0         # [deg]
 max_cross_track: 1.0       # [m]
 arrival_radius: 0.3        # [m]
+rotate_at_goal: true       # rotate in place to the goal heading at the end
+                           # (only vehicles that can, i.e. min_turn_radius=0)
+
+# --- Latency ---
+control_delay: 0.0         # [s] odometry age + command/actuation delays, to
+                           # predict the vehicle pose past them
 
 # --- Loop timing ---
 control_period: 0.05       # [s]
