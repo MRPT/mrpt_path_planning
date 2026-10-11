@@ -169,6 +169,38 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
         }
         traj_.push_back(p);
     }
+
+    // Remove interior back-and-forth legs (between two cusps) of a few
+    // centimeters, as left by a planner where two edges join: stopping and
+    // reversing for that is pointless, and not feasible for a car-like
+    // vehicle. Real maneuvers have much longer legs.
+    constexpr double kMinLegLength = 0.05;  // [m]
+    const auto       isCusp        = [this](std::size_t i)
+    {
+        const auto& a = traj_[i - 1].pose;
+        const auto& b = traj_[i].pose;
+        const auto& c = traj_[i + 1].pose;
+        return (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y) < 0.0;
+    };
+    for (std::size_t i = 1; i + 2 < traj_.size(); i++)
+    {
+        if (!isCusp(i)) { continue; }
+        // Next cusp within kMinLegLength?
+        double len = 0;
+        for (std::size_t j = i + 1; j + 1 < traj_.size(); j++)
+        {
+            const auto& a = traj_[j - 1].pose;
+            const auto& b = traj_[j].pose;
+            len += std::hypot(b.x - a.x, b.y - a.y);
+            if (len >= kMinLegLength) { break; }
+            if (isCusp(j))
+            {
+                traj_.erase(traj_.begin() + i + 1, traj_.begin() + j + 1);
+                break;
+            }
+        }
+    }
+
     cumS_.assign(traj_.size(), 0.0);
     for (std::size_t i = 1; i < traj_.size(); i++)
     {
