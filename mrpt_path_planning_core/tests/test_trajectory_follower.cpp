@@ -1937,11 +1937,15 @@ TEST(TrajectoryFollower, PassingTheGoalToOneSideReportsMissedGoal)
 // A planner may leave a back-and-forth spike of a few centimeters where two
 // path edges join: it must not be taken for two cusps (stop, reverse a little,
 // go forward again).
-TEST(TrajectoryFollower, CentimeterBackAndForthLegIsIgnored)
+namespace
+{
+// Drives a car-like vehicle along a straight path up to 1.5 m, then the given
+// spike knots, then on to 4 m.
+void expectSpikeIgnored(const std::vector<double>& spikeXs)
 {
     std::vector<TPoint2D> pts;
     for (double x = 0; x <= 1.5 + 1e-9; x += 0.25) { pts.emplace_back(x, 0); }
-    pts.emplace_back(1.46, 0.0);  // 4 cm back
+    for (const double x : spikeXs) { pts.emplace_back(x, 0); }
     for (double x = 1.75; x <= 4.0 + 1e-9; x += 0.25)
     {
         pts.emplace_back(x, 0);
@@ -1971,4 +1975,11 @@ TEST(TrajectoryFollower, CentimeterBackAndForthLegIsIgnored)
     EXPECT_TRUE(done);
     EXPECT_GT(minV, -1e-3) << "commanded a reverse motion";
     EXPECT_NEAR(robot.x, 4.0, 0.2);
+}
+}  // namespace
+
+TEST(TrajectoryFollower, CentimeterBackAndForthLegIsIgnored)
+{
+    expectSpikeIgnored({1.46});  // 4 cm back
+    expectSpikeIgnored({1.46, 1.499});  // 4 cm back, then just short of 1.5
 }

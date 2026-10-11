@@ -195,7 +195,10 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
             if (len >= kMinLegLength) { break; }
             if (isCusp(j))
             {
-                traj_.erase(traj_.begin() + i + 1, traj_.begin() + j + 1);
+                // Remove both turnaround knots, joining the knots before
+                // and after them, and recheck that join:
+                traj_.erase(traj_.begin() + i, traj_.begin() + j + 1);
+                i = std::max<std::size_t>(i, 2) - 2;
                 break;
             }
         }
