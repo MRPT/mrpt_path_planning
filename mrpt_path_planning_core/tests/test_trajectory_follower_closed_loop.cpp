@@ -165,6 +165,16 @@ struct TimedPose
     TPose2D pose;
 };
 
+// Ground truth sample, with the follower state at that time:
+struct TraceSample
+{
+    double  t = 0;
+    TPose2D pose;
+    double  v      = 0;  //!< actual speed [m/s]
+    double  s      = 0;  //!< follower arc-length progress [m]
+    int     status = 0;  //!< follower status
+};
+
 // Pose at time `t` from a time-ordered history (nearest earlier sample).
 TPose2D poseAt(const std::deque<TimedPose>& h, double t)
 {
@@ -177,13 +187,13 @@ TPose2D poseAt(const std::deque<TimedPose>& h, double t)
 
 struct RunResult
 {
-    bool                   ended       = false;
-    mpp::FollowerStatus    finalStatus = mpp::FollowerStatus::Idle;
-    double                 maxCross    = 0;  //!< ground truth vs reference [m]
-    double                 posErr      = 0;  //!< ground truth, at rest [m]
-    double                 headingErr  = 0;  //!< ground truth, at rest [rad]
-    double                 time        = 0;  //!< [s]
-    std::vector<TimedPose> gt;
+    bool                     ended       = false;
+    mpp::FollowerStatus      finalStatus = mpp::FollowerStatus::Idle;
+    double                   maxCross   = 0;  //!< ground truth vs reference [m]
+    double                   posErr     = 0;  //!< ground truth, at rest [m]
+    double                   headingErr = 0;  //!< ground truth, at rest [rad]
+    double                   time       = 0;  //!< [s]
+    std::vector<TraceSample> gt;
 };
 
 void saveTrace(
@@ -192,16 +202,16 @@ void saveTrace(
     const char* dir = std::getenv("MPP_FOLLOWER_TRACE_DIR");
     if (dir == nullptr) { return; }
     std::ofstream f(std::string(dir) + "/" + name + ".csv");
-    f << "kind,t,x,y,phi\n";
+    f << "kind,t,x,y,phi,v,s,status\n";
     for (const auto& p : ref)
     {
         f << "ref,0," << p.pose.x << "," << p.pose.y << "," << p.pose.phi
-          << "\n";
+          << ",0,0,0\n";
     }
     for (const auto& s : r.gt)
     {
         f << "gt," << s.t << "," << s.pose.x << "," << s.pose.y << ","
-          << s.pose.phi << "\n";
+          << s.pose.phi << "," << s.v << "," << s.s << "," << s.status << "\n";
     }
 }
 
@@ -253,6 +263,7 @@ RunResult runClosedLoop(
 
     f.setTrajectory(ref);
 
+    double lastS     = 0;
     double nextCtrlT = 0;
     double endT      = -1;
     double t         = 0;
@@ -297,6 +308,7 @@ RunResult runClosedLoop(
 
             const auto out = f.step(loc, odo);
             r.finalStatus  = out.status;
+            lastS          = out.arc_length_s;
 
             double v = 0;
             double w = 0;
@@ -358,7 +370,8 @@ RunResult runClosedLoop(
         }
         if (r.gt.empty() || t - r.gt.back().t >= 0.02)
         {
-            r.gt.push_back({t, gt});
+            r.gt.push_back(
+                {t, gt, vAct, lastS, static_cast<int>(r.finalStatus)});
         }
 
         r.maxCross = std::max(r.maxCross, distToPolyline(ref, {gt.x, gt.y}));
@@ -396,13 +409,13 @@ void setDiffDriveParams(mpp::TrajectoryFollower& f)
     p.off_path_min_duration = 0.5;
     p.arrival_radius        = 0.3;
     p.arrival_ang_tol       = mrpt::DEG2RAD(25.0);
+    p.rotate_at_goal        = true;
     p.control_period        = 0.05;
 }
 
-// Accuracy demanded from the follower, on the ground truth:
+// Accuracy demanded from the follower, on the ground truth: deviation from
+// the reference path, plus the follower's own goal tolerances.
 constexpr double kMaxCrossTrack = 0.15;  // [m]
-constexpr double kPosTolMargin  = 0.05;  // [m] over goal_dist_tol
-constexpr double kAngTolMargin  = mrpt::DEG2RAD(3.0);  // over goal_ang_tol
 
 void expectAccurate(
     const std::string& caseName, const mpp::Trajectory& ref,
@@ -410,7 +423,9 @@ void expectAccurate(
 {
     mpp::TrajectoryFollower f;
     setDiffDriveParams(f);
-    const auto r = runClosedLoop(f, ref, c, start);
+    // The robot dead time is known (configured) in a real deployment:
+    f.params.control_delay = c.odo_latency + c.cmd_latency;
+    const auto r           = runClosedLoop(f, ref, c, start);
     saveTrace(caseName + "_" + c.name, ref, r);
 
     const std::string ctx = caseName + " [" + c.name + "]";
@@ -418,9 +433,9 @@ void expectAccurate(
     EXPECT_EQ(r.finalStatus, mpp::FollowerStatus::ReachedGoal)
         << ctx << ": status " << static_cast<int>(r.finalStatus);
     EXPECT_LT(r.maxCross, kMaxCrossTrack) << ctx << ": max deviation";
-    EXPECT_LT(r.posErr, f.params.goal_dist_tol + kPosTolMargin)
+    EXPECT_LT(r.posErr, f.params.goal_dist_tol)
         << ctx << ": final position error";
-    EXPECT_LT(std::abs(r.headingErr), f.params.goal_ang_tol + kAngTolMargin)
+    EXPECT_LT(std::abs(r.headingErr), f.params.goal_ang_tol)
         << ctx
         << ": final heading error [deg]: " << mrpt::RAD2DEG(r.headingErr);
 }
