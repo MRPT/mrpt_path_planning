@@ -15,6 +15,8 @@
  *  - In-place rotations are limited by obstacles swept by the footprint.
  *  - Missing / stale obstacle data stops the robot.
  *  - A robot left within the margin of an obstacle can still move away.
+ *  - Within the margin, repeated commands toward an obstacle do not creep
+ *    ever closer to it.
  *  - Closed loop: a vehicle with reaction delay and finite braking, driven by
  *    random commands through the guard, never collides.
  */
@@ -213,6 +215,27 @@ TEST(CollisionGuard, CanLeaveWhenTooClose)
     EXPECT_FALSE(g.filter(1.0, -0.5, kNow).limited);
     // Turning into it is not:
     EXPECT_TRUE(g.filter(1.0, 0.5, kNow).limited);
+}
+
+TEST(CollisionGuard, NoCreepingWithinTheMargin)
+{
+    auto g = makeGuard();
+    // Keep commanding forward, against a wall ahead, for a long time:
+    double       x  = 0;
+    const double dt = 0.05;
+    for (int step = 0; step < 800; step++)
+    {
+        std::vector<mrpt::math::TPoint2D> local;
+        for (const auto& p : wallAtX(1.5)) { local.emplace_back(p.x - x, p.y); }
+        g.setObstacles(local, kNow);
+        const auto cmd = g.filter(0.3, 0.0, kNow);
+        x += cmd.v * dt;
+    }
+    // The front (at 0.8 m) stops within the margin, but not closer than
+    // half of it:
+    const double clearance = 1.5 - (x + 0.8);
+    EXPECT_GT(clearance, 0.5 * g.params.margin - 1e-3);
+    EXPECT_LT(clearance, g.params.margin + 1e-3);
 }
 
 TEST(CollisionGuard, ClosedLoopNeverCollides)

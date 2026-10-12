@@ -45,6 +45,8 @@ namespace mpp
  * - If the robot is already closer than `margin` to some obstacle (e.g. it
  *   was parked close to a wall), the margin is reduced to half that
  *   clearance, so it can always move along or away from it, but not closer.
+ *   That reduced margin is kept while the robot stays that close, so
+ *   repeated commands toward the obstacle cannot creep ever closer.
  *   Points inside the footprint itself are ignored (and reported in
  *   Result::in_contact), since they are either sensor artifacts or an
  *   already-happened contact.
@@ -162,6 +164,14 @@ class CollisionGuard
 
     std::vector<mrpt::math::TPoint2D> obstacles_;
     mrpt::system::TTimeStamp          obstaclesStamp_ = INVALID_TIMESTAMP;
+
+    /** While within the margin of some obstacle: the closest clearance
+     * allowed, set when getting that close (so repeated commands cannot creep
+     * ever closer). Reset once the clearance exceeds the margin again. */
+    std::optional<double> marginFloor_;
+
+    /** Updates marginFloor_ for the current obstacles. */
+    void updateMarginFloor();
 
     struct Motion
     {

@@ -105,6 +105,7 @@ void CollisionGuard::setObstacles(
 {
     obstacles_      = pts;
     obstaclesStamp_ = stamp;
+    updateMarginFloor();
 }
 
 void CollisionGuard::setObstacles(
@@ -115,6 +116,19 @@ void CollisionGuard::setObstacles(
     obstacles_.resize(xs.size());
     for (size_t i = 0; i < xs.size(); i++) { obstacles_[i] = {xs[i], ys[i]}; }
     obstaclesStamp_ = stamp;
+    updateMarginFloor();
+}
+
+void CollisionGuard::updateMarginFloor()
+{
+    double clearance = kInf;
+    for (const auto& p : obstacles_)
+    {
+        const double d = signedDistance(p);
+        if (d > 0) { clearance = std::min(clearance, d); }
+    }
+    if (clearance >= params.margin) { marginFloor_.reset(); }
+    else if (!marginFloor_) { marginFloor_ = 0.5 * clearance; }
 }
 
 // ----------------------------------------------------------------- geometry
@@ -172,8 +186,17 @@ double CollisionGuard::sweep(
         clearanceNow = std::min(clearanceNow, d0);
         candidates.push_back(p);
     }
-    // If already within the margin, only forbid getting even closer:
-    const double thr = std::min(params.margin, 0.5 * clearanceNow);
+    // If already within the margin, only forbid getting even closer: down to
+    // the floor set when getting this close, or to the current clearance if
+    // something is even closer:
+    double thr = std::min(params.margin, 0.5 * clearanceNow);
+    if (marginFloor_ && clearanceNow < params.margin)
+    {
+        constexpr double kNumericTol = 1e-6;  // [m]
+        thr                          = clearanceNow >= *marginFloor_
+                                           ? *marginFloor_
+                                           : std::max(0.0, clearanceNow - kNumericTol);
+    }
     if (inContact) { *inContact = contact; }
     if (candidates.empty() || maxT <= 0) { return kInf; }
 
