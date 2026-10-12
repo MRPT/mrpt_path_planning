@@ -201,6 +201,8 @@ stop).
 - **Collision guard soundness.** With a reaction time covering the control
   period and actuation lag, the guard never lets a vehicle with the assumed
   braking reach an obstacle (`tests/test_collision_guard.cpp`, closed loop).
+  Once within `margin`, repeated commands toward an obstacle stop at half
+  the clearance it had when getting that close, never creeping closer.
 - **Admissibility.** With `heuristic_epsilon = 1`, heuristics must stay
   admissible and consistent (`tests/test_heuristic.cpp`,
   `tests/test_reeds_shepp.cpp`).
