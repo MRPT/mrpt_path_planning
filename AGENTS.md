@@ -71,6 +71,9 @@ colcon test --base-paths . && colcon test-result --all --verbose
 - `tests/test_trajectory_follower_closed_loop.cpp` judges the follower on the
   simulated ground truth, with localization latency, noise and actuation delays
   (`MPP_FOLLOWER_TRACE_DIR` dumps traces for `tests/plot_follower_traces.py`).
+- `tests/test_trajectory_follower.cpp` covers typical generated maneuvers
+  (e.g. `CurveExit*`: backing into a narrow aisle, quarter-ellipse turns) at the
+  knot pitch of a waypoint generator.
 
 ## Conventions
 
@@ -152,7 +155,11 @@ anticipates path curvature and stops (goal, cusps) over the braking distance, so
 the same parameters work at any speed. Passing the path end away from the goal,
 outside the arrival radius, it stops and reports `MissedGoal` so the caller can
 replan; `rotate_at_goal` lets differential-drive robots finish by rotating in
-place to the goal heading. `CollisionGuard` is an independent last-resort filter
+place to the goal heading. For car-like robots, `min_turn_radius` clamps the
+commanded curvature and `max_curvature_rate` models the steering slew; the
+pure-pursuit lookahead shortens where the path bends (`lookahead_bend`) and is
+kept at least `min_lookahead_dist` away so localization noise does not drive
+the steering. `CollisionGuard` is an independent last-resort filter
 for velocity commands: using only robot-frame sensed points, it caps the speed
 so the robot can always stop along the commanded arc before contact (stale data:
 stop).

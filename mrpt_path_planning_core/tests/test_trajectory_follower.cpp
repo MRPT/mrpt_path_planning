@@ -1983,3 +1983,149 @@ TEST(TrajectoryFollower, CentimeterBackAndForthLegIsIgnored)
     expectSpikeIgnored({1.46});  // 4 cm back
     expectSpikeIgnored({1.46, 1.499});  // 4 cm back, then just short of 1.5
 }
+
+// ---------------------------------------------------------------------------
+// Curve exits. Geometric maneuvers made of straights and arcs, sampled at the
+// knot pitch of a waypoint generator (a dozen knots per arc), with the
+// accuracy-tuned parameters: backing into a narrow aisle (reverse straight,
+// 90 deg arc, short straight to the goal) and a forward quarter-ellipse turn.
+// The vehicle must leave each arc on the following straight, not wide of it:
+// the clearance left in such an aisle is a couple of decimeters per side.
+namespace
+{
+struct PathSample
+{
+    std::vector<XYYawDeg> knots;
+    // Arc-length span of the last straight, to measure the curve-exit error
+    // on it alone.
+    std::vector<TPoint2D> lastStraight;
+};
+
+// Straight of length l0 along +x, left arc of radius r through 90 deg, and
+// straight of length l1 along +y. Body headings follow the travel tangent,
+// flipped by 180 deg in reverse.
+PathSample straightArcStraight(
+    double l0, double r, double l1, bool reverse, int nStraight0 = 6,
+    int nArc = 12, int nStraight1 = 3)
+{
+    PathSample   ps;
+    const double flip = reverse ? 180.0 : 0.0;
+    for (int i = 0; i <= nStraight0; i++)
+    {
+        ps.knots.push_back({l0 * i / nStraight0, 0.0, flip});
+    }
+    for (int i = 1; i <= nArc; i++)
+    {
+        const double t = (M_PI / 2) * i / nArc;
+        ps.knots.push_back(
+            {l0 + r * std::sin(t), r - r * std::cos(t),
+             mrpt::RAD2DEG(t) + flip});
+    }
+    for (int i = 1; i <= nStraight1; i++)
+    {
+        ps.knots.push_back({l0 + r, r + l1 * i / nStraight1, 90.0 + flip});
+    }
+    ps.lastStraight = {{l0 + r, r}, {l0 + r, r + l1}};
+    return ps;
+}
+
+// Forward quarter-ellipse turn (semi-axes a along +x, b along +y, ending
+// heading +y), then a straight of length l1.
+PathSample quarterEllipseStraight(double a, double b, double l1)
+{
+    PathSample ps;
+    ps.knots.push_back({0.0, 0.0, 0.0});
+    for (int i = 1; i <= 12; i++)
+    {
+        const double t = (M_PI / 2) * i / 12;
+        ps.knots.push_back(
+            {a * std::sin(t), b * (1 - std::cos(t)),
+             mrpt::RAD2DEG(std::atan2(b * std::sin(t), a * std::cos(t)))});
+    }
+    for (int i = 1; i <= 3; i++)
+    {
+        ps.knots.push_back({a, b + l1 * i / 3, 90.0});
+    }
+    ps.lastStraight = {{a, b}, {a, b + l1}};
+    return ps;
+}
+
+struct CurveExitResult
+{
+    bool   reached      = false;
+    double maxCross     = 0;  //!< over the whole path
+    double maxCrossLast = 0;  //!< on the last straight only
+};
+
+CurveExitResult runCurveExit(const PathSample& ps, double speed)
+{
+    mpp::TrajectoryFollower f;
+    applyAccuracyTunedParams(f);
+    f.setTrajectory(mkTrajFromRecorded(ps.knots, speed));
+
+    const auto&     k0 = ps.knots.front();
+    TPose2D         robot(k0.x, k0.y, mrpt::DEG2RAD(k0.yaw_deg));
+    double          v = 0;
+    CurveExitResult res;
+    const auto      pts   = xyOf(ps.knots);
+    const TPoint2D& ls0   = ps.lastStraight.front();
+    const TPoint2D& ls1   = ps.lastStraight.back();
+    const double    lsLen = std::hypot(ls1.x - ls0.x, ls1.y - ls0.y);
+    for (int k = 0; k < 8000; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        res.maxCross =
+            std::max(res.maxCross, distToPolyline(pts, {robot.x, robot.y}));
+        // Along-track position on the last straight: only count it once the
+        // vehicle is abreast of that segment.
+        const double along = ((robot.x - ls0.x) * (ls1.x - ls0.x) +
+                              (robot.y - ls0.y) * (ls1.y - ls0.y)) /
+                             lsLen;
+        if (along > 0)
+        {
+            res.maxCrossLast = std::max(
+                res.maxCrossLast,
+                distToPolyline(ps.lastStraight, {robot.x, robot.y}));
+        }
+        if (out.status == mpp::FollowerStatus::ReachedGoal)
+        {
+            res.reached = true;
+            break;
+        }
+        if (out.command.points.empty()) { break; }
+        const auto tw = out.command.points.front().twist;
+        robot = integrate(robot, tw.vx, tw.omega, f.params.control_period);
+        v     = tw.vx;
+    }
+    fprintf(
+        stderr, "[curve-exit] reached=%d maxCross=%.3f maxCrossLast=%.3f\n",
+        res.reached, res.maxCross, res.maxCrossLast);
+    return res;
+}
+}  // namespace
+
+// Backing into a narrow aisle: 2.8 m reverse straight, R = 1.24 m arc and a
+// 1.45 m straight to the goal.
+TEST(TrajectoryFollower, CurveExitReverseIntoAisle)
+{
+    const auto r =
+        runCurveExit(straightArcStraight(2.8, 1.24, 1.45, true), 0.3);
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(r.maxCrossLast, 0.06);
+}
+
+// Same maneuver with a tighter arc (R = 0.7 m).
+TEST(TrajectoryFollower, CurveExitReverseIntoAisleTightArc)
+{
+    const auto r = runCurveExit(straightArcStraight(3.3, 0.7, 1.45, true), 0.3);
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(r.maxCrossLast, 0.06);
+}
+
+// Forward quarter-ellipse turn (a = 2.0 m, b = 1.8 m) and a 0.45 m straight.
+TEST(TrajectoryFollower, CurveExitForwardQuarterEllipse)
+{
+    const auto r = runCurveExit(quarterEllipseStraight(2.0, 1.8, 0.45), 0.3);
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(r.maxCross, 0.05);
+}
