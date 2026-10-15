@@ -58,6 +58,19 @@ size_t ptgConfigHash(
 
 void TrajectoriesAndRobotShape::clear() { *this = TrajectoriesAndRobotShape(); }
 
+TrajectoriesAndRobotShape TrajectoriesAndRobotShape::clone() const
+{
+    TrajectoriesAndRobotShape r = *this;
+    for (auto& ptg : r.ptgs)
+    {
+        if (!ptg) { continue; }
+        auto* c = dynamic_cast<ptg_t*>(ptg->clone());
+        ASSERT_(c);
+        ptg.reset(c);
+    }
+    return r;
+}
+
 void TrajectoriesAndRobotShape::initFromConfigFile(
     mrpt::config::CConfigFileBase& c, const std::string& s, bool initializePTGs)
 {

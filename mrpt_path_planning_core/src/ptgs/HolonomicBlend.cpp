@@ -880,6 +880,39 @@ HolonomicBlend::HolonomicBlend(
 
 HolonomicBlend::~HolonomicBlend() = default;
 
+HolonomicBlend::HolonomicBlend(const HolonomicBlend& o) : HolonomicBlend()
+{
+    *this = o;
+}
+
+HolonomicBlend& HolonomicBlend::operator=(const HolonomicBlend& o)
+{
+    if (this == &o) { return *this; }
+    SpeedTrimmablePTG::                  operator=(o);
+    mrpt::nav::CPTG_RobotShape_Circular::operator=(o);
+
+    T_ramp_max             = o.T_ramp_max;
+    V_MAX                  = o.V_MAX;
+    W_MAX                  = o.W_MAX;
+    turningRadiusReference = o.turningRadiusReference;
+    expr_V                 = o.expr_V;
+    expr_W                 = o.expr_W;
+    expr_T_ramp            = o.expr_T_ramp;
+    m_pathStepCountCache   = o.m_pathStepCountCache;
+    m_expr_dir             = o.m_expr_dir;
+    m_expr_target_dir      = o.m_expr_target_dir;
+    m_expr_target_dist     = o.m_expr_target_dist;
+
+    // The compiled expressions keep their symbol table bound to this object's
+    // own variables: only recompile them.
+    if (isInitialized())
+    {
+        m_expr_v.compile(expr_V, {}, "expr_V");
+        m_expr_w.compile(expr_W, {}, "expr_w");
+    }
+    return *this;
+}
+
 void HolonomicBlend::internal_construct_exprs()
 {
     auto& nds = m_nav_dyn_state;

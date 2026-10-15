@@ -44,6 +44,11 @@ class HolonomicBlend : public SpeedTrimmablePTG,
 
     ~HolonomicBlend() override;
 
+    /** Copies are independent PTGs (their expressions are bound to their own
+     * variables), so each thread can evaluate its own copy concurrently. */
+    HolonomicBlend(const HolonomicBlend& o);
+    HolonomicBlend& operator=(const HolonomicBlend& o);
+
     void loadFromConfigFile(
         const mrpt::config::CConfigFileBase& cfg,
         const std::string&                   sSection) override;

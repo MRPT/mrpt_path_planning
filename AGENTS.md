@@ -85,6 +85,9 @@ colcon test --base-paths . && colcon test-result --all --verbose
   `params_from_yaml()`); PTGs are configured from INI sections.
 - No one-line `if` bodies, one variable per declaration, anonymous namespaces
   instead of `static` for file-local symbols.
+- New public APIs that downstream packages (e.g. `mrpt_navigation`) use get a
+  feature macro (`#define MPP_HAS_<FEATURE> 1` in their header), so consumers
+  keep building against older versions.
 
 ## Core concepts
 
@@ -203,6 +206,10 @@ stop).
   braking reach an obstacle (`tests/test_collision_guard.cpp`, closed loop).
   Once within `margin`, repeated commands toward an obstacle stop at half
   the clearance it had when getting that close, never creeping closer.
+- **Reentrancy.** Evaluating a PTG changes its state (dynamic state, speed
+  trim, caches), so concurrent planners must each use their own PTGs from
+  `TrajectoriesAndRobotShape::clone()`; PTG copies must stay independent
+  (`tests/test_ptg_clone.cpp`).
 - **Admissibility.** With `heuristic_epsilon = 1`, heuristics must stay
   admissible and consistent (`tests/test_heuristic.cpp`,
   `tests/test_reeds_shepp.cpp`).

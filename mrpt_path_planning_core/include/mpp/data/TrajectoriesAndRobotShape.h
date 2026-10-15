@@ -15,6 +15,11 @@
 #include <variant>
 #include <vector>
 
+/** Feature macro: TrajectoriesAndRobotShape::clone() exists and PTG copies are
+ * independent, so consumers can `#if defined(MPP_HAS_PTG_CLONE)` to stay
+ * compatible with older versions. */
+#define MPP_HAS_PTG_CLONE 1
+
 namespace mpp
 {
 using robot_radius_t = double;
@@ -30,6 +35,12 @@ class TrajectoriesAndRobotShape
 
     bool initialized() const { return initialized_; }
     void clear();
+
+    /** A deep copy, with its own PTG instances. Evaluating a PTG changes its
+     * internal state (dynamic state, caches), so concurrent users (e.g.
+     * planners running in different threads) must each use their own copy.
+     * Copying this object instead shares the PTG instances. */
+    [[nodiscard]] TrajectoriesAndRobotShape clone() const;
 
     /** Loads the robot description (shape, kinematics) and the PTGs from a
      * config file section.
