@@ -143,7 +143,97 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     MRPT_START
     mrpt::system::CTimeLoggerEntry tleg(profiler_(), "plan");
 
-    const double planInitTime = mrpt::Clock::nowDouble();
+    start(in);
+    run_search(params_.maximumComputationTime);
+
+    PlannerOutput po = finalized_output(std::move(search_.po));
+    search_          = SearchState();
+    return po;
+    MRPT_END
+}
+
+PlannerOutput TPS_Astar::run(duration_seconds_t maxComputationTime)
+{
+    MRPT_START
+    ASSERTMSG_(search_.started, "run() called before start()");
+    run_search(maxComputationTime);
+    return finalized_output(search_.po);
+    MRPT_END
+}
+
+bool TPS_Astar::search_can_continue() const
+{
+    return search_.started && !search_.found && !search_.exhausted;
+}
+
+void TPS_Astar::set_obstacles(const std::vector<ObstacleSource::Ptr>& obstacles)
+{
+    ASSERTMSG_(search_.started, "set_obstacles() called before start()");
+    search_.in.obstacles               = obstacles;
+    search_.po.originalInput.obstacles = obstacles;
+    prepare_obstacles();
+}
+
+void TPS_Astar::prepare_obstacles()
+{
+    const auto& in             = search_.in;
+    auto&       obstaclePoints = search_.obstaclePoints;
+    obstaclePoints.clear();
+
+    rsExpansionRadius_ = 0.0;
+    if (params_.use_reeds_shepp_expansion && params_.use_analytic_expansion &&
+        !prepare_reeds_shepp_expansion(in.ptgs))
+    {
+        MRPT_LOG_DEBUG(
+            "Reeds-Shepp shot not used: it requires forward and reverse "
+            "DiffDrive_C PTGs with an odd number of trajectories.");
+    }
+
+    // obstacles (TODO: dynamic over future time?):
+    for (const auto& os : in.obstacles)
+    {
+        if (!os) continue;  // should never happen?
+
+        // apply clipping for efficiency:
+        // (z is arbitrary and ignored inside)
+        os->apply_clipping_box(mrpt::math::TBoundingBox(
+            {in.worldBboxMin.x, in.worldBboxMin.y, -1.0},
+            {in.worldBboxMax.x, in.worldBboxMax.y, 1.0}));
+
+        // Get obstacles:
+        obstaclePoints.emplace_back(os->obstacles());
+    }
+
+    localObstaclesCache_.clear();
+    expandedTpObstaclesPose_.reset();
+
+    rsGoalObstacles_.clear();
+    rsGoalHeadings_.clear();
+    if (rsExpansionRadius_ > 0 && in.stateGoal.state.isPoint())
+    {
+        prepare_point_goal_shots(
+            in.stateGoal.state.point(), in.ptgs, obstaclePoints);
+        if (rsGoalHeadings_.empty())
+        {
+            MRPT_LOG_DEBUG(
+                "Reeds-Shepp shot not used: the footprint fits at no heading "
+                "at the goal point.");
+            rsExpansionRadius_ = 0;
+        }
+    }
+}
+
+void TPS_Astar::start(const PlannerInput& inArg)
+{
+    MRPT_START
+    mrpt::system::CTimeLoggerEntry tle(profiler_(), "start");
+
+    const double startInitTime = mrpt::Clock::nowDouble();
+
+    search_         = SearchState();
+    search_.started = true;
+    search_.in      = inArg;
+    const auto& in  = search_.in;
 
     // Sanity checks on inputs:
     ASSERT_(in.ptgs.initialized());
@@ -164,7 +254,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     MRPT_LOG_DEBUG_STREAM("Obstacle sources: " << in.obstacles.size());
     MRPT_LOG_DEBUG_STREAM("Cost evaluators: " << costEvaluators_.size());
 
-    PlannerOutput po;
+    auto& po         = search_.po;
     po.originalInput = in;
 
     auto& tree = po.motionTree;  // shortcut
@@ -194,6 +284,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     for (const auto& ptg : in.ptgs.ptgs)
         mrpt::keep_max(MAX_XY_DIST, obstacle_clipping_distance(*ptg));
     ASSERT_(MAX_XY_DIST > 0);
+    search_.maxXYDist = MAX_XY_DIST;
 
     // Cache max linear speed for heuristic unit conversion (distance→time).
     maxLinSpeed_ = 0.0;
@@ -213,81 +304,16 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         }
     }
 
-    rsExpansionRadius_ = 0.0;
-    if (params_.use_reeds_shepp_expansion && params_.use_analytic_expansion &&
-        !prepare_reeds_shepp_expansion(in.ptgs))
-    {
-        MRPT_LOG_DEBUG(
-            "Reeds-Shepp shot not used: it requires forward and reverse "
-            "DiffDrive_C PTGs with an odd number of trajectories.");
-    }
-
-    // obstacles (TODO: dynamic over future time?):
-    std::vector<mrpt::maps::CPointsMap::Ptr> obstaclePoints;
-    for (const auto& os : in.obstacles)
-    {
-        if (!os) continue;  // should never happen?
-
-        // apply clipping for efficiency:
-        // (z is arbitrary and ignored inside)
-        os->apply_clipping_box(mrpt::math::TBoundingBox(
-            {in.worldBboxMin.x, in.worldBboxMin.y, -1.0},
-            {in.worldBboxMax.x, in.worldBboxMax.y, 1.0}));
-
-        // Get obstacles:
-        obstaclePoints.emplace_back(os->obstacles());
-    }
-
     //  2  |  E T ← ∅         # Tree edges
     // ------------------------------------------------------------------
     tree.edges_to_children.clear();
 
     grid_.clear();
-    localObstaclesCache_.clear();
-    expandedTpObstaclesPose_.reset();
-
-    rsGoalObstacles_.clear();
-    rsGoalHeadings_.clear();
-    if (rsExpansionRadius_ > 0 && in.stateGoal.state.isPoint())
-    {
-        prepare_point_goal_shots(
-            in.stateGoal.state.point(), in.ptgs, obstaclePoints);
-        if (rsGoalHeadings_.empty())
-        {
-            MRPT_LOG_DEBUG(
-                "Reeds-Shepp shot not used: the footprint fits at no heading "
-                "at the goal point.");
-            rsExpansionRadius_ = 0;
-        }
-    }
-
-    // ----------------------------------------
-    //
-    // A* algorithm
-    //
-    // ----------------------------------------
-    // Open set, ordered by fScore; ties are popped in insertion order (FIFO),
-    // as a std::multimap keyed by fScore would do, but without one heap
-    // allocation per insertion.
-    struct OpenEntry
-    {
-        distance_t fScore;
-        uint64_t   seq;
-        Node*      node;
-        bool       operator>(const OpenEntry& o) const
-        {
-            return fScore != o.fScore ? fScore > o.fScore : seq > o.seq;
-        }
-    };
-    std::priority_queue<
-        OpenEntry, std::vector<OpenEntry>, std::greater<OpenEntry>>
-                          openSet;
-    uint64_t              openSeq    = 0;
-    mrpt::graphs::TNodeID nextFreeId = 0;
+    prepare_obstacles();
 
     // openSet <- startNode
     {
-        auto& n = getOrCreateNodeByPose(in.stateStart, nextFreeId);
+        auto& n = getOrCreateNodeByPose(in.stateStart, search_.nextFreeId);
         n.state = in.stateStart;
 
         //   X_T ← {X_0 }    # Tree nodes (state space)
@@ -299,53 +325,30 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         n.fScore = params_.heuristic_epsilon * heuristic(n.state, in.stateGoal);
         n.pendingInOpenSet = true;
 
-        openSet.push({n.fScore, openSeq++, &n});
+        search_.openSet.push({n.fScore, search_.openSeq++, &n});
     }
 
     // Define goal node ID:
     // Use a pointer so we can replace it with a pointer to a different node as
     // needed.
-    auto* nodeGoal =
-        &getOrCreateNodeByPose(in.stateGoal.asSE2KinState(), nextFreeId);
-    po.goalNodeId = nodeGoal->id.value();
+    search_.nodeGoal = &getOrCreateNodeByPose(
+        in.stateGoal.asSE2KinState(), search_.nextFreeId);
+    po.goalNodeId = search_.nodeGoal->id.value();
 
     // Goal cell indices:
-    const auto goalCellIndices =
-        in.stateGoal.state.isPoint()
-            ? nodeGridCoords(in.stateGoal.state.point())
-            : nodeGridCoords(in.stateGoal.state.pose());
+    search_.goalCellIndices = in.stateGoal.state.isPoint()
+                                  ? nodeGridCoords(in.stateGoal.state.point())
+                                  : nodeGridCoords(in.stateGoal.state.pose());
 
     // Desired speed at goal, stored as **absolute linear speed in m/s**.
     // Each PTG normalises this against its own v_max when it reads the map
     // (see find_feasible_paths_to_neighbors).  Only the XY linear component
     // is used; a purely-angular exit velocity maps to 0 (stop) because
     // PTG targetRelSpeed is a linear-speed modifier.
-    nodes_with_desired_speed_t nodesWithDesiredSpeed;
-    nodesWithDesiredSpeed[goalCellIndices] =
+    search_.nodesWithDesiredSpeed[search_.goalCellIndices] =
         std::hypot(in.stateGoal.vel.vx, in.stateGoal.vel.vy);
 
-    unsigned int nIter = 0;
-
-    double tLastCallback = planInitTime;
-
-    // Analytic goal expansion (deferred, optimality-preserving): when a
-    // collision-free edge lands in the goal cell we remember it as a
-    // *candidate* solution instead of terminating immediately. Stopping on the
-    // first such edge is greedy and can produce grossly suboptimal paths: with
-    // an SE(2) goal, a node that arrived at the goal xy but a couple of yaw
-    // cells off can only re-enter the exact goal cell through a
-    // near-full-circle PTG arc (with a tight turning radius), so that first
-    // edge is a ~360 deg loop (see fig:cases in the paper). We instead keep the
-    // cheapest goal-landing candidate and only commit once its actual cost is
-    // provably (eps-)optimal, i.e. <= the minimum fScore still pending in the
-    // open set (committed at the top of the loop). This preserves the
-    // early-termination speed-up without accepting the loop, and is a no-op for
-    // R(2) point goals (verified identical on the 300-world BARN sweep).
-    Node*  bestGoalCandidate  = nullptr;
-    cost_t bestGoalCandidateG = std::numeric_limits<cost_t>::max();
-    // A goal candidate may also be the last node of a Reeds-Shepp shot, which
-    // lives in the tree only (not in the lattice):
-    std::optional<mrpt::graphs::TNodeID> bestGoalCandidateShotId;
+    search_.tLastCallback = startInitTime;
 
     // Defer building per-edge interpolated paths during the search: it is a
     // major cost (a std::map per edge) and is only needed for (a) cost
@@ -353,9 +356,39 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     // callbacks that inspect the partial path. When none of these apply, we
     // store only estimatedExecTime during the search and interpolate just the
     // final solution edges at the end.
-    const bool deferInterpolation =
+    search_.deferInterpolation =
         costEvaluators_.empty() &&
         params_.saveDebugVisualizationDecimation == 0 && !progressCallback_;
+
+    po.computationTime = mrpt::Clock::nowDouble() - startInitTime;
+    MRPT_END
+}
+
+void TPS_Astar::run_search(duration_seconds_t maxComputationTime)
+{
+    if (!search_can_continue()) { return; }
+
+    mrpt::system::CTimeLoggerEntry tleRun(profiler_(), "run_search");
+    const double                   runInitTime = mrpt::Clock::nowDouble();
+
+    // Shortcuts to the search state:
+    const PlannerInput& in                    = search_.in;
+    PlannerOutput&      po                    = search_.po;
+    auto&               tree                  = po.motionTree;
+    auto&               openSet               = search_.openSet;
+    auto&               openSeq               = search_.openSeq;
+    auto&               nextFreeId            = search_.nextFreeId;
+    Node*&              nodeGoal              = search_.nodeGoal;
+    const auto&         goalCellIndices       = search_.goalCellIndices;
+    const auto&         nodesWithDesiredSpeed = search_.nodesWithDesiredSpeed;
+    auto&               nIter                 = search_.nIter;
+    auto&               tLastCallback         = search_.tLastCallback;
+    auto&               bestGoalCandidate     = search_.bestGoalCandidate;
+    auto&               bestGoalCandidateG    = search_.bestGoalCandidateG;
+    auto&        bestGoalCandidateShotId      = search_.bestGoalCandidateShotId;
+    const bool   deferInterpolation           = search_.deferInterpolation;
+    const auto&  obstaclePoints               = search_.obstaclePoints;
+    const double MAX_XY_DIST                  = search_.maxXYDist;
 
     // Tries a Reeds-Shepp shot from `n` to the goal (see
     // use_reeds_shepp_expansion). A clear shot becomes the goal candidate if
@@ -445,6 +478,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             po.bestNodeId           = po.goalNodeId;
             po.bestNodeIdCostToGoal = 0;
             MRPT_LOG_DEBUG("Reeds-Shepp shot committed as the solution.");
+            search_.found = true;
             break;
         }
         if (params_.use_analytic_expansion && bestGoalCandidate != nullptr &&
@@ -474,6 +508,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             MRPT_LOG_DEBUG_STREAM(
                 "Analytic expansion: optimal goal candidate committed at "
                 << gn.state.asString());
+            search_.found = true;
             break;
         }
 
@@ -533,6 +568,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
             // Update in the tree node also:
             tree.node_state(*current.id).pose = current.state.pose;
 
+            search_.found = true;
             break;
         }
 
@@ -766,7 +802,7 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
         const double tNow = mrpt::Clock::nowDouble();
 
         // timeout?
-        if ((tNow - planInitTime) > params_.maximumComputationTime)
+        if ((tNow - runInitTime) > maxComputationTime)
         {
             // timeout
             MRPT_LOG_DEBUG("Timeout.");
@@ -797,19 +833,29 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 
     }  // end while openSet!=empty
 
+    if (openSet.empty() && !search_.found) { search_.exhausted = true; }
+
+    po.computationTime += mrpt::Clock::nowDouble() - runInitTime;
+}
+
+PlannerOutput TPS_Astar::finalized_output(PlannerOutput po) const
+{
+    const auto& in   = search_.in;
+    auto&       tree = po.motionTree;
+
     // A clear shot not committed yet (timeout or exhausted open set) still
     // reaches the goal:
-    if (bestGoalCandidateShotId && po.goalNodeId != po.bestNodeId)
+    if (search_.bestGoalCandidateShotId && po.goalNodeId != po.bestNodeId)
     {
-        po.goalNodeId           = *bestGoalCandidateShotId;
+        po.goalNodeId           = *search_.bestGoalCandidateShotId;
         po.bestNodeId           = po.goalNodeId;
         po.bestNodeIdCostToGoal = 0;
     }
 
     // If interpolation was deferred during the search, build it now for just
-    // the final solution-path edges (needed for output / refinement / exec).
-    if (deferInterpolation && po.bestNodeId.has_value() &&
-        po.goalNodeId == po.bestNodeId)
+    // the edges of the path to the best node (needed for output / refinement
+    // / exec), also for a partial path.
+    if (search_.deferInterpolation && po.bestNodeId.has_value())
     {
         const auto [solNodes, solEdges] =
             tree.backtrack_path(po.bestNodeId.value());
@@ -841,9 +887,142 @@ PlannerOutput TPS_Astar::plan(const PlannerInput& in)
     po.success = po.goalNodeId == po.bestNodeId;
     if (po.bestNodeId) po.pathCost = tree.nodes().at(*po.bestNodeId).cost_;
 
-    po.computationTime = mrpt::Clock::nowDouble() - planInitTime;
-
     return po;
+}
+
+bool TPS_Astar::reroot(mrpt::graphs::TNodeID newRoot)
+{
+    MRPT_START
+    mrpt::system::CTimeLoggerEntry tle(profiler_(), "reroot");
+
+    ASSERTMSG_(search_.started, "reroot() called before start()");
+    auto& s    = search_;
+    auto& tree = s.po.motionTree;
+    if (tree.nodes().count(newRoot) == 0) { return false; }
+    if (newRoot == tree.root) { return true; }
+
+    const auto kept = tree.prune_to_subtree(newRoot);
+
+    // The new root is either a lattice node or the end of a Reeds-Shepp shot
+    // edge (tree only): its cost in the old tree is the offset to remove.
+    cost_t gRoot = std::numeric_limits<cost_t>::max();
+    for (const auto& [coords, node] : grid_)
+    {
+        if (node.id && *node.id == newRoot)
+        {
+            gRoot = node.gScore;
+            break;
+        }
+    }
+
+    // Lattice: keep the subtree nodes and the goal placeholder (a node never
+    // reached, with no tree node); free the cells of the other nodes.
+    for (auto it = grid_.begin(); it != grid_.end();)
+    {
+        Node&      n         = it->second;
+        const bool inSubtree = n.id && kept.count(*n.id) != 0;
+        const bool neverReached =
+            !n.cameFrom && n.gScore == std::numeric_limits<cost_t>::max() &&
+            !(n.id && *n.id == newRoot);
+        if (!inSubtree && !neverReached)
+        {
+            if (s.bestGoalCandidate == &n) { s.bestGoalCandidate = nullptr; }
+            if (s.nodeGoal == &n) { s.nodeGoal = nullptr; }
+            it = grid_.erase(it);
+            continue;
+        }
+        if (inSubtree)
+        {
+            if (*n.id == newRoot)
+            {
+                n.cameFrom.reset();
+                n.gScore = 0;
+                n.fScore = params_.heuristic_epsilon *
+                           heuristic(n.state, s.in.stateGoal);
+            }
+            else if (gRoot != std::numeric_limits<cost_t>::max())
+            {
+                n.gScore -= gRoot;
+                n.fScore -= gRoot;
+            }
+            else
+            {
+                // Root is a shot node: take the costs from the tree.
+                const cost_t g = tree.nodes().at(*n.id).cost_;
+                n.fScore += g - n.gScore;
+                n.gScore = g;
+            }
+        }
+        ++it;
+    }
+
+    // Goal candidates:
+    const bool shotKept = s.bestGoalCandidateShotId &&
+                          kept.count(*s.bestGoalCandidateShotId) != 0;
+    if (s.bestGoalCandidateShotId && !shotKept)
+    {
+        s.bestGoalCandidateShotId.reset();
+    }
+    if (shotKept)
+    {
+        s.bestGoalCandidateG =
+            tree.nodes().at(*s.bestGoalCandidateShotId).cost_;
+    }
+    else if (s.bestGoalCandidate)
+    {
+        s.bestGoalCandidateG = s.bestGoalCandidate->gScore;
+    }
+    else { s.bestGoalCandidateG = std::numeric_limits<cost_t>::max(); }
+
+    // Goal node, best node:
+    auto& po = s.po;
+    if (s.found && po.goalNodeId && kept.count(*po.goalNodeId) == 0)
+    {
+        s.found = false;
+    }
+    if (!s.nodeGoal)
+    {
+        s.nodeGoal = &getOrCreateNodeByPose(
+            s.in.stateGoal.asSE2KinState(), s.nextFreeId);
+    }
+    if (!s.found) { po.goalNodeId = s.nodeGoal->id.value(); }
+
+    po.bestNodeId.reset();
+    po.bestNodeIdCostToGoal = std::numeric_limits<cost_t>::max();
+    for (const auto& [id, node] : tree.nodes())
+    {
+        const cost_t h = (s.found && po.goalNodeId == id)
+                             ? 0
+                             : heuristic(node, s.in.stateGoal);
+        if (h < po.bestNodeIdCostToGoal)
+        {
+            po.bestNodeIdCostToGoal = h;
+            po.bestNodeId           = id;
+        }
+    }
+    if (s.found) { po.bestNodeId = po.goalNodeId; }
+
+    // Open set: the open nodes of the subtree.
+    s.openSet = open_set_t();
+    for (auto& [coords, n] : grid_)
+    {
+        if (n.pendingInOpenSet && !n.visited && n.id && kept.count(*n.id))
+        {
+            s.openSet.push({n.fScore, s.openSeq++, &n});
+        }
+    }
+    s.exhausted = s.openSet.empty() && !s.found;
+
+    // The new start:
+    const auto& rootState       = tree.nodes().at(newRoot);
+    s.in.stateStart.pose        = rootState.pose;
+    s.in.stateStart.vel         = rootState.vel;
+    po.originalInput.stateStart = s.in.stateStart;
+    startPose_                  = rootState.pose;
+    startWithinClearance_       = false;
+    startLocalObstacles_.clear();
+
+    return true;
     MRPT_END
 }
 

@@ -139,3 +139,9 @@ selfdriving_add_test(
     SOURCES test_ptg_clone.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
 )
+
+selfdriving_add_test(
+    TARGET  test_astar_resumable
+    SOURCES test_astar_resumable.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
