@@ -368,7 +368,23 @@ void TrajectoryFollower::updateTrajectory(const Trajectory& traj)
     const auto lastOdom   = lastOdom_;
     const auto ctrlInit   = ctrlPoseInit_;
 
+    // Direction of the old path at the progress point, to tell apart legs of
+    // the new path that pass over the same point (e.g. before and after a
+    // cusp):
+    mrpt::math::TPoint2D progressDir(0, 0);
+    for (std::size_t i = 0; i + 1 < traj_.size(); i++)
+    {
+        if (cumS_[i + 1] >= lastS_ && cumS_[i + 1] > cumS_[i])
+        {
+            progressDir = {
+                traj_[i + 1].pose.x - traj_[i].pose.x,
+                traj_[i + 1].pose.y - traj_[i].pose.y};
+            break;
+        }
+    }
+
     setTrajectory(traj);
+    if (!hasTrajectory()) { return; }  // not trackable: keep the reset state
 
     lastCommandedSpeed_ = speed;
     lastCommandedOmega_ = omega;
@@ -378,9 +394,11 @@ void TrajectoryFollower::updateTrajectory(const Trajectory& traj)
     ctrlPoseInit_       = ctrlInit;
 
     // Progress: the first point of the new path matching the old progress
-    // point (the shared part of both paths is identical), or else the point
-    // nearest to the control pose:
-    const auto nearestS = [this](const mrpt::math::TPoint2D& q, double tol)
+    // point on a segment in the same direction (the shared part of both paths
+    // is identical), or else the point nearest to the control pose:
+    const auto nearestS = [this](
+                              const mrpt::math::TPoint2D& q, double tol,
+                              const std::optional<mrpt::math::TPoint2D>& dir)
     {
         std::optional<double> best;
         double                bestD2 = tol * tol;
@@ -392,6 +410,7 @@ void TrajectoryFollower::updateTrajectory(const Trajectory& traj)
             const double sy   = b.y - a.y;
             const double len2 = sx * sx + sy * sy;
             if (len2 < 1e-9) { continue; }
+            if (dir && sx * dir->x + sy * dir->y <= 0) { continue; }
             const double t = std::clamp(
                 ((q.x - a.x) * sx + (q.y - a.y) * sy) / len2, 0.0, 1.0);
             const double dx = q.x - (a.x + t * sx);
@@ -407,11 +426,12 @@ void TrajectoryFollower::updateTrajectory(const Trajectory& traj)
         return best;
     };
     constexpr double kMatchTol = 0.02;  // [m]
-    auto             newS      = nearestS(progressPt, kMatchTol);
+    auto             newS      = nearestS(progressPt, kMatchTol, progressDir);
     if (!newS)
     {
         const auto p = ctrlPoseInit_ ? ctrlPose_.asTPose() : traj_.front().pose;
-        newS = nearestS({p.x, p.y}, std::numeric_limits<double>::infinity());
+        newS         = nearestS(
+                    {p.x, p.y}, std::numeric_limits<double>::infinity(), std::nullopt);
     }
     ASSERT_(newS.has_value());
     lastS_ = *newS;

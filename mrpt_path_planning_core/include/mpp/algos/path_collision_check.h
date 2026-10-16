@@ -26,6 +26,10 @@ namespace mpp
  * Since the clearance is included, an edge leaving a pose closer than the
  * clearance to some obstacle is reported as colliding.
  *
+ * As the planners, it changes the dynamic state of the PTGs in `trs` (users
+ * set it before evaluating them): use a TrajectoriesAndRobotShape::clone() to
+ * keep others from being affected, e.g. in other threads.
+ *
  * \return The index in `edges` of the first edge that collides, or
  * std::nullopt if all of them are clear.
  */

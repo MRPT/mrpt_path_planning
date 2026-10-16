@@ -796,3 +796,62 @@ TEST(FollowerClosedLoop, PathUpdateKeepsSpeed)
     const auto restarted = run(updated, false, tSwap);
     EXPECT_LT(speedRatioAfterSwap(restarted, tSwap), 0.5);
 }
+
+// A path update while driving the return leg of a path that doubles back over
+// itself (a cusp): the progress is matched on the return leg, so the robot
+// keeps backing up instead of driving forward to the cusp again. Also, an
+// update too short to track stops the robot without asserting.
+TEST(FollowerClosedLoop, PathUpdateOnReturnLeg)
+{
+    const auto initial =
+        PathBuilder({0, 0, 0}).straight(4.0).straight(3.5, -1).build();
+    const auto updated =
+        PathBuilder({0, 0, 0}).straight(4.0).straight(4.0, -1).build();
+
+    mpp::TrajectoryFollower f;
+    setDiffDriveParams(f);
+    const auto& c           = idealStack();
+    f.params.control_delay  = c.odo_latency + c.cmd_latency;
+    f.params.rotate_at_goal = false;
+
+    bool       started   = false;
+    bool       swapped   = false;
+    double     xAtSwap   = 0;
+    double     maxXAfter = -1e9;
+    const auto r         = runClosedLoop(
+                f, updated, c, {0, 0, 0}, 120.0,
+                [&](double, double s, mpp::TrajectoryFollower& fol)
+                {
+            if (!started)
+            {
+                fol.setTrajectory(initial);
+                started = true;
+            }
+            if (!swapped && s >= 5.5)  // 1.5 m into the return leg
+            {
+                fol.updateTrajectory(updated);
+                swapped = true;
+            }
+        });
+    ASSERT_TRUE(swapped);
+    for (const auto& g : r.gt)
+    {
+        if (g.s >= 5.5 && xAtSwap == 0) { xAtSwap = g.pose.x; }
+        if (xAtSwap != 0) { maxXAfter = std::max(maxXAfter, g.pose.x); }
+    }
+    ASSERT_TRUE(r.ended);
+    EXPECT_EQ(r.finalStatus, mpp::FollowerStatus::ReachedGoal);
+    EXPECT_LT(maxXAfter, xAtSwap + 0.3)
+        << "drove forward again after the update";
+    EXPECT_LT(std::abs(r.gt.back().pose.x - 0.0), 0.3);
+
+    // A replacement too short to track:
+    mpp::TrajectoryFollower f2;
+    setDiffDriveParams(f2);
+    f2.setTrajectory(initial);
+    mpp::Trajectory tiny;
+    tiny.emplace_back(mrpt::math::TPose2D(1.0, 0, 0), 0.0);
+    tiny.emplace_back(mrpt::math::TPose2D(1.001, 0, 0), 0.0);
+    EXPECT_NO_THROW(f2.updateTrajectory(tiny));
+    EXPECT_FALSE(f2.hasTrajectory());
+}

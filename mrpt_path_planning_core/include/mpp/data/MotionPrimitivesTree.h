@@ -238,7 +238,13 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
         nodes_[node_id] = node_t(node_id, {}, node_data, zeroCost);
     }
 
-    TNodeID next_free_node_ID() const { return nodes_.size(); }
+    /** An ID not used by any node (IDs are kept by prune_to_subtree(), so
+     * they may not be contiguous). */
+    TNodeID next_free_node_ID() const
+    {
+        if (nodes_.empty()) { return 0; }
+        return nodes_.rbegin()->first + 1;
+    }
 
     /** Keeps only the subtree hanging from `newRoot`, which becomes the root.
      * Node costs are recomputed from the new root (summing edge costs), so

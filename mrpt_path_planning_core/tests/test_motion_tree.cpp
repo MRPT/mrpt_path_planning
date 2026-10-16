@@ -101,3 +101,25 @@ TEST(MotionTree, EdgeToParent)
     EXPECT_NEAR(e.cost, 2.5, 1e-9);
     EXPECT_EQ(e.parentId, 0u);
 }
+
+TEST(MotionTree, PruneToSubtreeKeepsFreeIdsUnused)
+{
+    Tree tree;
+
+    // root(0) -> 1 -> 2, and root(0) -> 3: keep the subtree of 1.
+    tree.insert_root_node(0, makeState(0, 0));
+    tree.insert_node_and_edge(0, 1, makeState(1, 0), makeEdge(0, 1.0));
+    tree.insert_node_and_edge(1, 2, makeState(2, 0), makeEdge(1, 1.0));
+    tree.insert_node_and_edge(0, 3, makeState(0, 1), makeEdge(0, 1.0));
+
+    const auto kept = tree.prune_to_subtree(1);
+    EXPECT_EQ(kept.size(), 2u);
+    EXPECT_EQ(tree.root, 1u);
+    EXPECT_NEAR(tree.nodes().at(1).cost_, 0.0, 1e-9);
+    EXPECT_NEAR(tree.nodes().at(2).cost_, 1.0, 1e-9);
+    EXPECT_FALSE(tree.nodes().at(1).parentID_.has_value());
+
+    // Two nodes are left, but ID 2 is still in use:
+    const auto id = tree.next_free_node_ID();
+    EXPECT_EQ(tree.nodes().count(id), 0u);
+}
