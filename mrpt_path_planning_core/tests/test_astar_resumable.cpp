@@ -392,7 +392,7 @@ TEST(AstarResumable, CopiedPlannerIsIndependent)
 TEST(AstarResumable, ParallelPlannersOnClonedPtgs)
 {
     constexpr int            kThreads = 4;
-    std::vector<bool>        ok(kThreads, false);
+    std::vector<int>         ok(kThreads, 0);
     std::vector<double>      costs(kThreads, 0.0);
     std::vector<std::thread> threads;
     for (int t = 0; t < kThreads; t++)
@@ -405,7 +405,7 @@ TEST(AstarResumable, ParallelPlannersOnClonedPtgs)
                 auto in = makeInput({wall(3.0, 2.0)});
                 in.ptgs = ptgs().clone();  // nothing shared but the obstacles
                 const auto po = planner.plan(in);
-                ok[t]         = po.success;
+                ok[t]         = po.success ? 1 : 0;
                 costs[t]      = po.pathCost;
             });
     }
