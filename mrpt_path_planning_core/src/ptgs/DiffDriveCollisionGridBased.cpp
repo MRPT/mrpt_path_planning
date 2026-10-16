@@ -127,7 +127,7 @@ double boxPolygonDistance(const Box2D& box, const mrpt::math::TPolygon2D& poly)
  *   - v_max, w_max: Maximum robot speeds.
  */
 DiffDriveCollisionGridBased::DiffDriveCollisionGridBased()
-    : m_collisionGrid(-1, 1, -1, 1, 0.5, this)
+    : m_collisionGrid(-1, 1, -1, 1, 0.5)
 {
 }
 
@@ -377,7 +377,7 @@ bool DiffDriveCollisionGridBased::saveColGridsToFile(
         const uint32_t n    = 1;  // for backwards compatibility...
         auto           arch = mrpt::serialization::archiveFrom(fo);
         arch << n;
-        return m_collisionGrid.saveToFile(&arch, computed_robotShape);
+        return m_collisionGrid.saveToFile(*this, &arch, computed_robotShape);
     }
     catch (...)
     {
@@ -403,7 +403,7 @@ bool DiffDriveCollisionGridBased::loadColGridsFromFile(
             return false;  // Incompatible (old) format, just discard and
         // recompute.
 
-        return m_collisionGrid.loadFromFile(&arch, current_robotShape);
+        return m_collisionGrid.loadFromFile(*this, &arch, current_robotShape);
     }
     catch (...)
     {
@@ -417,8 +417,8 @@ const uint32_t COLGRID_FILE_MAGIC = 0xC0C0C0C3;
                     Save to file
   ---------------------------------------------------------------*/
 bool DiffDriveCollisionGridBased::CCollisionGrid::saveToFile(
-    mrpt::serialization::CArchive* f,
-    const mrpt::math::CPolygon&    computed_robotShape) const
+    const DiffDriveCollisionGridBased& parent, mrpt::serialization::CArchive* f,
+    const mrpt::math::CPolygon& computed_robotShape) const
 {
     try
     {
@@ -433,11 +433,11 @@ bool DiffDriveCollisionGridBased::CCollisionGrid::saveToFile(
 
         // Robot shape:
         *f << computed_robotShape;
-        *f << m_parent->m_clearance;
+        *f << parent.m_clearance;
 
         // and standard PTG data:
-        *f << m_parent->getDescription() << m_parent->getAlphaValuesCount()
-           << d2f(m_parent->getMax_V()) << d2f(m_parent->getMax_W());
+        *f << parent.getDescription() << parent.getAlphaValuesCount()
+           << d2f(parent.getMax_V()) << d2f(parent.getMax_W());
 
         *f << m_x_min << m_x_max << m_y_min << m_y_max;
         *f << m_resolution;
@@ -465,8 +465,8 @@ bool DiffDriveCollisionGridBased::CCollisionGrid::saveToFile(
                         loadFromFile
   ---------------------------------------------------------------*/
 bool DiffDriveCollisionGridBased::CCollisionGrid::loadFromFile(
-    mrpt::serialization::CArchive* f,
-    const mrpt::math::CPolygon&    current_robotShape)
+    const DiffDriveCollisionGridBased& parent, mrpt::serialization::CArchive* f,
+    const mrpt::math::CPolygon& current_robotShape)
 {
     try
     {
@@ -504,7 +504,7 @@ bool DiffDriveCollisionGridBased::CCollisionGrid::loadFromFile(
 
                 double stored_clearance = 0;
                 *f >> stored_clearance;
-                if (std::abs(stored_clearance - m_parent->m_clearance) > 1e-9)
+                if (std::abs(stored_clearance - parent.m_clearance) > 1e-9)
                 {
                     return false;
                 }
@@ -523,7 +523,7 @@ bool DiffDriveCollisionGridBased::CCollisionGrid::loadFromFile(
         };
 
         // Standard PTG data:
-        const std::string expected_desc = m_parent->getDescription();
+        const std::string expected_desc = parent.getDescription();
         std::string       desc;
         *f >> desc;
         if (desc != expected_desc) return false;
@@ -548,9 +548,9 @@ bool DiffDriveCollisionGridBased::CCollisionGrid::loadFromFile(
         if (std::abs(ff - _VAR) > 1e-6) return false; \
     }
 
-        READ_UINT16_CHECK_IT_MATCHES_STORED(m_parent->getAlphaValuesCount())
-        READ_FLOAT_CHECK_IT_MATCHES_STORED(m_parent->getMax_V())
-        READ_FLOAT_CHECK_IT_MATCHES_STORED(m_parent->getMax_W())
+        READ_UINT16_CHECK_IT_MATCHES_STORED(parent.getAlphaValuesCount())
+        READ_FLOAT_CHECK_IT_MATCHES_STORED(parent.getMax_V())
+        READ_FLOAT_CHECK_IT_MATCHES_STORED(parent.getMax_W())
 
         // Cell dimensions:
         READ_DOUBLE_CHECK_IT_MATCHES_STORED(m_x_min)

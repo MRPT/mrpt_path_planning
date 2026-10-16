@@ -133,3 +133,9 @@ selfdriving_add_test(
     SOURCES test_trajectory_follower_closed_loop.cpp
     LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
 )
+
+selfdriving_add_test(
+    TARGET  test_ptg_clone
+    SOURCES test_ptg_clone.cpp
+    LINK_LIBRARIES mrpt_path_planning GTest::GTest GTest::Main
+)
