@@ -22,10 +22,13 @@ void ObstacleSourceStaticPointcloud::apply_clipping_box(
 {
     if (!bbox)
     {
+        auto lck     = mrpt::lockHelper(clipMtx_);
         clipped_obs_ = static_obs_;
         return;
     }
-    clipped_obs_ = mrpt::maps::CSimplePointsMap::Create();
+    // Build the new cloud aside and swap it in, so users of the previous one
+    // are not affected:
+    auto clipped = mrpt::maps::CSimplePointsMap::Create();
 
     const auto bb = mrpt::math::TBoundingBoxf(
         bbox->min.cast<float>(), bbox->max.cast<float>());
@@ -35,7 +38,7 @@ void ObstacleSourceStaticPointcloud::apply_clipping_box(
 
 #if MRPT_VERSION >= 0x020f00  // 2.15.0
     mrpt::maps::CPointsMap::InsertCtx ctx =
-        clipped_obs_->prepareForInsertPointsFrom(*static_obs_);
+        clipped->prepareForInsertPointsFrom(*static_obs_);
 #endif
 
     for (size_t i = 0; i < xs.size(); i++)
@@ -44,13 +47,16 @@ void ObstacleSourceStaticPointcloud::apply_clipping_box(
             ys[i] < bb.min.y || ys[i] > bb.max.y)
             continue;
 #if MRPT_VERSION >= 0x020f03  // 2.15.3
-        clipped_obs_->insertPointFrom(i, ctx);
+        clipped->insertPointFrom(i, ctx);
 #elif MRPT_VERSION >= 0x020f00  // 2.15.0
-        clipped_obs_->insertPointFrom(*static_obs_, i, ctx);
+        clipped->insertPointFrom(*static_obs_, i, ctx);
 #else
-        clipped_obs_->insertPointFrom(*static_obs_, i);
+        clipped->insertPointFrom(*static_obs_, i);
 #endif
     }
+
+    auto lck     = mrpt::lockHelper(clipMtx_);
+    clipped_obs_ = clipped;
 }
 
 mrpt::maps::CPointsMap::Ptr ObstacleSourceGenericSensor::obstacles(

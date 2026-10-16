@@ -26,6 +26,9 @@ struct MoveEdgeSE2_TPS
      * starting node). */
     mrpt::graphs::TNodeID parentId = mrpt::graphs::INVALID_NODEID;
 
+    /** Nodes poses at both ends of the edge. After refine_trajectory(),
+     * `stateTo` is the exact node pose (the PTG path is re-fitted to reach it
+     * by position only). */
     SE2_KinState stateFrom, stateTo;
 
     /** cost associated to each motion, this should be defined by the user

@@ -116,7 +116,7 @@ parent is found.
 Euclidean distance; both add a heading-alignment term and are divided by the
 maximum PTG speed so they are in time units. Optional: Reeds-Shepp distance
 (`use_reeds_shepp_heuristic`, requires all PTGs to be `DiffDrive_C`), and
-weighted A\* via `heuristic_epsilon` (default 1.0, i.e. exact A\*).
+weighted A\* via `heuristic_epsilon` (default 1.5; 1.0 is exact A\*).
 
 **Reeds-Shepp shot** (`use_reeds_shepp_expansion`). Near the goal, a
 Reeds-Shepp path is executed as a chain of forward/reverse C-PTG edges, each
@@ -134,7 +134,8 @@ follower. PTG collision grids are cached in `~/.cache/mrpt_path_planning`
 (or `$XDG_CACHE_HOME`), named by a hash of their configuration.
 
 **Cost model.** Edge cost = PTG segment estimated execution time + the sum of
-cost evaluators: `CostEvaluatorCostMap` (obstacle-proximity penalty),
+cost evaluators (each a penalty per second of motion, so edge splitting does
+not change it): `CostEvaluatorCostMap` (obstacle-proximity penalty),
 `CostEvaluatorPreferredWaypoint` (reward near given waypoints) and
 `CostEvaluatorReverseMotion` (extra cost per second driven in reverse).
 
@@ -148,6 +149,7 @@ lives in `TPS_Astar` (`SearchState`) between calls. Callers can `run()` in time
 slices (anytime: `bestNodeId` is the best partial path so far), `reroot()` the
 search at a tree node ahead on the executed path (only its subtree is kept,
 other lattice cells are freed), and `set_obstacles()` for later expansions.
+`run_slice()` + `path_to_node()` avoid copying the tree on each call.
 `first_colliding_edge()` validates a planned path against new obstacles
 (`tests/test_astar_resumable.cpp`). Only `TPS_Astar` supports it, not Bidir.
 

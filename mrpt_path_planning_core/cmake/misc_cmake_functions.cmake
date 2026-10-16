@@ -361,6 +361,18 @@ function(selfdriving_add_test)
     add_test(run_${SELFDRIVING_ADD_TEST_TARGET} ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${SELFDRIVING_ADD_TEST_TARGET})
     set_tests_properties(run_${SELFDRIVING_ADD_TEST_TARGET} PROPERTIES DEPENDS ${SELFDRIVING_ADD_TEST_TARGET}_build)
 
+    # Use a fresh PTG collision grid cache (emptied once per ctest run), so the
+    # tests exercise the grid builder instead of the user's cached grids:
+    if (NOT TARGET mpp_test_cache_clean_dummy)
+      add_custom_target(mpp_test_cache_clean_dummy)
+      add_test(NAME mpp_test_cache_clean
+        COMMAND ${CMAKE_COMMAND} -E remove_directory "${CMAKE_BINARY_DIR}/test_cache")
+      set_tests_properties(mpp_test_cache_clean PROPERTIES FIXTURES_SETUP mpp_test_cache)
+    endif()
+    set_tests_properties(run_${SELFDRIVING_ADD_TEST_TARGET} PROPERTIES
+      FIXTURES_REQUIRED mpp_test_cache
+      ENVIRONMENT "XDG_CACHE_HOME=${CMAKE_BINARY_DIR}/test_cache")
+
     add_custom_target(run_${SELFDRIVING_ADD_TEST_TARGET} COMMAND ${SELFDRIVING_ADD_TEST_TARGET})
     add_dependencies(run_${SELFDRIVING_ADD_TEST_TARGET} ${SELFDRIVING_ADD_TEST_TARGET})
 

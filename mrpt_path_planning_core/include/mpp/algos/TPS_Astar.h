@@ -17,6 +17,7 @@
 #include <limits>
 #include <optional>
 #include <queue>
+#include <tuple>
 #include <unordered_map>
 
 /** Feature macro: TPS_Astar has the resumable search API (start(), run(),
@@ -35,29 +36,24 @@ struct TPS_Astar_Parameters
 
     double grid_resolution_xy = 0.20;
 
-    /** Default 7.5 deg (48 yaw bins). A finer 5 deg was found to over-resolve
-     * the yaw dimension: since the heuristic is essentially positional, finer
-     * yaw multiplies SE(2) expansions ~linearly with no quality gain. Measured
-     * (collision-sound, 300-world BARN + 40-case HouseExpo): 5->7.5 deg cuts
-     * mean plan time ~23-37% and HouseExpo median ~1.5x while *improving*
-     * success (BARN 291->292/300, HouseExpo 39->40/40) at unchanged median path
-     * quality. 10 deg is faster still but drops net BARN success, so 7.5 deg is
-     * the sweet spot. See DESIGN.md sec 12.7. */
+    /** Default 7.5 deg (48 yaw bins). Since the heuristic is essentially
+     * positional, a finer yaw resolution multiplies the expansions with no
+     * quality gain, while a coarser one loses success rate. */
     double grid_resolution_yaw = 7.5_deg;
 
     double SE2_metricAngleWeight = 1.0;
 
     double heuristic_heading_weight = 0.1;  //!< [0,1]
 
-    /** Weighted-A* heuristic inflation factor `eps >= 1` (default 1.0 = exact
-     * A*). The open set is ordered by `f = g + eps * h`. Values `> 1` make the
-     * search greedier: it expands far fewer nodes and returns a solution whose
-     * cost is provably within a factor `eps` of the optimum (bounded
-     * sub-optimality, as in ARA* / SBPL). Since the planner's expensive worlds
-     * are dominated by expansion count, `eps` in `[1.5, 2]` is the cheapest
-     * lever to cut the worst-case latency tail at a small, bounded path-cost
-     * increase. Found to be 1.5 to be somehow better in runtime than 1.0 in
-     * general cases. */
+    /** Weighted-A* heuristic inflation factor `eps >= 1` (1.0 = exact
+     * A*, default 1.5). The open set is ordered by `f = g + eps * h`. Values `>
+     * 1` make the search greedier: it expands far fewer nodes and returns a
+     * solution whose cost is provably within a factor `eps` of the optimum
+     * (bounded sub-optimality, as in ARA* / SBPL). Since the planner's
+     * expensive worlds are dominated by expansion count, `eps` in `[1.5, 2]` is
+     * the cheapest lever to cut the worst-case latency tail at a small, bounded
+     * path-cost increase. Found to be 1.5 to be somehow better in runtime
+     * than 1.0 in general cases. */
     double heuristic_epsilon = 1.5;
 
     /** Analytic expansion / early termination:
@@ -165,6 +161,12 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     TPS_Astar();
     virtual ~TPS_Astar() = default;
 
+    /** Copies the configuration (parameters, cost evaluators, logger) but not
+     * the search state, which points into the lattice of the source. The copy
+     * uses the default heuristic bound to itself. */
+    TPS_Astar(const TPS_Astar& o);
+    TPS_Astar& operator=(const TPS_Astar& o);
+
     TPS_Astar_Parameters params_;
 
     PlannerOutput plan(const PlannerInput& in) override;
@@ -187,6 +189,30 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
      * node closest to the goal (by the heuristic) found so far. Edges along
      * the path to `bestNodeId` are interpolated. */
     PlannerOutput run(duration_seconds_t maxComputationTime);
+
+    /** Light result of a search slice (see run_slice()). */
+    struct SliceResult
+    {
+        bool   success          = false;
+        double computationTime  = 0;  //!< total [s]
+        size_t numExpandedNodes = 0;
+        double pathCost         = std::numeric_limits<double>::max();
+        std::optional<mrpt::graphs::TNodeID> goalNodeId;
+        std::optional<mrpt::graphs::TNodeID> bestNodeId;
+        cost_t bestNodeIdCostToGoal = std::numeric_limits<cost_t>::max();
+    };
+
+    /** Like run(), but without copying the motion tree: returns only ids and
+     * costs. Use path_to_node() to get the path. */
+    SliceResult run_slice(duration_seconds_t maxComputationTime);
+
+    /** Nodes and edges of the path from the search root to `nodeId` (e.g.
+     * `SliceResult::bestNodeId`), with the edges interpolated. They point into
+     * the search tree: valid until the next run(), reroot() or start(). */
+    std::tuple<
+        MotionPrimitivesTreeSE2::path_t,
+        MotionPrimitivesTreeSE2::edge_sequence_t>
+        path_to_node(mrpt::graphs::TNodeID nodeId);
 
     /** Whether start() was called and the search can go on (the goal was
      * not reached yet, and the open set is not empty). */
@@ -663,6 +689,13 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     /** Completes a copy of the search output: goal shots not committed yet,
      * deferred edge interpolation, success flag, path cost. */
     PlannerOutput finalized_output(PlannerOutput po) const;
+
+    /** Builds the deferred interpolated paths of the edges to `nodeId`. */
+    void interpolate_path_to(
+        MotionPrimitivesTreeSE2& tree, mrpt::graphs::TNodeID nodeId) const;
+
+    /** Output ids and costs, with a not yet committed Reeds-Shepp shot. */
+    SliceResult make_slice_result(const PlannerOutput& po) const;
 };
 
 }  // namespace mpp
