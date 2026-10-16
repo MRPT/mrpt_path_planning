@@ -13,6 +13,8 @@
 #include <mrpt/obs/CObservation.h>
 #include <mrpt/system/datetime.h>
 
+#include <mutex>
+
 namespace mpp
 {
 /** Virtual base class for obstacle sources */
@@ -59,14 +61,19 @@ class ObstacleSourceStaticPointcloud : public ObstacleSource
         [[maybe_unused]] mrpt::system::TTimeStamp t =
             mrpt::system::TTimeStamp()) override
     {
+        auto lck = mrpt::lockHelper(clipMtx_);
         return clipped_obs_;
     }
 
+    /** Thread-safe. Note that the clipped cloud is shared by all users of this
+     * source: planners running in parallel on the same source must use the
+     * same clipping box, or one source per planner. */
     void apply_clipping_box(
         const std::optional<mrpt::math::TBoundingBox>& bbox =
             std::nullopt) override;
 
    private:
+    std::mutex                  clipMtx_;
     mrpt::maps::CPointsMap::Ptr static_obs_, clipped_obs_;
 };
 

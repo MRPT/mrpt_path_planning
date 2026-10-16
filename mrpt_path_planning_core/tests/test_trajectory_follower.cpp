@@ -2129,3 +2129,98 @@ TEST(TrajectoryFollower, CurveExitForwardQuarterEllipse)
     EXPECT_TRUE(r.reached);
     EXPECT_LT(r.maxCross, 0.05);
 }
+
+// ---------------------------------------------------------------------------
+// Path updates, reset, point-cloud obstacles, rotate_at_goal
+// ---------------------------------------------------------------------------
+
+TEST(TrajectoryFollower, PathUpdatesDoNotResetBlockedTimer)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};
+    mpp::TrajectoryFollower     f;
+    f.params.block_timeout = 5.0;
+    f.setRobotShape(mpp::robot_radius_t{0.3});
+    f.setObstacles(std::vector<TPoint2D>{{3.0, 0.0}});
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    const auto t0  = mrpt::Clock::now();
+    const auto pos = TPose2D(2.6, 0, 0);
+
+    mpp::FollowerStatus status = mpp::FollowerStatus::Idle;
+    for (int i = 0; i <= 8; i++)
+    {
+        // A path update once a second, as a replanner would do:
+        f.updateTrajectory(polyToTraj(pts, 0.5));
+
+        auto loc       = mkLoc(pos);
+        loc.timestamp  = t0 + std::chrono::milliseconds(1000 * i);
+        const auto out = f.step(loc, mkOdo(pos, 0));
+        EXPECT_EQ(out.safety_scale, 0.0);
+        status = out.status;
+        if (i < 5) { EXPECT_NE(status, mpp::FollowerStatus::Blocked) << i; }
+    }
+    EXPECT_EQ(status, mpp::FollowerStatus::Blocked);
+}
+
+TEST(TrajectoryFollower, ResetDropsTrajectory)
+{
+    mpp::TrajectoryFollower f;
+    f.setTrajectory(polyToTraj({{0, 0}, {3, 0}}, 0.5));
+    ASSERT_TRUE(f.hasTrajectory());
+    f.reset();
+    EXPECT_FALSE(f.hasTrajectory());
+    const auto out = f.step(mkLoc({0, 0, 0}), mkOdo({0, 0, 0}, 0));
+    EXPECT_EQ(out.status, mpp::FollowerStatus::Idle);
+}
+
+TEST(TrajectoryFollower, SetObstaclesFromPointsMap)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};
+    mpp::TrajectoryFollower     f;
+    f.setRobotShape(mpp::robot_radius_t{0.3});
+
+    mrpt::maps::CSimplePointsMap obs;
+    obs.insertPoint(3.0f, 0.0f, 0.0f);
+    f.setObstacles(obs);
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    const auto out = f.step(mkLoc({2.6, 0, 0}), mkOdo({2.6, 0, 0}, 0));
+    EXPECT_EQ(out.safety_scale, 0.0);
+
+    f.setObstacles(mrpt::maps::CSimplePointsMap());
+    const auto out2 = f.step(mkLoc({2.6, 0, 0}), mkOdo({2.6, 0, 0}, 0));
+    EXPECT_GT(out2.safety_scale, 0.0);
+}
+
+TEST(TrajectoryFollower, RotatesInPlaceToGoalHeading)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {2, 0}};
+    auto                        tr  = polyToTraj(pts, 0.5);
+    tr.back().pose.phi              = M_PI / 2;  // goal heading differs
+
+    mpp::TrajectoryFollower f;
+    f.params.rotate_at_goal  = true;
+    f.params.min_turn_radius = 0;
+    f.setTrajectory(tr);
+
+    TPose2D      robot(0, 0, 0);
+    double       v  = 0;
+    bool         ok = false;
+    const double dt = f.params.control_period;
+    for (int k = 0; k < 4000 && !ok; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal)
+        {
+            ok = true;
+            break;
+        }
+        if (out.command.points.empty()) { break; }
+        const auto tw = out.command.points.front().twist;
+        robot         = integrate(robot, tw.vx, tw.omega, dt);
+        v             = tw.vx;
+    }
+    EXPECT_TRUE(ok);
+    EXPECT_NEAR(std::hypot(robot.x - 2.0, robot.y), 0.0, 0.2);
+    EXPECT_NEAR(mrpt::math::wrapToPi(robot.phi - M_PI / 2), 0.0, 0.15);
+}

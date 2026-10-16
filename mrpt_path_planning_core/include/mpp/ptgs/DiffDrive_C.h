@@ -9,7 +9,6 @@
 #pragma once
 
 #include <mpp/ptgs/DiffDriveCollisionGridBased.h>
-#include <mpp/ptgs/SpeedTrimmablePTG.h>
 
 namespace mpp::ptg
 {
@@ -38,7 +37,7 @@ namespace mpp::ptg
  * \note [Before MRPT 1.5.0 this was named CPTG1]
  *  \ingroup nav_tpspace
  */
-class DiffDrive_C : public DiffDriveCollisionGridBased, public SpeedTrimmablePTG
+class DiffDrive_C : public DiffDriveCollisionGridBased
 {
     DEFINE_SERIALIZABLE(DiffDrive_C, mpp::ptg)
    public:

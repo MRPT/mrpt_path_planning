@@ -406,7 +406,8 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         cuspS_;  //!< arc-lengths where travel direction reverses
     std::vector<std::size_t>
            cuspIdx_;  //!< traj_ knot index for each entry in cuspS_
-    double lastS_ = 0;  //!< monotonic progress (map projection)
+    double lastS_ =
+        0;  //!< progress: arc-length of the path projection (can go back a bit)
 
     /** Driving gear (+1 forward, -1 reverse) for each cusp-bounded interval
      * of the path (size == cuspS_.size() + 1); see \ref advanceGear. */

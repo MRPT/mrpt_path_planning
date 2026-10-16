@@ -174,7 +174,9 @@ double CostEvaluatorCostMap::operator()(const MoveEdgeSE2_TPS& edge) const
 
     ASSERT_(n);
 
-    return cost / n;
+    // Per unit of time, so the penalty does not depend on how the motion is
+    // split into edges (costs stay non-negative, hence admissibility holds):
+    return cost / n * edge.estimatedExecTime;
 }
 
 double CostEvaluatorCostMap::eval_single_pose(

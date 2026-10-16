@@ -15,12 +15,15 @@
 #include <mrpt/serialization/CArchive.h>
 #include <mrpt/serialization/stl_serialization.h>
 #include <mrpt/system/CTicTac.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <thread>
 #include <utility>
 
 using namespace mpp::ptg;
@@ -371,13 +374,30 @@ bool DiffDriveCollisionGridBased::saveColGridsToFile(
 {
     try
     {
-        mrpt::io::CFileGZOutputStream fo(filename);
-        if (!fo.fileOpenCorrectly()) return false;
+        // Write to a temporary file and rename it, so concurrent readers never
+        // see a partially written cache file:
+        const std::string tmpName = filename + ".tmp" +
+                                    std::to_string(std::hash<std::thread::id>()(
+                                        std::this_thread::get_id())) +
+                                    "_" + std::to_string(::getpid());
+        bool ok = false;
+        {
+            mrpt::io::CFileGZOutputStream fo(tmpName);
+            if (!fo.fileOpenCorrectly()) { return false; }
 
-        const uint32_t n    = 1;  // for backwards compatibility...
-        auto           arch = mrpt::serialization::archiveFrom(fo);
-        arch << n;
-        return m_collisionGrid.saveToFile(*this, &arch, computed_robotShape);
+            const uint32_t n    = 1;  // for backwards compatibility...
+            auto           arch = mrpt::serialization::archiveFrom(fo);
+            arch << n;
+            ok = m_collisionGrid.saveToFile(*this, &arch, computed_robotShape);
+        }
+        std::error_code ec;
+        if (ok) { std::filesystem::rename(tmpName, filename, ec); }
+        if (!ok || ec)
+        {
+            std::filesystem::remove(tmpName, ec);
+            return false;
+        }
+        return true;
     }
     catch (...)
     {
@@ -1020,9 +1040,10 @@ std::optional<uint32_t> DiffDriveCollisionGridBased::getPathStepForDist(
 
     ASSERT_(numPoints > 0);
 
-    for (size_t n = 0; n < numPoints - 1; n++)
+    // First step reaching the given distance:
+    for (size_t n = 0; n < numPoints; n++)
     {
-        if (m_trajectory[k][n + 1].dist >= dist)
+        if (m_trajectory[k][n].dist >= dist)
         {
             return static_cast<uint32_t>(n);
         }

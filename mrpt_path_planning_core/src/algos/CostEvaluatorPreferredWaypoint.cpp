@@ -89,7 +89,9 @@ double CostEvaluatorPreferredWaypoint::operator()(
 
     ASSERT_(n);
 
-    return cost / n;
+    // Per unit of time, so the penalty does not depend on how the motion is
+    // split into edges (costs stay non-negative, hence admissibility holds):
+    return cost / n * edge.estimatedExecTime;
 }
 
 double CostEvaluatorPreferredWaypoint::eval_single_pose(

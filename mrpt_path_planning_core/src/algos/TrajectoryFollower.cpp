@@ -368,6 +368,12 @@ void TrajectoryFollower::updateTrajectory(const Trajectory& traj)
     const auto lastOdom   = lastOdom_;
     const auto ctrlInit   = ctrlPoseInit_;
 
+    // Safety-stop state: a path update must not restart the stop timers or the
+    // resume hysteresis:
+    const auto stopped      = stopped_;
+    const auto stoppedSince = stoppedSince_;
+    const auto offPathSince = offPathSince_;
+
     // Direction of the old path at the progress point, to tell apart legs of
     // the new path that pass over the same point (e.g. before and after a
     // cusp):
@@ -392,6 +398,9 @@ void TrajectoryFollower::updateTrajectory(const Trajectory& traj)
     ctrlPose_           = ctrlPose;
     lastOdom_           = lastOdom;
     ctrlPoseInit_       = ctrlInit;
+    stopped_            = stopped;
+    stoppedSince_       = stoppedSince;
+    offPathSince_       = offPathSince;
 
     // Progress: the first point of the new path matching the old progress
     // point on a segment in the same direction (the shared part of both paths
@@ -568,45 +577,52 @@ TrajectoryFollower::Projection TrajectoryFollower::projectToPath(
     return best;
 }
 
+namespace
+{
+// Index i of the segment [i, i+1] containing arc-length `s` (cumS is sorted).
+std::size_t segmentAt(const std::vector<double>& cumS, double s)
+{
+    const auto it = std::lower_bound(cumS.begin() + 1, cumS.end(), s);
+    const auto j  = static_cast<std::size_t>(it - cumS.begin());
+    return std::min(j - 1, cumS.size() - 2);
+}
+}  // namespace
+
 mrpt::math::TPoint2D TrajectoryFollower::pointAtArc(double s) const
 {
     if (traj_.empty()) return {0, 0};
-    s = std::clamp(s, 0.0, totalLength());
-    // find segment [i, i+1] containing s
-    std::size_t i = 0;
-    while (i + 2 < traj_.size() && cumS_[i + 1] < s) i++;
-    const auto&  a      = traj_[i].pose;
-    const auto&  b      = traj_[i + 1].pose;
-    const double segLen = cumS_[i + 1] - cumS_[i];
-    const double t      = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
+    s                        = std::clamp(s, 0.0, totalLength());
+    const std::size_t i      = segmentAt(cumS_, s);
+    const auto&       a      = traj_[i].pose;
+    const auto&       b      = traj_[i + 1].pose;
+    const double      segLen = cumS_[i + 1] - cumS_[i];
+    const double      t      = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
     return {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)};
 }
 
 mrpt::math::TPose2D TrajectoryFollower::poseAtArc(double s) const
 {
     if (traj_.empty()) return {0, 0, 0};
-    s             = std::clamp(s, 0.0, totalLength());
-    std::size_t i = 0;
-    while (i + 2 < traj_.size() && cumS_[i + 1] < s) i++;
-    const auto&  a       = traj_[i].pose;
-    const auto&  b       = traj_[i + 1].pose;
-    const double segLen  = cumS_[i + 1] - cumS_[i];
-    const double t       = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
-    const double heading = std::atan2(b.y - a.y, b.x - a.x);
+    s                         = std::clamp(s, 0.0, totalLength());
+    const std::size_t i       = segmentAt(cumS_, s);
+    const auto&       a       = traj_[i].pose;
+    const auto&       b       = traj_[i + 1].pose;
+    const double      segLen  = cumS_[i + 1] - cumS_[i];
+    const double      t       = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
+    const double      heading = std::atan2(b.y - a.y, b.x - a.x);
     return {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), heading};
 }
 
 mrpt::math::TPose2D TrajectoryFollower::bodyPoseAtArc(double s) const
 {
     if (traj_.empty()) return {0, 0, 0};
-    s             = std::clamp(s, 0.0, totalLength());
-    std::size_t i = 0;
-    while (i + 2 < traj_.size() && cumS_[i + 1] < s) i++;
-    const auto&  a      = traj_[i].pose;
-    const auto&  b      = traj_[i + 1].pose;
-    const double segLen = cumS_[i + 1] - cumS_[i];
-    const double t      = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
-    const double phi    = a.phi + t * mrpt::math::wrapToPi(b.phi - a.phi);
+    s                        = std::clamp(s, 0.0, totalLength());
+    const std::size_t i      = segmentAt(cumS_, s);
+    const auto&       a      = traj_[i].pose;
+    const auto&       b      = traj_[i + 1].pose;
+    const double      segLen = cumS_[i + 1] - cumS_[i];
+    const double      t      = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
+    const double      phi    = a.phi + t * mrpt::math::wrapToPi(b.phi - a.phi);
     return {
         a.x + t * (b.x - a.x), a.y + t * (b.y - a.y),
         mrpt::math::wrapToPi(phi)};
@@ -615,11 +631,10 @@ mrpt::math::TPose2D TrajectoryFollower::bodyPoseAtArc(double s) const
 double TrajectoryFollower::speedCapAt(double s) const
 {
     if (traj_.empty()) return params.max_speed;
-    s             = std::clamp(s, 0.0, totalLength());
-    std::size_t i = 0;
-    while (i + 2 < traj_.size() && cumS_[i + 1] < s) i++;
-    const double segLen = cumS_[i + 1] - cumS_[i];
-    const double t      = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
+    s                        = std::clamp(s, 0.0, totalLength());
+    const std::size_t i      = segmentAt(cumS_, s);
+    const double      segLen = cumS_[i + 1] - cumS_[i];
+    const double      t      = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
     auto         eff = [&](double v) { return v <= 0 ? params.max_speed : v; };
     const double v0  = eff(traj_[i].target_speed);
     const double v1  = eff(traj_[i + 1].target_speed);

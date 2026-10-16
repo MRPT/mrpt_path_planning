@@ -22,6 +22,7 @@
 #include <mrpt/config/CConfigFileMemory.h>
 #include <mrpt/maps/CSimplePointsMap.h>
 
+#include <thread>
 #include <vector>
 
 namespace
@@ -340,4 +341,133 @@ TEST(AstarResumable, RepeatedRerootWhileSearching)
         }
         EXPECT_TRUE(po.success) << "eps=" << eps;
     }
+}
+
+TEST(AstarResumable, RunSliceAndPathToNodeMatchRun)
+{
+    mpp::TPS_Astar a;
+    mpp::TPS_Astar b;
+    configure(a);
+    configure(b);
+    a.start(makeInput({wall(3.0, 2.0)}));
+    b.start(makeInput({wall(3.0, 2.0)}));
+
+    for (int i = 0; i < 20; i++)
+    {
+        const auto po = a.run(0.0);
+        const auto sl = b.run_slice(0.0);
+        EXPECT_EQ(po.success, sl.success);
+        EXPECT_EQ(po.bestNodeId, sl.bestNodeId);
+        EXPECT_EQ(po.numExpandedNodes, sl.numExpandedNodes);
+        EXPECT_DOUBLE_EQ(po.pathCost, sl.pathCost);
+    }
+    const auto sl = b.run_slice(0.0);
+    ASSERT_TRUE(sl.bestNodeId.has_value());
+    const auto [nodes, edges] = b.path_to_node(*sl.bestNodeId);
+    ASSERT_FALSE(edges.empty());
+    for (const auto* e : edges)
+    {
+        ASSERT_NE(e, nullptr);
+        EXPECT_GE(e->interpolatedPath.size(), 2U);
+    }
+}
+
+TEST(AstarResumable, CopiedPlannerIsIndependent)
+{
+    std::unique_ptr<mpp::TPS_Astar> orig = std::make_unique<mpp::TPS_Astar>();
+    configure(*orig);
+    orig->params_.heuristic_epsilon = 1.25;
+    orig->start(makeInput({wall(3.0, 2.0)}));
+    for (int i = 0; i < 5; i++) { orig->run(0.0); }
+
+    mpp::TPS_Astar copy(*orig);
+    EXPECT_DOUBLE_EQ(copy.params_.heuristic_epsilon, 1.25);
+    EXPECT_FALSE(copy.search_can_continue());  // no search state is copied
+    orig.reset();  // the copy must not depend on the source
+
+    const auto po = copy.plan(makeInput({wall(3.0, 2.0)}));
+    EXPECT_TRUE(po.success);
+}
+
+TEST(AstarResumable, ParallelPlannersOnClonedPtgs)
+{
+    constexpr int            kThreads = 4;
+    std::vector<bool>        ok(kThreads, false);
+    std::vector<double>      costs(kThreads, 0.0);
+    std::vector<std::thread> threads;
+    for (int t = 0; t < kThreads; t++)
+    {
+        threads.emplace_back(
+            [&, t]()
+            {
+                mpp::TPS_Astar planner;
+                configure(planner);
+                auto in = makeInput({wall(3.0, 2.0)});
+                in.ptgs = ptgs().clone();  // nothing shared but the obstacles
+                const auto po = planner.plan(in);
+                ok[t]         = po.success;
+                costs[t]      = po.pathCost;
+            });
+    }
+    for (auto& th : threads) { th.join(); }
+    for (int t = 0; t < kThreads; t++)
+    {
+        EXPECT_TRUE(ok[t]) << t;
+        EXPECT_DOUBLE_EQ(costs[t], costs[0]) << t;
+    }
+}
+
+namespace
+{
+const char* kHolonomicCfg = R"cfg(
+[SelfDriving]
+min_obstacles_height  = 0.0
+max_obstacles_height  = 2.0
+
+PTG_COUNT = 1
+
+PTG0_Type        = mpp::ptg::HolonomicBlend
+PTG0_refDistance = 5.0
+PTG0_num_paths   = 61
+PTG0_T_ramp_max  = 1.0
+PTG0_v_max_mps   = 1.0
+PTG0_w_max_dps   = 60.0
+PTG0_expr_V      = V_MAX * trimmable_speed
+PTG0_expr_W      = W_MAX * trimmable_speed * min(1.0, 0.1+abs(dir)/(10*3.14159265/180))
+PTG0_expr_T_ramp = T_ramp_max
+
+RobotModel_circular_shape_radius = 0.15
+)cfg";
+}  // namespace
+
+TEST(AstarResumable, HolonomicStartRunRerootSetObstacles)
+{
+    mpp::PlannerInput in;
+    {
+        mrpt::config::CConfigFileMemory cfg(kHolonomicCfg);
+        in.ptgs.initFromConfigFile(cfg, "SelfDriving");
+    }
+    in.stateStart.pose = {0, 0, 0};
+    in.stateGoal.state = mrpt::math::TPose2D{6.0, 0.0, 0.0};
+    in.worldBboxMin    = {-3, -6, -M_PI};
+    in.worldBboxMax    = {9, 6, M_PI};
+    in.obstacles       = {wall(3.0, 1.0)};
+
+    mpp::TPS_Astar planner;
+    configure(planner);
+    planner.start(in);
+
+    mpp::PlannerOutput po;
+    for (int i = 0; i < 10; i++) { po = planner.run(0.0); }
+    ASSERT_TRUE(po.bestNodeId.has_value());
+
+    // Reroot one node ahead on the best path:
+    const auto [nodes, edges] = po.motionTree.backtrack_path(*po.bestNodeId);
+    ASSERT_GE(nodes.size(), 3U);
+    ASSERT_TRUE(planner.reroot(std::next(nodes.begin())->nodeID_));
+
+    // New obstacles for the rest of the search:
+    planner.set_obstacles({wall(3.0, 1.0), wall(4.5, 1.0)});
+    while (planner.search_can_continue()) { po = planner.run(1.0); }
+    EXPECT_TRUE(po.success);
 }

@@ -18,7 +18,10 @@ void mpp::edge_interpolated_path(
     {
         // Use same number than existing edge interpolated path:
         ASSERT_(edge.interpolatedPath.size() > 1);
-        nSeg = edge.interpolatedPath.size();
+        // (start and final poses are not intermediate segments)
+        nSeg = edge.interpolatedPath.size() > 2
+                   ? edge.interpolatedPath.size() - 2
+                   : 0;
     }
 
     auto& ptg = trs.ptgs.at(edge.ptgIndex);
@@ -36,7 +39,7 @@ void mpp::edge_interpolated_path(
     // ----------------------------------------------
     for (size_t i = 0; i < nSeg; i++)
     {
-        const auto               iStep = ((i + 1) * ptg_step) / (nSeg + 2);
+        const auto               iStep = ((i + 1) * ptg_step) / (nSeg + 1);
         const duration_seconds_t t     = iStep * dt;
         ip[t] = ptg->getPathPose(edge.ptgPathIndex, iStep);
     }

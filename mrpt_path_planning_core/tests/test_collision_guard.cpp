@@ -24,6 +24,7 @@
 #include <gtest/gtest.h>
 #include <mpp/algos/CollisionGuard.h>
 #include <mrpt/core/Clock.h>
+#include <mrpt/maps/CSimplePointsMap.h>
 #include <mrpt/math/TPolygon2D.h>
 #include <mrpt/math/TPose2D.h>
 
@@ -336,4 +337,49 @@ TEST(CollisionGuard, ClosedLoopNeverCollides)
     }
     // The test is only meaningful if the guard had to act often:
     EXPECT_GT(episodesLimited, 50);
+}
+
+TEST(CollisionGuard, PointsMapOverloadMatchesVector)
+{
+    const auto wall = wallAtX(1.0);
+
+    auto gv = makeGuard();
+    gv.setObstacles(wall, kNow);
+    const auto rv = gv.filter(1.0, 0.0, kNow);
+
+    mrpt::maps::CSimplePointsMap map;
+    for (const auto& p : wall)
+    {
+        map.insertPoint(static_cast<float>(p.x), static_cast<float>(p.y), 0.f);
+    }
+    auto gm = makeGuard();
+    gm.setObstacles(map, kNow);
+    const auto rm = gm.filter(1.0, 0.0, kNow);
+
+    EXPECT_TRUE(rv.limited);
+    EXPECT_EQ(rv.limited, rm.limited);
+    EXPECT_NEAR(rv.v, rm.v, 1e-4);
+}
+
+TEST(CollisionGuard, ObstacleInsideFootprintIsContact)
+{
+    auto g = makeGuard();
+    g.setObstacles(
+        std::vector<mrpt::math::TPoint2D>{{0.3, 0.0}},  // inside the footprint
+        kNow);
+    const auto r = g.filter(1.0, 0.0, kNow);
+    EXPECT_TRUE(r.in_contact);
+    EXPECT_FALSE(r.stale);
+}
+
+TEST(CollisionGuard, ParamsYamlRoundTrip)
+{
+    mpp::CollisionGuard::Parameters p;
+    p.max_decel     = 1.7;
+    p.reaction_time = 0.23;
+    p.margin        = 0.11;
+    const auto q    = mpp::CollisionGuard::Parameters::FromYAML(p.as_yaml());
+    EXPECT_DOUBLE_EQ(q.max_decel, 1.7);
+    EXPECT_DOUBLE_EQ(q.reaction_time, 0.23);
+    EXPECT_DOUBLE_EQ(q.margin, 0.11);
 }

@@ -138,6 +138,20 @@ TPS_Astar::TPS_Astar() : mrpt::system::COutputLogger("TPS_Astar")
     profiler_().setName("TPS_Astar");
 }
 
+TPS_Astar::TPS_Astar(const TPS_Astar& o) : TPS_Astar() { *this = o; }
+
+TPS_Astar& TPS_Astar::operator=(const TPS_Astar& o)
+{
+    if (this == &o) { return *this; }
+    params_                     = o.params_;
+    costEvaluators_             = o.costEvaluators_;
+    progressCallback_           = o.progressCallback_;
+    progressCallbackCallPeriod_ = o.progressCallbackCallPeriod_;
+    setMinLoggingLevel(o.getMinLoggingLevel());
+    search_ = SearchState();
+    return *this;
+}
+
 PlannerOutput TPS_Astar::plan(const PlannerInput& in)
 {
     MRPT_START
@@ -159,6 +173,51 @@ PlannerOutput TPS_Astar::run(duration_seconds_t maxComputationTime)
     run_search(maxComputationTime);
     return finalized_output(search_.po);
     MRPT_END
+}
+
+TPS_Astar::SliceResult TPS_Astar::run_slice(
+    duration_seconds_t maxComputationTime)
+{
+    MRPT_START
+    ASSERTMSG_(search_.started, "run_slice() called before start()");
+    run_search(maxComputationTime);
+    return make_slice_result(search_.po);
+    MRPT_END
+}
+
+std::tuple<
+    MotionPrimitivesTreeSE2::path_t, MotionPrimitivesTreeSE2::edge_sequence_t>
+    TPS_Astar::path_to_node(mrpt::graphs::TNodeID nodeId)
+{
+    ASSERTMSG_(search_.started, "path_to_node() called before start()");
+    auto& tree = search_.po.motionTree;
+    interpolate_path_to(tree, nodeId);
+    return tree.backtrack_path(nodeId);
+}
+
+TPS_Astar::SliceResult TPS_Astar::make_slice_result(
+    const PlannerOutput& po) const
+{
+    SliceResult r;
+    r.computationTime      = po.computationTime;
+    r.numExpandedNodes     = po.numExpandedNodes;
+    r.goalNodeId           = po.goalNodeId;
+    r.bestNodeId           = po.bestNodeId;
+    r.bestNodeIdCostToGoal = po.bestNodeIdCostToGoal;
+
+    // A clear shot not committed yet still reaches the goal:
+    if (search_.bestGoalCandidateShotId && r.goalNodeId != r.bestNodeId)
+    {
+        r.goalNodeId           = *search_.bestGoalCandidateShotId;
+        r.bestNodeId           = r.goalNodeId;
+        r.bestNodeIdCostToGoal = 0;
+    }
+    r.success = r.goalNodeId == r.bestNodeId;
+    if (r.bestNodeId)
+    {
+        r.pathCost = po.motionTree.nodes().at(*r.bestNodeId).cost_;
+    }
+    return r;
 }
 
 bool TPS_Astar::search_can_continue() const
@@ -855,20 +914,9 @@ PlannerOutput TPS_Astar::finalized_output(PlannerOutput po) const
     // If interpolation was deferred during the search, build it now for just
     // the edges of the path to the best node (needed for output / refinement
     // / exec), also for a partial path.
-    if (search_.deferInterpolation && po.bestNodeId.has_value())
+    if (po.bestNodeId.has_value())
     {
-        const auto [solNodes, solEdges] =
-            tree.backtrack_path(po.bestNodeId.value());
-        for (auto* e : solEdges)
-        {
-            if (e == nullptr) { continue; }
-            // Recover the relative reconstruction pose (stateTo in the frame
-            // of stateFrom); identical to what was used during the search.
-            const auto reconstrRelPose = e->stateTo.pose - e->stateFrom.pose;
-            edge_interpolated_path(
-                *e, in.ptgs, reconstrRelPose, e->ptgStepIndex,
-                params_.pathInterpolatedSegments);
-        }
+        interpolate_path_to(tree, *po.bestNodeId);
     }
 
     // A* ended, now collect the result:
@@ -888,6 +936,25 @@ PlannerOutput TPS_Astar::finalized_output(PlannerOutput po) const
     if (po.bestNodeId) po.pathCost = tree.nodes().at(*po.bestNodeId).cost_;
 
     return po;
+}
+
+void TPS_Astar::interpolate_path_to(
+    MotionPrimitivesTreeSE2& tree, mrpt::graphs::TNodeID nodeId) const
+{
+    if (!search_.deferInterpolation) { return; }
+
+    const auto& in                  = search_.in;
+    const auto [solNodes, solEdges] = tree.backtrack_path(nodeId);
+    for (auto* e : solEdges)
+    {
+        if (e == nullptr) { continue; }
+        // Recover the relative reconstruction pose (stateTo in the frame
+        // of stateFrom); identical to what was used during the search.
+        const auto reconstrRelPose = e->stateTo.pose - e->stateFrom.pose;
+        edge_interpolated_path(
+            *e, in.ptgs, reconstrRelPose, e->ptgStepIndex,
+            params_.pathInterpolatedSegments);
+    }
 }
 
 bool TPS_Astar::reroot(mrpt::graphs::TNodeID newRoot)
@@ -1179,8 +1246,8 @@ TPS_Astar::list_paths_to_neighbors_t
         for (size_t i = 0; i < params_.max_ptg_trajectories_to_explore; i++)
         {
             trajectory_index_t trjIdx = mrpt::round(
-                i * (ptg->getPathCount() - 1) /
-                (params_.max_ptg_trajectories_to_explore - 1));
+                double(i) * double(ptg->getPathCount() - 1) /
+                double(params_.max_ptg_trajectories_to_explore - 1));
             trajIdxsToConsider.insert(trjIdx);
         }
 
@@ -1206,7 +1273,7 @@ TPS_Astar::list_paths_to_neighbors_t
         }
 
         // make sure of including the trajectory towards the target, if we
-        // are close enough, plus its immediate neighboring paths:
+        // are close enough:
         {
             const double queryTolerance = params_.grid_resolution_xy;
             const auto   trgInvMap =

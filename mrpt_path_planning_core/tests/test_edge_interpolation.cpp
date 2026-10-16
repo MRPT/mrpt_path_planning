@@ -87,10 +87,10 @@ TEST(EdgeInterpolation, IntermediatePointsOnPTG)
     EXPECT_NEAR(edge.estimatedExecTime, step * dt, 1e-9);
 
     // Intermediate entries must match the PTG's own path poses at their steps.
-    // They are stored at t = iStep * dt, and iStep = (i+1)*step / (nSeg+2).
+    // They are stored at t = iStep * dt, and iStep = (i+1)*step / (nSeg+1).
     for (size_t i = 0; i < nSeg; i++)
     {
-        const size_t iStep = ((i + 1) * step) / (nSeg + 2);
+        const size_t iStep = ((i + 1) * step) / (nSeg + 1);
         const double t     = iStep * dt;
 
         const auto it = ip.find(t);
@@ -101,4 +101,26 @@ TEST(EdgeInterpolation, IntermediatePointsOnPTG)
         EXPECT_NEAR(it->second.y, expected.y, 1e-6) << "at i=" << i;
         EXPECT_NEAR(it->second.phi, expected.phi, 1e-6) << "at i=" << i;
     }
+}
+
+TEST(EdgeInterpolation, RepeatedCallsKeepSegmentCount)
+{
+    mrpt::config::CConfigFileMemory cfg(kPtgCfg);
+    mpp::TrajectoriesAndRobotShape  trs;
+    trs.initFromConfigFile(cfg, "SelfDriving");
+    auto& ptg = trs.ptgs.at(0);
+
+    const uint32_t step = 50;
+    const uint16_t k    = 30;
+
+    mpp::MoveEdgeSE2_TPS edge;
+    edge.ptgIndex      = 0;
+    edge.ptgPathIndex  = static_cast<int16_t>(k);
+    const auto relPose = ptg->getPathPose(k, step);
+
+    mpp::edge_interpolated_path(edge, trs, relPose, step, 5);
+    const auto n0 = edge.interpolatedPath.size();
+    mpp::edge_interpolated_path(edge, trs, relPose, step);
+    mpp::edge_interpolated_path(edge, trs, relPose, step);
+    EXPECT_EQ(edge.interpolatedPath.size(), n0);
 }

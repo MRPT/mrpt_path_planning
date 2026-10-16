@@ -24,7 +24,11 @@ static mpp::MoveEdgeSE2_TPS makeEdge(
 {
     mpp::MoveEdgeSE2_TPS edge;
     edge.stateFrom.pose = {0, 0, 0};
-    for (const auto& [t, p] : entries) edge.interpolatedPath[t] = p;
+    for (const auto& [t, p] : entries)
+    {
+        edge.interpolatedPath[t] = p;
+        edge.estimatedExecTime   = std::max(edge.estimatedExecTime, t);
+    }
     return edge;
 }
 
@@ -111,7 +115,7 @@ TEST(CostEvaluatorWaypoint, SetPreferredWaypointsUpdates)
     auto ev = makeEv(/*scale=*/1.0, /*radius=*/0.5, /*avg=*/true);
 
     // Edge with one pose at (1,0) — on the waypoint.
-    const auto edge = makeEdge({{0.5, {1.0, 0, 0}}});
+    const auto edge = makeEdge({{1.0, {1.0, 0, 0}}});
 
     ev.setPreferredWaypoints({{1.0, 0.0}});
     EXPECT_LT(ev(edge), 1.0) << "Cost must be reduced with waypoint at (1,0)";
