@@ -304,3 +304,40 @@ TEST(AstarResumable, FirstCollidingEdge)
     }
     EXPECT_EQ(*hit, expected);
 }
+
+// Re-rooting repeatedly, along the best path, while the search goes on (as a
+// navigator does for a moving robot): the search must stay consistent.
+TEST(AstarResumable, RepeatedRerootWhileSearching)
+{
+    for (const double eps : {1.0, 2.0})
+    {
+        mpp::TPS_Astar planner;
+        configure(planner);
+        planner.params_.heuristic_epsilon         = eps;
+        planner.params_.use_reeds_shepp_heuristic = true;
+        planner.params_.use_reeds_shepp_expansion = true;
+        planner.start(makeInput({wall(3.0, 2.0), wall(1.5, 0.6)}));
+
+        mpp::PlannerOutput po;
+        for (int i = 0; i < 400 && planner.search_can_continue(); i++)
+        {
+            ASSERT_NO_THROW(po = planner.run(0.0))
+                << "eps=" << eps << " i=" << i;
+            if (i % 7 == 6 && po.bestNodeId)
+            {
+                const auto [nodes, edges] =
+                    po.motionTree.backtrack_path(*po.bestNodeId);
+                if (nodes.size() >= 3)
+                {
+                    ASSERT_NO_THROW(
+                        planner.reroot(std::next(nodes.begin())->nodeID_));
+                }
+            }
+        }
+        while (planner.search_can_continue())
+        {
+            ASSERT_NO_THROW(po = planner.run(1.0)) << "eps=" << eps;
+        }
+        EXPECT_TRUE(po.success) << "eps=" << eps;
+    }
+}

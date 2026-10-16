@@ -901,19 +901,10 @@ bool TPS_Astar::reroot(mrpt::graphs::TNodeID newRoot)
     if (tree.nodes().count(newRoot) == 0) { return false; }
     if (newRoot == tree.root) { return true; }
 
-    const auto kept = tree.prune_to_subtree(newRoot);
-
-    // The new root is either a lattice node or the end of a Reeds-Shepp shot
-    // edge (tree only): its cost in the old tree is the offset to remove.
-    cost_t gRoot = std::numeric_limits<cost_t>::max();
-    for (const auto& [coords, node] : grid_)
-    {
-        if (node.id && *node.id == newRoot)
-        {
-            gRoot = node.gScore;
-            break;
-        }
-    }
+    // Search costs (lattice gScore) equal tree costs: rebase both by the
+    // same amount, so they stay identical (the search relies on it).
+    const cost_t rootCost = tree.nodes().at(newRoot).cost_;
+    const auto   kept     = tree.prune_to_subtree(newRoot);
 
     // Lattice: keep the subtree nodes and the goal placeholder (a node never
     // reached, with no tree node); free the cells of the other nodes.
@@ -933,24 +924,14 @@ bool TPS_Astar::reroot(mrpt::graphs::TNodeID newRoot)
         }
         if (inSubtree)
         {
+            n.gScore -= rootCost;
+            n.fScore -= rootCost;
             if (*n.id == newRoot)
             {
                 n.cameFrom.reset();
                 n.gScore = 0;
                 n.fScore = params_.heuristic_epsilon *
                            heuristic(n.state, s.in.stateGoal);
-            }
-            else if (gRoot != std::numeric_limits<cost_t>::max())
-            {
-                n.gScore -= gRoot;
-                n.fScore -= gRoot;
-            }
-            else
-            {
-                // Root is a shot node: take the costs from the tree.
-                const cost_t g = tree.nodes().at(*n.id).cost_;
-                n.fScore += g - n.gScore;
-                n.gScore = g;
             }
         }
         ++it;

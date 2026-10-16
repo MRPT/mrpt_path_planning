@@ -123,3 +123,26 @@ TEST(MotionTree, PruneToSubtreeKeepsFreeIdsUnused)
     const auto id = tree.next_free_node_ID();
     EXPECT_EQ(tree.nodes().count(id), 0u);
 }
+
+TEST(MotionTree, PruneToSubtreeRebasesCosts)
+{
+    Tree tree;
+
+    // root(0) -> 1 -> 2, then node 1 is rewired through a cheaper parent 3:
+    // as in A*, the cost of its descendant 2 is not updated.
+    tree.insert_root_node(0, makeState(0, 0));
+    tree.insert_node_and_edge(0, 1, makeState(1, 0), makeEdge(0, 3.0));
+    tree.insert_node_and_edge(1, 2, makeState(2, 0), makeEdge(1, 1.0));
+    tree.insert_node_and_edge(0, 3, makeState(0, 1), makeEdge(0, 1.0));
+    tree.rewire_node_parent(1, makeEdge(3, 1.0));
+    const auto before = tree.nodes();
+
+    tree.prune_to_subtree(3);
+
+    // Costs are relative to the new root, keeping the former differences:
+    for (const auto& [id, node] : tree.nodes())
+    {
+        EXPECT_DOUBLE_EQ(node.cost_, before.at(id).cost_ - before.at(3).cost_)
+            << "node " << id;
+    }
+}

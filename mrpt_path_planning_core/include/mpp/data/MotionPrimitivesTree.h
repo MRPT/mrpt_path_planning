@@ -247,8 +247,9 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
     }
 
     /** Keeps only the subtree hanging from `newRoot`, which becomes the root.
-     * Node costs are recomputed from the new root (summing edge costs), so
-     * they are also consistent after rewirings.
+     * Node costs become relative to the new root (its former cost is
+     * subtracted), so they keep matching any search costs rebased the same
+     * way.
      * \return The IDs of the kept nodes (including `newRoot`). */
     std::set<TNodeID> prune_to_subtree(const TNodeID newRoot)
     {
@@ -256,22 +257,18 @@ class MotionPrimitivesTree : public mrpt::graphs::CDirectedTree<EDGE_TYPE>
             nodes_.count(newRoot) != 0,
             "prune_to_subtree(): node not found in the tree");
 
+        const cost_t        rootCost = nodes_.at(newRoot).cost_;
         std::set<TNodeID>   kept;
         std::deque<TNodeID> pending = {newRoot};
-        nodes_.at(newRoot).cost_    = 0;
         while (!pending.empty())
         {
             const TNodeID id = pending.front();
             pending.pop_front();
             kept.insert(id);
+            nodes_.at(id).cost_ -= rootCost;
             const auto it = base_t::edges_to_children.find(id);
             if (it == base_t::edges_to_children.end()) { continue; }
-            const cost_t parentCost = nodes_.at(id).cost_;
-            for (const auto& e : it->second)
-            {
-                nodes_.at(e.id).cost_ = parentCost + e.data.cost;
-                pending.push_back(e.id);
-            }
+            for (const auto& e : it->second) { pending.push_back(e.id); }
         }
 
         for (auto it = nodes_.begin(); it != nodes_.end();)
