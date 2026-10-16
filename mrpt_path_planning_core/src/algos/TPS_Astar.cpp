@@ -148,6 +148,10 @@ TPS_Astar& TPS_Astar::operator=(const TPS_Astar& o)
     progressCallback_           = o.progressCallback_;
     progressCallbackCallPeriod_ = o.progressCallbackCallPeriod_;
     setMinLoggingLevel(o.getMinLoggingLevel());
+    // Default heuristic bound to this planner (never the source one):
+    heuristic = astar_heuristic_t(
+        [this](const SE2_KinState& from, const SE2orR2_KinState& goal)
+        { return this->default_heuristic(from, goal); });
     search_ = SearchState();
     return *this;
 }

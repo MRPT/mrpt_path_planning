@@ -372,14 +372,14 @@ bool DiffDriveCollisionGridBased::saveColGridsToFile(
     const std::string&          filename,
     const mrpt::math::CPolygon& computed_robotShape) const
 {
+    // Write to a temporary file and rename it, so concurrent readers never
+    // see a partially written cache file:
+    const std::string tmpName = filename + ".tmp" +
+                                std::to_string(std::hash<std::thread::id>()(
+                                    std::this_thread::get_id())) +
+                                "_" + std::to_string(::getpid());
     try
     {
-        // Write to a temporary file and rename it, so concurrent readers never
-        // see a partially written cache file:
-        const std::string tmpName = filename + ".tmp" +
-                                    std::to_string(std::hash<std::thread::id>()(
-                                        std::this_thread::get_id())) +
-                                    "_" + std::to_string(::getpid());
         bool ok = false;
         {
             mrpt::io::CFileGZOutputStream fo(tmpName);
@@ -401,6 +401,8 @@ bool DiffDriveCollisionGridBased::saveColGridsToFile(
     }
     catch (...)
     {
+        std::error_code ec;
+        std::filesystem::remove(tmpName, ec);
         return false;
     }
 }

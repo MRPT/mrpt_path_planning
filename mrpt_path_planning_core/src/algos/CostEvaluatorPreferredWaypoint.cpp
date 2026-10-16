@@ -59,39 +59,43 @@ void CostEvaluatorPreferredWaypoint::setPreferredWaypoints(
 double CostEvaluatorPreferredWaypoint::operator()(
     const MoveEdgeSE2_TPS& edge) const
 {
-    double cost = .0;
-    size_t n    = 0;
+    ASSERT_(!edge.interpolatedPath.empty());
 
-    auto lambdaAddPose = [this, &cost, &n](const mrpt::math::TPose2D& p)
+    // Cost of each interpolated pose, with its time:
+    double                                 maxCost = .0;
+    std::vector<std::pair<double, double>> samples;
+    for (const auto& kv : edge.interpolatedPath)
     {
-        const auto c = eval_single_pose(p);
+        const auto c = eval_single_pose(edge.stateFrom.pose + kv.second);
         ASSERT_GE_(c, .0);
+        maxCost = std::max(maxCost, c);
+        samples.emplace_back(kv.first, c);
+    }
 
-        if (params_.useAverageOfPath)
+    double cost = maxCost;
+    if (params_.useAverageOfPath)
+    {
+        // Time-weighted mean (trapezoidal rule), since samples are not
+        // necessarily evenly spaced in time:
+        double integral = .0;
+        for (size_t i = 1; i < samples.size(); i++)
         {
-            cost += c;
-            ++n;
+            integral += 0.5 * (samples[i].second + samples[i - 1].second) *
+                        (samples[i].first - samples[i - 1].first);
         }
+        const double span = samples.back().first - samples.front().first;
+        if (span > 0) { cost = integral / span; }
         else
         {
-            if (c >= cost)
-            {
-                cost = c;
-                n    = 1;
-            }
+            cost = 0;
+            for (const auto& smp : samples) { cost += smp.second; }
+            cost /= static_cast<double>(samples.size());
         }
-    };
-
-    // interpolated vs goal-end segments:
-    ASSERT_(!edge.interpolatedPath.empty());
-    for (const auto& kv : edge.interpolatedPath)
-        lambdaAddPose(edge.stateFrom.pose + kv.second);
-
-    ASSERT_(n);
+    }
 
     // Per unit of time, so the penalty does not depend on how the motion is
     // split into edges (costs stay non-negative, hence admissibility holds):
-    return cost / n * edge.estimatedExecTime;
+    return cost * edge.estimatedExecTime;
 }
 
 double CostEvaluatorPreferredWaypoint::eval_single_pose(
