@@ -46,6 +46,7 @@
 #include <cstdlib>
 #include <deque>
 #include <fstream>
+#include <functional>
 #include <random>
 #include <string>
 #include <vector>
@@ -215,9 +216,14 @@ void saveTrace(
     }
 }
 
+// Called before every control step, with the time and the last progress:
+using on_cycle_t =
+    std::function<void(double t, double s, mpp::TrajectoryFollower& f)>;
+
 RunResult runClosedLoop(
     mpp::TrajectoryFollower& f, const mpp::Trajectory& ref,
-    const StackConditions& c, const TPose2D& start, double maxTime = 120.0)
+    const StackConditions& c, const TPose2D& start, double maxTime = 120.0,
+    const on_cycle_t& onCycle = {})
 {
     constexpr double dtSim   = 0.002;  // [s] plant integration step
     constexpr double tSettle = 2.0;  // [s] simulated after the follower ends
@@ -306,6 +312,7 @@ RunResult runClosedLoop(
             odo.odometryVelocityLocal = mrpt::math::TTwist2D(vAct, 0, wAct);
             odo.timestamp             = stamp(tOdo);
 
+            if (onCycle) { onCycle(t, lastS, f); }
             const auto out = f.step(loc, odo);
             r.finalStatus  = out.status;
             lastS          = out.arc_length_s;
@@ -704,4 +711,147 @@ TEST(FollowerClosedLoop, PlannedTurnAroundInRoom)
     {
         expectAccurate("planned_turn_around", ref, c, start);
     }
+}
+
+// A path update continuing the current path while driving at cruise speed
+// (as a replanner sends: the part being driven, then a new tail) must not
+// slow the robot down, also if the update drops part of the path already
+// driven. Restarting the path instead (setTrajectory) does.
+TEST(FollowerClosedLoop, PathUpdateKeepsSpeed)
+{
+    const auto initial = PathBuilder({0, 0, 0}).straight(14.0).build();
+    const auto updated = PathBuilder({0, 0, 0})
+                             .straight(7.0)
+                             .arc(3.0, M_PI / 2)
+                             .straight(3.0)
+                             .build();
+    // The update without its first 2 m:
+    mpp::Trajectory updatedTrimmed;
+    for (const auto& p : updated)
+    {
+        if (p.pose.x >= 2.0 || p.pose.y > 0.1) { updatedTrimmed.push_back(p); }
+    }
+    ASSERT_LT(updatedTrimmed.size(), updated.size());
+
+    constexpr double kSwapS = 3.5;  // [m]
+
+    auto run =
+        [&](const mpp::Trajectory& update, bool keepMotion, double& tSwap)
+    {
+        mpp::TrajectoryFollower f;
+        setDiffDriveParams(f);
+        const auto& c          = typicalStack();
+        f.params.control_delay = c.odo_latency + c.cmd_latency;
+        bool started           = false;
+        bool swapped           = false;
+        tSwap                  = -1;
+        const auto r           = runClosedLoop(
+                      f, updated, c, {0, 0, 0}, 120.0,
+                      [&](double t, double s, mpp::TrajectoryFollower& fol)
+                      {
+                if (!started)
+                {
+                    fol.setTrajectory(initial);
+                    started = true;
+                }
+                if (!swapped && s >= kSwapS)
+                {
+                    if (keepMotion) { fol.updateTrajectory(update); }
+                    else { fol.setTrajectory(update); }
+                    swapped = true;
+                    tSwap   = t;
+                }
+            });
+        return r;
+    };
+
+    // Minimum actual speed in the 2 s after the swap, relative to the speed
+    // at the swap:
+    auto speedRatioAfterSwap = [](const RunResult& r, double tSwap)
+    {
+        double vSwap = 0;
+        double vMin  = std::numeric_limits<double>::infinity();
+        for (const auto& g : r.gt)
+        {
+            if (g.t <= tSwap) { vSwap = g.v; }
+            else if (g.t <= tSwap + 2.0) { vMin = std::min(vMin, g.v); }
+        }
+        return vSwap > 0 ? vMin / vSwap : 0.0;
+    };
+
+    for (const mpp::Trajectory* update :
+         std::vector<const mpp::Trajectory*>{&updated, &updatedTrimmed})
+    {
+        double     tSwap = 0;
+        const auto r     = run(*update, true, tSwap);
+        saveTrace("path_update", updated, r);
+        ASSERT_GT(tSwap, 0);
+        ASSERT_TRUE(r.ended);
+        EXPECT_EQ(r.finalStatus, mpp::FollowerStatus::ReachedGoal);
+        EXPECT_LT(r.maxCross, kMaxCrossTrack);
+        EXPECT_GT(speedRatioAfterSwap(r, tSwap), 0.9);
+    }
+
+    double     tSwap     = 0;
+    const auto restarted = run(updated, false, tSwap);
+    EXPECT_LT(speedRatioAfterSwap(restarted, tSwap), 0.5);
+}
+
+// A path update while driving the return leg of a path that doubles back over
+// itself (a cusp): the progress is matched on the return leg, so the robot
+// keeps backing up instead of driving forward to the cusp again. Also, an
+// update too short to track stops the robot without asserting.
+TEST(FollowerClosedLoop, PathUpdateOnReturnLeg)
+{
+    const auto initial =
+        PathBuilder({0, 0, 0}).straight(4.0).straight(3.5, -1).build();
+    const auto updated =
+        PathBuilder({0, 0, 0}).straight(4.0).straight(4.0, -1).build();
+
+    mpp::TrajectoryFollower f;
+    setDiffDriveParams(f);
+    const auto& c           = idealStack();
+    f.params.control_delay  = c.odo_latency + c.cmd_latency;
+    f.params.rotate_at_goal = false;
+
+    bool       started   = false;
+    bool       swapped   = false;
+    double     xAtSwap   = 0;
+    double     maxXAfter = -1e9;
+    const auto r         = runClosedLoop(
+                f, updated, c, {0, 0, 0}, 120.0,
+                [&](double, double s, mpp::TrajectoryFollower& fol)
+                {
+            if (!started)
+            {
+                fol.setTrajectory(initial);
+                started = true;
+            }
+            if (!swapped && s >= 5.5)  // 1.5 m into the return leg
+            {
+                fol.updateTrajectory(updated);
+                swapped = true;
+            }
+        });
+    ASSERT_TRUE(swapped);
+    for (const auto& g : r.gt)
+    {
+        if (g.s >= 5.5 && xAtSwap == 0) { xAtSwap = g.pose.x; }
+        if (xAtSwap != 0) { maxXAfter = std::max(maxXAfter, g.pose.x); }
+    }
+    ASSERT_TRUE(r.ended);
+    EXPECT_EQ(r.finalStatus, mpp::FollowerStatus::ReachedGoal);
+    EXPECT_LT(maxXAfter, xAtSwap + 0.3)
+        << "drove forward again after the update";
+    EXPECT_LT(std::abs(r.gt.back().pose.x - 0.0), 0.3);
+
+    // A replacement too short to track:
+    mpp::TrajectoryFollower f2;
+    setDiffDriveParams(f2);
+    f2.setTrajectory(initial);
+    mpp::Trajectory tiny;
+    tiny.emplace_back(mrpt::math::TPose2D(1.0, 0, 0), 0.0);
+    tiny.emplace_back(mrpt::math::TPose2D(1.001, 0, 0), 0.0);
+    EXPECT_NO_THROW(f2.updateTrajectory(tiny));
+    EXPECT_FALSE(f2.hasTrajectory());
 }

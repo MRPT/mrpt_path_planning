@@ -59,6 +59,7 @@ set(LIB_SRCS
 	src/algos/refine_trajectory.cpp
 	src/algos/render_tree.cpp
 	src/algos/render_vehicle.cpp
+	src/algos/path_collision_check.cpp
 	src/algos/tp_obstacles_single_path.cpp
 	src/algos/TPS_Astar.cpp
 	src/algos/TPS_Astar_Bidir.cpp
@@ -93,6 +94,7 @@ set(LIB_PUBLIC_HDRS
 	include/mpp/algos/refine_trajectory.h
 	include/mpp/algos/render_tree.h
 	include/mpp/algos/render_vehicle.h
+	include/mpp/algos/path_collision_check.h
 	include/mpp/algos/tp_obstacles_single_path.h
 	include/mpp/algos/TPS_Astar.h
 	include/mpp/algos/TPS_Astar_Bidir.h

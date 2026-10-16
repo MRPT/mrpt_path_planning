@@ -16,7 +16,12 @@
 
 #include <limits>
 #include <optional>
+#include <queue>
 #include <unordered_map>
+
+/** Feature macro: TPS_Astar has the resumable search API (start(), run(),
+ * reroot(), set_obstacles()). */
+#define MPP_HAS_RESUMABLE_ASTAR 1
 
 namespace mpp
 {
@@ -163,6 +168,49 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     TPS_Astar_Parameters params_;
 
     PlannerOutput plan(const PlannerInput& in) override;
+
+    /** @name Resumable search
+     * plan() is start() followed by one run(). Calling them separately lets
+     * a caller search in time slices, use the best path found so far before
+     * the search ends (anytime planning), move the root of the search along
+     * the path being executed (reroot()), and update the obstacles for the
+     * rest of the search (set_obstacles()).
+     * Feature macro: MPP_HAS_RESUMABLE_ASTAR.
+     * @{ */
+
+    /** Starts a new search (expands no node yet). */
+    void start(const PlannerInput& in);
+
+    /** Continues the search started with start() for up to
+     * `maxComputationTime` [s], or until it ends. \return The current
+     * result: success if the goal was reached, otherwise `bestNodeId` is the
+     * node closest to the goal (by the heuristic) found so far. Edges along
+     * the path to `bestNodeId` are interpolated. */
+    PlannerOutput run(duration_seconds_t maxComputationTime);
+
+    /** Whether start() was called and the search can go on (the goal was
+     * not reached yet, and the open set is not empty). */
+    [[nodiscard]] bool search_can_continue() const;
+
+    /** Whether the search reached the goal. */
+    [[nodiscard]] bool search_reached_goal() const { return search_.found; }
+
+    /** Makes the tree node `newRoot` the new start of the search: only its
+     * subtree is kept (lattice cells of the other nodes are freed, so they
+     * can be reached again from it), costs are relative to it, and the
+     * search goes on from the open nodes of the subtree. The path from the
+     * old root to `newRoot` is thus committed. Visited nodes of the subtree
+     * are not expanded again, so freed cells only become reachable from its
+     * open nodes.
+     * \return false if `newRoot` is not in the tree (nothing is changed). */
+    bool reroot(mrpt::graphs::TNodeID newRoot);
+
+    /** Replaces the obstacles for the rest of the search. Edges already in
+     * the tree are not checked again: callers must validate the path they
+     * use against the new obstacles. */
+    void set_obstacles(const std::vector<ObstacleSource::Ptr>& obstacles);
+
+    /** @} */
 
     mrpt::containers::yaml params_as_yaml() override
     {
@@ -551,6 +599,70 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
      *  transformed obstacle cloud, avoiding redundant O(N_obs) transforms. */
     std::unordered_map<NodeCoords, mrpt::maps::CPointsMap::Ptr, NodeCoordsHash>
         localObstaclesCache_;
+
+    /** Entry of the open set, ordered by fScore; ties are popped in insertion
+     * order (FIFO). */
+    struct OpenEntry
+    {
+        distance_t fScore;
+        uint64_t   seq;
+        Node*      node;
+        bool       operator>(const OpenEntry& o) const
+        {
+            return fScore != o.fScore ? fScore > o.fScore : seq > o.seq;
+        }
+    };
+    using open_set_t = std::priority_queue<
+        OpenEntry, std::vector<OpenEntry>, std::greater<OpenEntry>>;
+
+    /** State of the search between start() and the end of the search, so it
+     * can be resumed (see run()). */
+    struct SearchState
+    {
+        bool started   = false;
+        bool found     = false;  //!< goal reached
+        bool exhausted = false;  //!< open set empty
+
+        PlannerInput  in;
+        PlannerOutput po;
+
+        std::vector<mrpt::maps::CPointsMap::Ptr> obstaclePoints;
+        double                                   maxXYDist = 0;
+
+        open_set_t            openSet;
+        uint64_t              openSeq    = 0;
+        mrpt::graphs::TNodeID nextFreeId = 0;
+
+        Node*                      nodeGoal = nullptr;
+        NodeCoords                 goalCellIndices;
+        nodes_with_desired_speed_t nodesWithDesiredSpeed;
+
+        unsigned int nIter         = 0;
+        double       tLastCallback = 0;
+
+        /** Deferred analytic expansion: cheapest goal-landing candidate (see
+         * plan()) */
+        Node*  bestGoalCandidate  = nullptr;
+        cost_t bestGoalCandidateG = std::numeric_limits<cost_t>::max();
+        /** A goal candidate may also be the last node of a Reeds-Shepp shot,
+         * which lives in the tree only (not in the lattice) */
+        std::optional<mrpt::graphs::TNodeID> bestGoalCandidateShotId;
+
+        bool deferInterpolation = false;
+    };
+    SearchState search_;
+
+    /** Extracts the obstacle points of search_.in.obstacles, and prepares
+     * everything depending on them. */
+    void prepare_obstacles();
+
+    /** Expands nodes for up to `maxComputationTime` [s] or until the search
+     * ends. */
+    void run_search(duration_seconds_t maxComputationTime);
+
+    /** Completes a copy of the search output: goal shots not committed yet,
+     * deferred edge interpolation, success flag, path cost. */
+    PlannerOutput finalized_output(PlannerOutput po) const;
 };
 
 }  // namespace mpp

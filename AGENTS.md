@@ -143,6 +143,14 @@ backward from the goal (predecessors from inverted PTG relative poses) until
 both settle the same lattice cell, then stitches and refines the path. C-PTGs
 only; the core always runs exact A\*.
 
+**Resumable search.** `plan()` is `start()` plus one `run()`; the search state
+lives in `TPS_Astar` (`SearchState`) between calls. Callers can `run()` in time
+slices (anytime: `bestNodeId` is the best partial path so far), `reroot()` the
+search at a tree node ahead on the executed path (only its subtree is kept,
+other lattice cells are freed), and `set_obstacles()` for later expansions.
+`first_colliding_edge()` validates a planned path against new obstacles
+(`tests/test_astar_resumable.cpp`). Only `TPS_Astar` supports it, not Bidir.
+
 **Post-processing.** `refine_trajectory()` re-fits PTG parameters so edges
 connect the exact node poses; `plan_to_trajectory()` samples the path in time.
 
@@ -153,7 +161,9 @@ curvature feedforward plus pure-pursuit feedback, with predictive safety
 `TrajectoryVehicleInterface`. Delayed localizations are brought to the present
 with odometry using their timestamps (callers must pass the sensor time, on the
 same clock as the odometry), and `control_delay` predicts past known dead times.
-Arc-length progress never skips or goes back across a cusp. Its speed profile
+Arc-length progress never skips or goes back across a cusp. `updateTrajectory()`
+swaps in a path that continues the current one (e.g. replanned) without
+restarting the motion state, so the robot does not slow down. Its speed profile
 anticipates path curvature and stops (goal, cusps) over the braking distance, so
 the same parameters work at any speed. Passing the path end away from the goal,
 outside the arrival radius, it stops and reports `MissedGoal` so the caller can
@@ -216,7 +226,8 @@ stop).
 
 ## Known limitations
 
-- Obstacles are static during a plan (no time-dependent obstacles).
+- Obstacles are static during a plan (no time-dependent obstacles), except
+  for `set_obstacles()` between `run()` slices.
 - Trajectory indices are sampled uniformly plus the direct-to-goal direction;
   maneuvers through narrow gaps may be missed.
 - No global path smoothing or shortcutting beyond `refine_trajectory()`.

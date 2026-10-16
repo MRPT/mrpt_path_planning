@@ -24,6 +24,9 @@
 #include <optional>
 #include <vector>
 
+/** Feature macro: TrajectoryFollower::updateTrajectory() exists. */
+#define MPP_HAS_FOLLOWER_UPDATE_TRAJECTORY 1
+
 namespace mpp
 {
 enum class FollowerStatus : uint8_t
@@ -334,6 +337,17 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     /** Sets/replaces the reference path (hot-swappable at any time); resets
      * arc-length progress. Needs >= 2 points to track. */
     void setTrajectory(const Trajectory& traj);
+
+    /** Replaces the reference path while following a previous one that it
+     * continues (e.g. a replanned path keeping the part of the current one
+     * the robot is on), without restarting the motion: the commanded speed,
+     * angular velocity, curvature and control pose are kept, so the robot
+     * does not slow down. Progress continues from the point of the new path
+     * matching the current progress point on the old one (or, if none
+     * matches, the projection of the control pose). Without a current path,
+     * it is the same as setTrajectory().
+     * Feature macro: MPP_HAS_FOLLOWER_UPDATE_TRAJECTORY. */
+    void updateTrajectory(const Trajectory& traj);
 
     /** Clears the trajectory and progress. */
     void reset();
