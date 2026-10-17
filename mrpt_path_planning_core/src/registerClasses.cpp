@@ -7,6 +7,7 @@
 #include <mpp/algos/CostEvaluatorCostMap.h>
 #include <mpp/algos/CostEvaluatorPreferredWaypoint.h>
 #include <mpp/algos/CostEvaluatorReverseMotion.h>
+#include <mpp/algos/CostEvaluatorTurning.h>
 #include <mpp/algos/TPS_Astar.h>
 #include <mpp/ptgs/DiffDrive_C.h>
 #include <mpp/ptgs/HolonomicBlend.h>
@@ -22,6 +23,7 @@ MRPT_INITIALIZER(selfdriving_register)
     registerClass(CLASS_ID(CostEvaluatorCostMap));
     registerClass(CLASS_ID(CostEvaluatorPreferredWaypoint));
     registerClass(CLASS_ID(CostEvaluatorReverseMotion));
+    registerClass(CLASS_ID(CostEvaluatorTurning));
 
     // Planners:
     registerClass(CLASS_ID(Planner));

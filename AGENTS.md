@@ -134,10 +134,12 @@ follower. PTG collision grids are cached in `~/.cache/mrpt_path_planning`
 (or `$XDG_CACHE_HOME`), named by a hash of their configuration.
 
 **Cost model.** Edge cost = PTG segment estimated execution time + the sum of
-cost evaluators (each a penalty per second of motion, so edge splitting does
-not change it): `CostEvaluatorCostMap` (obstacle-proximity penalty),
-`CostEvaluatorPreferredWaypoint` (reward near given waypoints) and
-`CostEvaluatorReverseMotion` (extra cost per second driven in reverse).
+cost evaluators (each a penalty per second of motion, or per radian turned,
+so edge splitting does not change it): `CostEvaluatorCostMap`
+(obstacle-proximity penalty), `CostEvaluatorPreferredWaypoint` (reward near
+given waypoints), `CostEvaluatorReverseMotion` (extra cost per second driven
+in reverse) and `CostEvaluatorTurning` (extra cost per radian of heading
+change, against weaving paths).
 
 **Bidirectional A\* (`TPS_Astar_Bidir`).** Searches forward from the start and
 backward from the goal (predecessors from inverted PTG relative poses) until

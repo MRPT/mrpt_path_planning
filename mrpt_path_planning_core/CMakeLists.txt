@@ -53,6 +53,7 @@ set(LIB_SRCS
 	src/algos/CostEvaluatorCostMap.cpp
 	src/algos/CostEvaluatorPreferredWaypoint.cpp
 	src/algos/CostEvaluatorReverseMotion.cpp
+	src/algos/CostEvaluatorTurning.cpp
 	src/algos/edge_interpolated_path.cpp
 	src/algos/Planner.cpp
 	src/algos/reeds_shepp.cpp
