@@ -7,6 +7,7 @@
 #include <mpp/algos/CostEvaluatorCostMap.h>
 #include <mpp/algos/CostEvaluatorPreferredWaypoint.h>
 #include <mpp/algos/CostEvaluatorReverseMotion.h>
+#include <mpp/algos/CostEvaluatorTurning.h>
 #include <mpp/algos/TPS_Astar.h>
 #include <mpp/algos/refine_trajectory.h>
 #include <mpp/algos/trajectories.h>
@@ -53,6 +54,7 @@ static std::string  arg_plugins;
 static std::string  arg_costMap;
 static bool         arg_costMap_set{false};
 static double       arg_reverseCostFactor{0.0};
+static double       arg_turnCostFactor{0.0};
 static std::string  arg_waypoints;
 static bool         arg_waypoints_set{false};
 static std::string  arg_waypointsParams;
@@ -220,6 +222,15 @@ static void do_plan_path()
     {
         auto costEval = mpp::CostEvaluatorReverseMotion::Create();
         costEval->params_.reverseTimeCostFactor = arg_reverseCostFactor;
+        costEval->setPTGs(pi.ptgs);
+        planner->costEvaluators_.push_back(costEval);
+    }
+
+    // Turning penalty:
+    if (arg_turnCostFactor > 0)
+    {
+        auto costEval                    = mpp::CostEvaluatorTurning::Create();
+        costEval->params_.turnCostFactor = arg_turnCostFactor;
         costEval->setPTGs(pi.ptgs);
         planner->costEvaluators_.push_back(costEval);
     }
@@ -457,6 +468,10 @@ int main(int argc, char** argv)
             "--reverse-cost-factor", arg_reverseCostFactor,
             "If >0, adds this extra cost per second of reverse motion "
             "(CostEvaluatorReverseMotion).");
+        app.add_option(
+            "--turn-cost-factor", arg_turnCostFactor,
+            "If >0, adds this extra cost per radian of heading change "
+            "(CostEvaluatorTurning).");
         app.add_option(
             "--waypoints", arg_waypoints,
             "This creates a preferred-waypoints costlayer, from the waypoint "

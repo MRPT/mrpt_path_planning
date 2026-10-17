@@ -49,7 +49,7 @@ RobotModel_shape2D_xs = -0.20 0.30 0.30 -0.20
 RobotModel_shape2D_ys = -0.18 -0.18 0.18 0.18
 )cfg";
 
-// Plans from the origin (heading +x) to (4,0) with a wall along y = wallY.
+// Plans from the origin (heading +x) to (4,-1) with a wall along y = wallY.
 bool planWithWallAt(double wallY)
 {
     mrpt::config::CConfigFileMemory cfg(kCfg);
@@ -79,6 +79,85 @@ bool planWithWallAt(double wallY)
 
     return planner.plan(in).success;
 }
+
+// Plans from the origin (heading +x) to (goalX, 0), the robot being in a
+// closed room with its front wall along x = wallX (obstacles must be within
+// the world bounding box: PTG paths may leave it between nodes, and
+// obstacles out of it are not seen).
+bool planWithFrontWallAt(double wallX, double goalX)
+{
+    mrpt::config::CConfigFileMemory cfg(kCfg);
+    mpp::PlannerInput               in;
+    in.ptgs.initFromConfigFile(cfg, "SelfDriving");
+
+    auto obs = mrpt::maps::CSimplePointsMap::Create();
+    for (double y = -2.5; y <= 2.5; y += 0.05)
+    {
+        obs->insertPoint(wallX, y, 0);
+        obs->insertPoint(-4.0, y, 0);
+    }
+    for (double x = -4.0; x <= wallX; x += 0.05)
+    {
+        obs->insertPoint(x, -2.5, 0);
+        obs->insertPoint(x, 2.5, 0);
+    }
+    in.obstacles.push_back(mpp::ObstacleSource::FromStaticPointcloud(obs));
+
+    in.stateStart.pose = {0, 0, 0};
+    in.stateGoal.state = mrpt::math::TPose2D(goalX, 0.0, 0.0);
+    in.worldBboxMin    = {-5, -3, -M_PI};
+    in.worldBboxMax    = {5, 3, M_PI};
+
+    mpp::TPS_Astar planner;
+    planner.setMinLoggingLevel(mrpt::system::LVL_ERROR);
+    planner.params_.grid_resolution_xy              = 0.20;
+    planner.params_.grid_resolution_yaw             = 10.0 * M_PI / 180.0;
+    planner.params_.max_ptg_trajectories_to_explore = 15;
+    planner.params_.ptg_sample_timestamps           = {0.5, 1.0, 2.0};
+    planner.params_.max_ptg_speeds_to_explore       = 1;
+    planner.params_.maximumComputationTime          = 20.0;
+
+    return planner.plan(in).success;
+}
+
+// Plans from the origin (heading +x) to (-3, 0, 0) (straight behind), with a
+// wall right in front, 1 cm into the footprint (a robot stopped in contact),
+// and side walls 1 cm away from it, also a bit behind it: it can only slide
+// backwards along them.
+bool planBetweenTouchingSideWalls()
+{
+    mrpt::config::CConfigFileMemory cfg(kCfg);
+    mpp::PlannerInput               in;
+    in.ptgs.initFromConfigFile(cfg, "SelfDriving");
+
+    auto obs = mrpt::maps::CSimplePointsMap::Create();
+    for (double x = -0.60; x <= 0.30; x += 0.05)
+    {
+        obs->insertPoint(x, -0.19, 0);
+        obs->insertPoint(x, 0.19, 0);
+    }
+    for (double y = -0.15; y <= 0.15; y += 0.05)
+    {
+        obs->insertPoint(0.29, y, 0);
+    }
+    in.obstacles.push_back(mpp::ObstacleSource::FromStaticPointcloud(obs));
+
+    in.stateStart.pose = {0, 0, 0};
+    in.stateGoal.state = mrpt::math::TPose2D(-3.0, 0.0, 0.0);
+    in.worldBboxMin    = {-4, -1, -M_PI};
+    in.worldBboxMax    = {1, 1, M_PI};
+
+    mpp::TPS_Astar planner;
+    planner.setMinLoggingLevel(mrpt::system::LVL_ERROR);
+    planner.params_.grid_resolution_xy              = 0.20;
+    planner.params_.grid_resolution_yaw             = 10.0 * M_PI / 180.0;
+    planner.params_.max_ptg_trajectories_to_explore = 15;
+    planner.params_.ptg_sample_timestamps           = {0.5, 1.0, 2.0};
+    planner.params_.max_ptg_speeds_to_explore       = 1;
+    planner.params_.maximumComputationTime          = 20.0;
+
+    return planner.plan(in).success;
+}
 }  // namespace
 
 TEST(TPS_Astar, StartWithinClearance)
@@ -91,6 +170,21 @@ TEST(TPS_Astar, StartWithinClearance)
 
 TEST(TPS_Astar, StartInCollision)
 {
-    // The wall crosses the robot footprint:
+    // The wall crosses the robot footprint lengthwise: any motion gets
+    // deeper into it.
     EXPECT_FALSE(planWithWallAt(0.10));
+}
+
+TEST(TPS_Astar, StartTouchingObstacles)
+{
+    // A wall 2 cm into the front of the footprint (e.g. a robot stopped in
+    // contact, or sensor noise): it can still back away from it...
+    EXPECT_TRUE(planWithFrontWallAt(0.28, -2.5));
+    // ...but not go through it:
+    EXPECT_FALSE(planWithFrontWallAt(0.28, 3.0));
+}
+
+TEST(TPS_Astar, StartTouchingObstaclesCanSlide)
+{
+    EXPECT_TRUE(planBetweenTouchingSideWalls());
 }
