@@ -30,6 +30,11 @@ using namespace mpp;
 
 namespace
 {
+// Margin [m] by which obstacles touching the footprint at the start pose may
+// get closer along edges leaving it (sensor noise, map quantization), so the
+// robot can also slide along them:
+constexpr double kStartTouchTolerance = 0.02;
+
 // Signed distance from a robot-frame point to the robot footprint (negative
 // inside). Point robots: distance to the origin.
 double signedDistanceToShape(double x, double y, const RobotShape& shape)
@@ -1520,9 +1525,21 @@ bool TPS_Astar::start_edge_is_clear(
     // Only obstacles reachable by the footprint along this edge:
     const double reach = ptg.getPathDist(k, step) + rejectR + 0.5;
     std::vector<mrpt::math::TPoint2D> pts;
-    for (const auto& p : startLocalObstacles_)
+    // Per point: the threshold, lowered for points that already touch the
+    // footprint at the start, which may not get any closer (checked at each
+    // step without the margin for the motion in between, which would forbid
+    // sliding along them):
+    std::vector<double> thrs;
+    std::vector<bool>   touching;
+    for (size_t i = 0; i < startLocalObstacles_.size(); i++)
     {
-        if (p.sqrNorm() <= reach * reach) { pts.push_back(p); }
+        const auto& p = startLocalObstacles_[i];
+        if (p.sqrNorm() > reach * reach) { continue; }
+        pts.push_back(p);
+        const bool t = !startObstacleDist0_.empty() &&
+                       startObstacleDist0_[i] < kStartTouchTolerance;
+        touching.push_back(t);
+        thrs.push_back(t ? startObstacleDist0_[i] - kStartTouchTolerance : thr);
     }
 
     // Checked at every PTG step, with the threshold increased by half the max
@@ -1536,18 +1553,19 @@ bool TPS_Astar::start_edge_is_clear(
             std::hypot(pose.x - prevPose.x, pose.y - prevPose.y) +
             std::abs(mrpt::math::angDistance(pose.phi, prevPose.phi)) * maxR;
         prevPose          = pose;
-        const double thrS = thr + 0.5 * disp;
         const double rejS = rejectR + 0.5 * disp;
         const double c    = std::cos(pose.phi);
         const double sn   = std::sin(pose.phi);
-        for (const auto& p : pts)
+        for (size_t i = 0; i < pts.size(); i++)
         {
+            const auto&  p  = pts[i];
             const double dx = p.x - pose.x;
             const double dy = p.y - pose.y;
             const double qx = c * dx + sn * dy;
             const double qy = -sn * dx + c * dy;
             if (qx * qx + qy * qy > rejS * rejS) { continue; }
-            if (signedDistanceToShape(qx, qy, startRobotShape_) <= thrS)
+            if (signedDistanceToShape(qx, qy, startRobotShape_) <=
+                thrs[i] + (touching[i] ? 0.0 : 0.5 * disp))
             {
                 return false;
             }
@@ -1621,12 +1639,8 @@ size_t TPS_Astar::local_obstacles_to_buffers(
                 dMin, signedDistanceToShape(
                           localObsX_[i], localObsY_[i], startRobotShape_));
         }
-        if (dMin <= 0)
-        {
-            MRPT_LOG_THROTTLE_WARN(
-                1.0, "Start pose is in collision: no path can be found.");
-        }
-        else if (dMin < startClearance_)
+        startObstacleDist0_.clear();
+        if (dMin < startClearance_)
         {
             if (!startWithinClearance_)
             {
@@ -1637,11 +1651,31 @@ size_t TPS_Astar::local_obstacles_to_buffers(
                                         "edges leaving it.");
             }
             startWithinClearance_ = true;
-            startSweepThreshold_  = std::min(startClearance_, 0.5 * dMin);
             startLocalObstacles_.resize(n);
             for (size_t i = 0; i < n; i++)
             {
                 startLocalObstacles_[i] = {localObsX_[i], localObsY_[i]};
+            }
+            if (dMin > 0)
+            {
+                startSweepThreshold_ = std::min(startClearance_, 0.5 * dMin);
+            }
+            else
+            {
+                // In contact: only move away from those obstacles.
+                MRPT_LOG_THROTTLE_WARN_STREAM(
+                    1.0, "Start pose touches obstacles ("
+                             << -dMin
+                             << " m into the footprint): only motions not "
+                                "getting closer to them are allowed.");
+                // (the others may not touch it)
+                startSweepThreshold_ = 0;
+                startObstacleDist0_.resize(n);
+                for (size_t i = 0; i < n; i++)
+                {
+                    startObstacleDist0_[i] = signedDistanceToShape(
+                        localObsX_[i], localObsY_[i], startRobotShape_);
+                }
             }
             // The exact sweep replaces the grid check:
             localObsX_.clear();

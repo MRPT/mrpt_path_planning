@@ -517,14 +517,20 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
      * motion, so edges leaving the start are instead checked with an exact
      * footprint sweep that only forbids getting closer than
      * `startSweepThreshold_` (half the current distance, at most the
-     * clearance) to any obstacle. See local_obstacles_to_buffers() and
-     * start_edge_is_clear(). */
+     * clearance) to any obstacle. If the start pose already touches some
+     * obstacles (e.g. a robot that stopped in contact, or sensor noise),
+     * those may not get any closer than they are (`startObstacleDist0_`),
+     * so the robot can still move away from them. See
+     * local_obstacles_to_buffers() and start_edge_is_clear(). */
     std::optional<mrpt::math::TPose2D> startPose_;
     RobotShape                         startRobotShape_;
     double                             startClearance_       = 0;
     bool                               startWithinClearance_ = false;
     double                             startSweepThreshold_  = 0;
     std::vector<mrpt::math::TPoint2D>  startLocalObstacles_;
+    /** Signed distance of each startLocalObstacles_ point to the footprint
+     * at the start pose, only if the start touches obstacles (else empty) */
+    std::vector<double> startObstacleDist0_;
 
     /** Exact sweep check of an edge leaving the start pose (only used if
      * startWithinClearance_). */
