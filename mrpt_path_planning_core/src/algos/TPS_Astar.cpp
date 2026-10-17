@@ -1254,6 +1254,10 @@ TPS_Astar::list_paths_to_neighbors_t
                 double(params_.max_ptg_trajectories_to_explore - 1));
             trajIdxsToConsider.insert(trjIdx);
         }
+        // Always include the straight trajectory (alpha=0), which an evenly
+        // spaced subset may skip (e.g. an even count out of an odd number of
+        // paths): without it, every edge turns and paths zigzag.
+        trajIdxsToConsider.insert(ptg->alpha2index(0.0));
 
         // Build possible distances for each path:
         std::vector<normalized_speed_t> speedsToConsider;
