@@ -78,9 +78,34 @@ double CostEvaluatorTurning::headingChange(
     return total;
 }
 
+bool CostEvaluatorTurning::isCusp(const MoveEdgeSE2_TPS& edge) const
+{
+    if (edge.ptgIndex < 0 || edge.ptgPathIndex < 0 ||
+        static_cast<size_t>(edge.ptgIndex) >= ptgs_.size())
+    {
+        return false;
+    }
+    const auto& ptg = ptgs_[edge.ptgIndex];
+    if (!ptg || static_cast<size_t>(edge.ptgPathIndex) >= ptg->getPathCount())
+    {
+        return false;
+    }
+    // Speed along the heading at the edge start (global velocity):
+    constexpr double kMinSpeed = 0.05;  // [m/s]
+    const auto&      st        = edge.stateFrom;
+    const double     v =
+        st.vel.vx * std::cos(st.pose.phi) + st.vel.vy * std::sin(st.pose.phi);
+    if (std::abs(v) < kMinSpeed) { return false; }
+    const double edgeV = ptg->getPathTwist(edge.ptgPathIndex, 0).vx;
+    return v * edgeV < 0;
+}
+
 double CostEvaluatorTurning::operator()(const MoveEdgeSE2_TPS& edge) const
 {
     if (params_.turnCostFactor <= 0) { return 0; }
+    // A cusp turns the direction of travel by pi, without changing the
+    // heading: otherwise stopping to reverse would be cheaper than turning.
     return params_.turnCostFactor *
-           headingChange(edge.ptgIndex, edge.ptgPathIndex, edge.ptgStepIndex);
+           (headingChange(edge.ptgIndex, edge.ptgPathIndex, edge.ptgStepIndex) +
+            (isCusp(edge) ? M_PI : 0.0));
 }

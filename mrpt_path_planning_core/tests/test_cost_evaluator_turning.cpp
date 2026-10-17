@@ -12,7 +12,8 @@
  *  - The heading change of the straight trajectory is zero, that of the
  *    tightest arc is w_max * time (loops count in full); invalid indices cost
  *    nothing.
- *  - Edges cost factor * heading change.
+ *  - Edges cost factor * heading change; reversing the direction of travel
+ *    of a moving robot (a cusp) adds factor * pi.
  *  - A* includes the straight trajectory even if the evenly spaced subset of
  *    `max_ptg_trajectories_to_explore` misses it, and with the turning cost
  *    a plan along an open corridor turns much less.
@@ -181,4 +182,32 @@ TEST(CostEvaluatorTurning, StraighterPlans)
     // preferred with the turning cost:
     EXPECT_LT(penalized, mrpt::DEG2RAD(10.0));
     EXPECT_LE(penalized, free);
+}
+
+TEST(CostEvaluatorTurning, CuspCost)
+{
+    const auto                in = makeInput();
+    mpp::CostEvaluatorTurning ev;
+    ev.params_.turnCostFactor = 2.0;
+    ev.setPTGs(in.ptgs);
+
+    // Straight backwards (no heading change) from a robot heading +y:
+    mpp::MoveEdgeSE2_TPS e;
+    e.ptgIndex       = 1;
+    e.ptgPathIndex   = in.ptgs.ptgs.at(1)->alpha2index(0.0);
+    e.ptgStepIndex   = 100;
+    e.stateFrom.pose = {0, 0, M_PI / 2};
+
+    // At rest: no cusp.
+    EXPECT_NEAR(ev(e), 0.0, 1e-6);
+    EXPECT_FALSE(ev.isCusp(e));
+
+    // Moving forward: a cusp.
+    e.stateFrom.vel = {0.0, 1.0, 0.0};
+    EXPECT_TRUE(ev.isCusp(e));
+    EXPECT_NEAR(ev(e), 2.0 * M_PI, 1e-6);
+
+    // Already moving backwards: no cusp.
+    e.stateFrom.vel = {0.0, -1.0, 0.0};
+    EXPECT_FALSE(ev.isCusp(e));
 }

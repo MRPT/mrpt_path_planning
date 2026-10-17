@@ -17,14 +17,16 @@
 
 namespace mpp
 {
-/** Penalizes turning: the heading change along path segments.
+/** Penalizes turning: the heading change along path segments, and cusps.
  *
  * A time-optimal planner sees almost no difference between driving straight
  * and following gentle arcs, so its paths may weave left and right along
  * open corridors, or include tight loops to adjust the heading. This
  * evaluator adds `turnCostFactor * |total heading change|` [rad] to every
- * edge, so straight motion is preferred unless turning pays off. The extra
- * cost is non-negative, so admissible heuristics remain admissible.
+ * edge, so straight motion is preferred unless turning pays off. Reversing
+ * the direction of travel of a moving robot (a cusp) counts as a heading
+ * change of pi, so stopping to reverse is not cheaper than turning around. The
+ * extra cost is non-negative, so admissible heuristics remain admissible.
  *
  * The heading change is measured along the PTG trajectory of each edge (not
  * only between its end poses, so loops count in full), with the PTGs given
@@ -60,6 +62,10 @@ class CostEvaluatorTurning : public CostEvaluator
     /** Total absolute heading change [rad] along trajectory `pathIndex` of
      * PTG `ptgIndex`, up to step `step`, in the current PTG dynamic state. */
     double headingChange(int ptgIndex, int pathIndex, uint32_t step) const;
+
+    /** Whether the edge reverses the direction of travel of a robot moving
+     * at its start (a cusp), which counts as a heading change of pi. */
+    bool isCusp(const MoveEdgeSE2_TPS& edge) const;
 
    private:
     std::vector<std::shared_ptr<ptg_t>> ptgs_;
