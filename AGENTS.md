@@ -39,7 +39,8 @@ mrpt_path_planning_core/        Headless library. CMake package and target:
 │                               rendering (no windowing)
 ├── include/mpp/data/           Planner I/O, SE(2) states, motion tree, trajectories
 ├── include/mpp/interfaces/     Obstacle sources, vehicle interfaces
-├── include/mpp/ptgs/           PTG implementations (DiffDrive_C, HolonomicBlend)
+├── include/mpp/ptgs/           PTG implementations (DiffDrive_C, DiffDrive_Spin,
+│                               HolonomicBlend)
 ├── src/                        Implementations; registerClasses.cpp registers RTTI classes
 ├── tests/                      GTest suite
 ├── doc/                        Doxygen/Sphinx sources
@@ -95,8 +96,10 @@ colcon test --base-paths . && colcon test-result --all --verbose
 traveled distance `d` and, for speed-trimmable PTGs, a speed scale in `[0,1]`.
 It maps `(k, step)` to pose and twist, and workspace points back to TP-Space
 (`inverseMap_WS2TP`). `DiffDrive_C` generates circular arcs (with `K=-1` for
-reverse motion); `HolonomicBlend` generates holonomic motions with velocity
-ramps defined by runtime-compiled expressions.
+reverse motion); `DiffDrive_Spin` rotates in place (trajectory `k` turns by up
+to +-pi, no inverse map; A\* samples it by angle, `spin_sample_angles`);
+`HolonomicBlend` generates holonomic motions with velocity ramps defined by
+runtime-compiled expressions.
 
 **TP-Space collision checking.** Obstacles in the robot frame are projected
 into TP-Space: for each trajectory `k`, the free distance before collision.
@@ -117,6 +120,8 @@ Euclidean distance; both add a heading-alignment term and are divided by the
 maximum PTG speed so they are in time units. Optional: Reeds-Shepp distance
 (`use_reeds_shepp_heuristic`, requires all PTGs to be `DiffDrive_C`), and
 weighted A\* via `heuristic_epsilon` (default 1.5; 1.0 is exact A\*).
+With a `DiffDrive_Spin` PTG the angular terms are scaled down so they never
+exceed the rotation time (consistency along rotations).
 
 **Reeds-Shepp shot** (`use_reeds_shepp_expansion`). Near the goal, a
 Reeds-Shepp path is executed as a chain of forward/reverse C-PTG edges, each
@@ -125,13 +130,16 @@ itself, not only in its cell. Pose goals: the shortest path to the pose. Point
 goals: the shortest path to the point with a free final heading, else the
 shortest one to any sampled heading at which the footprint fits at the goal
 (none: no shots). A search reaching the goal cell first tries a shot from there.
+With a `DiffDrive_Spin` PTG, a spin shot (rotate, straight C-PTG edge, rotate;
+`use_spin_expansion`) is tried the same way, and the cheapest clear shot wins.
 
 **Robot description.** The PTG `.ini` section (`TrajectoriesAndRobotShape`)
 holds the PTGs, the footprint (`RobotModel_shape2D_*` or a radius) and the
-vehicle's physical `RobotModel_min_turning_radius`; C-PTGs turning tighter are
-rejected when loaded. It is the single source of truth shared by planner and
-follower. PTG collision grids are cached in `~/.cache/mrpt_path_planning`
-(or `$XDG_CACHE_HOME`), named by a hash of their configuration.
+vehicle's physical `RobotModel_min_turning_radius`; C-PTGs turning tighter, or
+any `DiffDrive_Spin` if it is > 0, are rejected when loaded. It is the single
+source of truth shared by planner and follower. PTG collision grids are cached
+in `~/.cache/mrpt_path_planning` (or `$XDG_CACHE_HOME`), named by a hash of
+their configuration.
 
 **Cost model.** Edge cost = PTG segment estimated execution time + the sum of
 cost evaluators (each a penalty per second of motion, or per radian turned,
@@ -144,7 +152,7 @@ change, against weaving paths).
 **Bidirectional A\* (`TPS_Astar_Bidir`).** Searches forward from the start and
 backward from the goal (predecessors from inverted PTG relative poses) until
 both settle the same lattice cell, then stitches and refines the path. C-PTGs
-only; the core always runs exact A\*.
+and `DiffDrive_Spin` only; the core always runs exact A\*.
 
 **Resumable search.** `plan()` is `start()` plus one `run()`; the search state
 lives in `TPS_Astar` (`SearchState`) between calls. Callers can `run()` in time
@@ -156,7 +164,8 @@ other lattice cells are freed), and `set_obstacles()` for later expansions.
 (`tests/test_astar_resumable.cpp`). Only `TPS_Astar` supports it, not Bidir.
 
 **Post-processing.** `refine_trajectory()` re-fits PTG parameters so edges
-connect the exact node poses; `plan_to_trajectory()` samples the path in time.
+connect the exact node poses (rotations in place: by heading);
+`plan_to_trajectory()` samples the path in time.
 
 **Navigation.** `TrajectoryFollower` is a ROS-free path tracker: reference
 curvature feedforward plus pure-pursuit feedback, with predictive safety
@@ -172,8 +181,11 @@ anticipates path curvature and stops (goal, cusps) over the braking distance, so
 the same parameters work at any speed. Passing the path end away from the goal,
 outside the arrival radius, it stops and reports `MissedGoal` so the caller can
 replan; `rotate_at_goal` lets differential-drive robots finish by rotating in
-place to the goal heading. For car-like robots, `min_turn_radius` clamps the
-commanded curvature and `max_curvature_rate` models the steering slew; the
+place to the goal heading. Pivots (heading changes in place, e.g. planned
+rotations) split the path into legs: the follower stops at each one and rotates
+in place in the planned direction (`pivot_in_place`; not for car-like robots).
+For car-like robots, `min_turn_radius` clamps the commanded curvature and
+`max_curvature_rate` models the steering slew; the
 pure-pursuit lookahead shortens where the path bends (`lookahead_bend`) and is
 kept at least `min_lookahead_dist` away so localization noise does not drive
 the steering. `CollisionGuard` is an independent last-resort filter

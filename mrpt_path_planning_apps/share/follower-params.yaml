@@ -20,6 +20,8 @@ max_cross_track: 1.0       # [m]
 arrival_radius: 0.3        # [m]
 rotate_at_goal: true       # rotate in place to the goal heading at the end
                            # (only vehicles that can, i.e. min_turn_radius=0)
+pivot_in_place: true       # stop and rotate in place where the path does
+                           # (e.g. planned with the DiffDrive_Spin PTG)
 
 # --- Latency ---
 control_delay: 0.0         # [s] odometry age + command/actuation delays, to
