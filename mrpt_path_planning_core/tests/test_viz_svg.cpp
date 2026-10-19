@@ -126,3 +126,40 @@ TEST(VizSvg, AnimatedRobot)
     EXPECT_EQ(
         countAttrEntries("values", anim), countAttrEntries("keyTimes", anim));
 }
+
+// A rotation in place has no length: it is drawn as an arc.
+TEST(VizSvg, RotationInPlaceIsDrawn)
+{
+    mrpt::config::CConfigFileMemory cfg(R"cfg(
+[SelfDriving]
+PTG_COUNT = 1
+PTG0_Type        = mpp::ptg::DiffDrive_Spin
+PTG0_resolution  = 0.05
+PTG0_w_max_dps   = 60.0
+RobotModel_shape2D_xs = -0.20 0.30 0.30 -0.20
+RobotModel_shape2D_ys = -0.18 -0.18 0.18 0.18
+)cfg");
+    mpp::PlannerInput               in;
+    in.ptgs.initFromConfigFile(cfg, "SelfDriving");
+    in.stateStart.pose = {0, 0, 0};
+    in.stateGoal.state = mrpt::math::TPose2D{0, 0, M_PI / 2};
+    in.worldBboxMin    = {-2, -2, -M_PI};
+    in.worldBboxMax    = {2, 2, M_PI};
+
+    mpp::TPS_Astar planner;
+    planner.setMinLoggingLevel(mrpt::system::LVL_ERROR);
+    const auto out = planner.plan(in);
+    ASSERT_TRUE(out.success);
+
+    mpp::SvgExportOptions o;
+    o.draw_tree           = false;
+    const std::string svg = mpp::plan_to_svg(out, o);
+    // The solution path (a single point), and the rotation arc:
+    size_t n = 0;
+    for (auto pos = svg.find("<polyline"); pos != std::string::npos;
+         pos      = svg.find("<polyline", pos + 1))
+    {
+        n++;
+    }
+    EXPECT_EQ(n, 2U);
+}

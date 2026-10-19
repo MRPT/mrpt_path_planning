@@ -217,6 +217,44 @@ void polyline(
     os << "\"/>\n";
 }
 
+// Rotations in place have no length in a polyline: they are drawn as arcs
+// (of a fixed size in the image) around the rotation center.
+void rotationArcs(
+    std::ostream& os, const std::vector<mrpt::math::TPose2D>& pts,
+    const Frame& fr, const std::string& color, double width)
+{
+    constexpr double kRadiusPx = 10;
+    constexpr double kSameXY   = 1e-3;  // [m]
+    for (size_t i = 0; i < pts.size();)
+    {
+        size_t j      = i;
+        double turned = 0;
+        while (j + 1 < pts.size() &&
+               std::hypot(pts[j + 1].x - pts[i].x, pts[j + 1].y - pts[i].y) <
+                   kSameXY)
+        {
+            turned += mrpt::math::wrapToPi(pts[j + 1].phi - pts[j].phi);
+            j++;
+        }
+        if (std::abs(turned) > 1e-3)
+        {
+            const int n = std::max(
+                2, static_cast<int>(std::abs(turned) / mrpt::DEG2RAD(10.0)));
+            os << "<polyline fill=\"none\" stroke=\"" << color
+               << "\" stroke-width=\"" << width << "\" points=\"";
+            for (int k = 0; k <= n; k++)
+            {
+                // (image y is flipped)
+                const double a = pts[i].phi + turned * k / n;
+                os << fmt(fr.tx(pts[i].x) + kRadiusPx * std::cos(a)) << ","
+                   << fmt(fr.ty(pts[i].y) - kRadiusPx * std::sin(a)) << " ";
+            }
+            os << "\"/>\n";
+        }
+        i = j + 1;
+    }
+}
+
 // drawHeading=false marks a R(2)-only pose (heading unconstrained, "ANY"):
 // instead of a directional tick, draw a dashed ring around the dot.
 void marker(
@@ -403,6 +441,7 @@ std::string mpp::plan_to_svg(
     if (o.draw_path && !pathPoses.empty())
     {
         polyline(os, pathPoses, fr, o.color_path, o.stroke_path_px);
+        rotationArcs(os, pathPoses, fr, o.color_path, o.stroke_path_px);
 
         if (o.draw_robot_shapes)
         {

@@ -9,7 +9,8 @@
  *
  * Verified behaviors:
  *  - RobotModel_min_turning_radius is loaded (default 0).
- *  - Loading C-PTGs turning tighter than the vehicle can is an error.
+ *  - Loading C-PTGs turning tighter than the vehicle can, or not moving, is
+ *    an error.
  *  - Footprint comparison (as used to cross-check nodes' configurations).
  */
 
@@ -63,6 +64,16 @@ TEST(RobotDescription, PtgTighterThanVehicleIsAnError)
     mrpt::config::CConfigFileMemory cfg(
         config("RobotModel_min_turning_radius = 2.5"));
     mpp::TrajectoriesAndRobotShape trs;
+    EXPECT_ANY_THROW(trs.initFromConfigFile(cfg, "SelfDriving"));
+}
+
+TEST(RobotDescription, ZeroSpeedCPtgIsAnError)
+{
+    std::string       text = config("");
+    const std::string from = "PTG0_v_max_mps   = 1.0";
+    text.replace(text.find(from), from.size(), "PTG0_v_max_mps   = 0.0");
+    mrpt::config::CConfigFileMemory cfg(text);
+    mpp::TrajectoriesAndRobotShape  trs;
     EXPECT_ANY_THROW(trs.initFromConfigFile(cfg, "SelfDriving"));
 }
 

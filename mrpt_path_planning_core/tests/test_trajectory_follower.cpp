@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 #include <mpp/algos/TrajectoryFollower.h>
 #include <mrpt/core/Clock.h>
+#include <mrpt/math/TPolygon2D.h>
 #include <mrpt/math/wrap2pi.h>
 
 #include <chrono>
@@ -2223,4 +2224,264 @@ TEST(TrajectoryFollower, RotatesInPlaceToGoalHeading)
     EXPECT_TRUE(ok);
     EXPECT_NEAR(std::hypot(robot.x - 2.0, robot.y), 0.0, 0.2);
     EXPECT_NEAR(mrpt::math::wrapToPi(robot.phi - M_PI / 2), 0.0, 0.15);
+}
+
+// ---------------------------------------------------------------------------
+// Pivots: rotations in place along the path
+// ---------------------------------------------------------------------------
+namespace
+{
+// Straight segments between points, with a rotation in place (knots every 10
+// degrees, in the direction of `turn`) at each interior point.
+mpp::Trajectory pivotPath(
+    const std::vector<TPoint2D>& pts, const std::vector<double>& turns,
+    double phi0 = 0)
+{
+    mpp::Trajectory tr;
+    double          phi = phi0;
+    for (std::size_t i = 0; i + 1 < pts.size(); i++)
+    {
+        if (i > 0)
+        {
+            const double turn = turns.at(i - 1);
+            const int    n    = static_cast<int>(
+                std::ceil(std::abs(turn) / mrpt::DEG2RAD(10.0)));
+            for (int j = 1; j <= n; j++)
+            {
+                tr.emplace_back(
+                    TPose2D(
+                        pts[i].x, pts[i].y,
+                        mrpt::math::wrapToPi(phi + turn * j / n)),
+                    0.5);
+            }
+            phi += turn;
+        }
+        const double len =
+            std::hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+        const int n = static_cast<int>(std::ceil(len / 0.1));
+        for (int j = (i == 0 ? 0 : 1); j <= n; j++)
+        {
+            const double t = double(j) / n;
+            tr.emplace_back(
+                TPose2D(
+                    pts[i].x + t * (pts[i + 1].x - pts[i].x),
+                    pts[i].y + t * (pts[i + 1].y - pts[i].y),
+                    mrpt::math::wrapToPi(phi)),
+                0.5);
+        }
+    }
+    return tr;
+}
+
+struct PivotRun
+{
+    bool                reached    = false;
+    mpp::FollowerStatus lastStatus = mpp::FollowerStatus::Idle;
+    TPose2D             finalPose;
+    double              maxCross = 0;
+    /** Rotations in place commanded: (position, omega) */
+    std::vector<std::pair<TPoint2D, double>> inPlace;
+};
+
+PivotRun runPivots(
+    mpp::TrajectoryFollower& f, const TPose2D& start,
+    const std::vector<TPoint2D>& pathPts, int maxSteps = 4000)
+{
+    PivotRun     r;
+    TPose2D      robot = start;
+    double       v     = 0;
+    const double dt    = f.params.control_period;
+    const auto   t0    = mrpt::Clock::now();
+    for (int k = 0; k < maxSteps; k++)
+    {
+        auto loc = mkLoc(robot);
+        loc.timestamp =
+            mrpt::Clock::fromDouble(mrpt::Clock::toDouble(t0) + k * dt);
+        const auto out = f.step(loc, mkOdo(robot, v));
+        r.lastStatus   = out.status;
+        r.maxCross =
+            std::max(r.maxCross, distToPolyline(pathPts, {robot.x, robot.y}));
+        if (out.status == mpp::FollowerStatus::ReachedGoal)
+        {
+            r.reached = true;
+            break;
+        }
+        if (out.status != mpp::FollowerStatus::Running ||
+            out.command.points.empty())
+        {
+            break;
+        }
+        const auto tw = out.command.points.front().twist;
+        if (tw.vx == 0 && std::abs(tw.omega) > 1e-3)
+        {
+            r.inPlace.emplace_back(TPoint2D(robot.x, robot.y), tw.omega);
+        }
+        robot = integrate(robot, tw.vx, tw.omega, dt);
+        v     = tw.vx;
+    }
+    r.finalPose = robot;
+    return r;
+}
+}  // namespace
+
+// A 90 deg rotation in place at a corner: the robot stops at it, rotates
+// there, and does not cut the corner.
+TEST(TrajectoryFollower, PivotsAtCorner)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {2, 0}, {2, 2}};
+    mpp::TrajectoryFollower     f;
+    f.setTrajectory(pivotPath(pts, {M_PI / 2}));
+    ASSERT_TRUE(f.hasTrajectory());
+
+    const auto r = runPivots(f, {0, 0, 0}, pts);
+    EXPECT_TRUE(r.reached);
+    EXPECT_LT(r.maxCross, 0.03);
+    ASSERT_FALSE(r.inPlace.empty());
+    for (const auto& [p, w] : r.inPlace)
+    {
+        EXPECT_LT(std::hypot(p.x - 2.0, p.y), 0.05);
+        EXPECT_GT(w, 0.0);  // left, as planned
+    }
+    EXPECT_NEAR(r.finalPose.x, 2.0, 0.1);
+    EXPECT_NEAR(r.finalPose.y, 2.0, 0.16);
+}
+
+// Turning back by rotating in place: in the planned direction, even if the
+// other is as short.
+TEST(TrajectoryFollower, PivotsBackInThePlannedDirection)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {2, 0}, {0, 0}};
+    for (const double turn : {M_PI, -M_PI})
+    {
+        mpp::TrajectoryFollower f;
+        f.setTrajectory(pivotPath(pts, {turn}));
+        const auto r = runPivots(f, {0, 0, 0}, pts);
+        EXPECT_TRUE(r.reached) << turn;
+        EXPECT_LT(r.maxCross, 0.03) << turn;
+        ASSERT_FALSE(r.inPlace.empty()) << turn;
+        for (const auto& [p, w] : r.inPlace) { EXPECT_GT(w * turn, 0.0); }
+        EXPECT_LT(std::hypot(r.finalPose.x, r.finalPose.y), 0.16);
+    }
+}
+
+// A rotation at the end of the path is executed, also without
+// rotate_at_goal; and a path that is only a rotation, too.
+TEST(TrajectoryFollower, PivotsAtGoalAndRotationOnlyPaths)
+{
+    {
+        const std::vector<TPoint2D> pts = {{0, 0}, {2, 0}};
+        auto                        tr  = pivotPath(pts, {});
+        for (int j = 1; j <= 9; j++)
+        {
+            tr.emplace_back(TPose2D(2, 0, mrpt::DEG2RAD(-10.0 * j)), 0.5);
+        }
+        mpp::TrajectoryFollower f;
+        f.params.rotate_at_goal = false;
+        f.setTrajectory(tr);
+        const auto r = runPivots(f, {0, 0, 0}, pts);
+        EXPECT_TRUE(r.reached);
+        EXPECT_NEAR(
+            mrpt::math::angDistance(r.finalPose.phi, -M_PI / 2), 0.0, 0.1);
+    }
+    {
+        mpp::Trajectory tr;
+        for (int j = 0; j <= 9; j++)
+        {
+            tr.emplace_back(TPose2D(1, 1, mrpt::DEG2RAD(10.0 * j)), 0.5);
+        }
+        mpp::TrajectoryFollower f;
+        f.setTrajectory(tr);
+        ASSERT_TRUE(f.hasTrajectory());
+        const auto r = runPivots(f, {1, 1, 0}, {{1, 1}, {1, 1}});
+        EXPECT_TRUE(r.reached);
+        EXPECT_NEAR(
+            mrpt::math::angDistance(r.finalPose.phi, M_PI / 2), 0.0, 0.1);
+        EXPECT_NEAR(r.finalPose.x, 1.0, 1e-9);
+        EXPECT_NEAR(r.finalPose.y, 1.0, 1e-9);
+    }
+}
+
+// An obstacle within the footprint rotation circle: the robot waits at the
+// pivot, without rotating, and reports it blocked.
+TEST(TrajectoryFollower, PivotBlockedByObstacle)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {2, 0}, {2, 2}};
+    mpp::TrajectoryFollower     f;
+    f.params.block_timeout = 1.0;
+    mrpt::math::TPolygon2D shape;
+    shape.emplace_back(-0.20, -0.18);
+    shape.emplace_back(0.30, -0.18);
+    shape.emplace_back(0.30, 0.18);
+    shape.emplace_back(-0.20, 0.18);
+    f.setRobotShape(shape);
+    // Beside the robot at the pivot, 0.12 m from its side (the corners swing
+    // 0.35 m away from the rotation center):
+    f.setObstacles(std::vector<TPoint2D>{{2.0, 0.30}});
+    f.setTrajectory(pivotPath(pts, {M_PI / 2}));
+
+    const auto r = runPivots(f, {0, 0, 0}, pts);
+    EXPECT_FALSE(r.reached);
+    EXPECT_EQ(r.lastStatus, mpp::FollowerStatus::Blocked);
+    EXPECT_TRUE(r.inPlace.empty());
+    EXPECT_NEAR(r.finalPose.x, 2.0, 0.05);
+    EXPECT_NEAR(r.finalPose.phi, 0.0, 0.05);
+}
+
+// Pivots are merged with the path for car-like vehicles, or if disabled.
+TEST(TrajectoryFollower, NoPivotsIfDisabledOrCarLike)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {3, 0}, {3, 3}};
+    for (const bool carLike : {false, true})
+    {
+        mpp::TrajectoryFollower f;
+        if (carLike) { f.params.min_turn_radius = 0.5; }
+        else { f.params.pivot_in_place = false; }
+        f.setTrajectory(pivotPath(pts, {M_PI / 2}));
+        const auto r = runPivots(f, {0, 0, 0}, pts);
+        EXPECT_TRUE(r.inPlace.empty()) << carLike;
+    }
+}
+
+// A path update while rotating at a pivot goes on with that rotation.
+TEST(TrajectoryFollower, PathUpdateWhilePivoting)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {2, 0}, {2, 2}};
+    const auto                  tr  = pivotPath(pts, {M_PI / 2});
+    mpp::TrajectoryFollower     f;
+    f.setTrajectory(tr);
+
+    // While rotating, update with the same path, a few times:
+    int          nUpdates = 0;
+    TPose2D      robot(0, 0, 0);
+    double       v       = 0;
+    const double dt      = f.params.control_period;
+    bool         reached = false;
+    for (int k = 0; k < 4000; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal)
+        {
+            reached = true;
+            break;
+        }
+        ASSERT_EQ(out.status, mpp::FollowerStatus::Running);
+        ASSERT_FALSE(out.command.points.empty());
+        const auto tw = out.command.points.front().twist;
+        if (tw.vx == 0 && std::abs(tw.omega) > 1e-3 && nUpdates < 5)
+        {
+            f.updateTrajectory(tr);
+            nUpdates++;
+            // Still rotating, not driving (forward or backward):
+            const auto o2 = f.step(mkLoc(robot), mkOdo(robot, v));
+            ASSERT_FALSE(o2.command.points.empty());
+            EXPECT_EQ(o2.command.points.front().twist.vx, 0.0);
+            EXPECT_GT(o2.command.points.front().twist.omega, 0.0);
+        }
+        robot = integrate(robot, tw.vx, tw.omega, dt);
+        v     = tw.vx;
+    }
+    EXPECT_TRUE(reached);
+    EXPECT_EQ(nUpdates, 5);
+    EXPECT_NEAR(robot.x, 2.0, 0.1);
+    EXPECT_NEAR(robot.y, 2.0, 0.16);
 }

@@ -28,6 +28,7 @@ void DiffDrive_C::loadFromConfigFile(
     DiffDriveCollisionGridBased::loadFromConfigFile(cfg, sSection);
 
     MRPT_LOAD_CONFIG_VAR_NO_DEFAULT(K, double, cfg, sSection);
+    ASSERT_GT_(V_MAX, 0.0);
 }
 void DiffDrive_C::saveToConfigFile(
     mrpt::config::CConfigFileBase& cfg, const std::string& sSection) const

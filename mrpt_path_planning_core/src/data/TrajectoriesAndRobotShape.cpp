@@ -6,6 +6,7 @@
 
 #include <mpp/data/TrajectoriesAndRobotShape.h>
 #include <mpp/ptgs/DiffDrive_C.h>
+#include <mpp/ptgs/DiffDrive_Spin.h>
 #include <mrpt/system/os.h>
 
 #include <cstdlib>
@@ -150,6 +151,14 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
                     "would not be drivable by the vehicle.",
                     n, R, minTurningRadius));
         }
+        ASSERTMSG_(
+            !(minTurningRadius > 0 &&
+              dynamic_cast<const ptg::DiffDrive_Spin*>(new_ptg.get())),
+            mrpt::format(
+                "PTG%u rotates in place, but the vehicle has "
+                "RobotModel_min_turning_radius=%.3f m: plans would not be "
+                "drivable by it.",
+                n, minTurningRadius));
 
         // Initialize PTGs:
         new_ptg->deinitialize();

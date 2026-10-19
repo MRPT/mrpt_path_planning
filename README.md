@@ -48,12 +48,14 @@ mvsim-demo-astar-planner-params.yaml for demo-holonomic.svg) -->
   goals `[x y]`.
 - **Forward and reverse maneuvers**, with an optional **Reeds-Shepp** heuristic
   and analytic goal expansion for tight maneuvers such as parking.
+- **Rotations in place** for differential-drive robots (`DiffDrive_Spin` PTG),
+  e.g. to turn around in corridors too narrow for arcs.
 - **Certified collision checking**: the collision grids are conservative, so a
   path reported as free is free for the continuous swept motion.
 - **Pluggable cost layers**: obstacle-proximity cost maps,
   preferred-waypoint attractors, and a penalty for driving in reverse.
 - **Navigation building blocks**: `TrajectoryFollower` (pure pursuit with predictive
-  safety, valid at any speed), and `CollisionGuard` (last-resort velocity
+  safety, valid at any speed, rotating in place where the path does), and `CollisionGuard` (last-resort velocity
   filter ensuring the robot can always stop before sensed obstacles).
 - **Headless core**: the algorithms library has no GUI dependency.
 
@@ -154,7 +156,7 @@ Example files in [`mrpt_path_planning_apps/share/`](mrpt_path_planning_apps/shar
 
 | File | Purpose |
 | --- | --- |
-| `ptgs_holonomic_robot.ini`, `ptgs_ackermann_vehicle.ini` | Vehicle model: PTG families, velocity limits, robot shape. |
+| `ptgs_holonomic_robot.ini`, `ptgs_ackermann_vehicle.ini`, `ptgs_diffdrive_robot.ini` | Vehicle model: PTG families, velocity limits, robot shape. |
 | `mvsim-demo-astar-planner-params*.yaml` | `TPS_Astar` parameters (lattice resolution, sampling, heuristics). |
 | `costmap-obstacles.yaml` | Obstacle-proximity cost map parameters. |
 | `costmap-prefer-waypoints.yaml` | Preferred-waypoints cost layer parameters. |
@@ -192,12 +194,16 @@ path-planner-cli \
 | Cleaner SVG for figures: no search tree, box or label, custom width | `--svg-no-tree --svg-no-bbox --svg-no-status --svg-width 600` |
 | Verbose output, skip path refinement | `-v DEBUG --no-refine` |
 | Penalize driving in reverse (extra cost per second) | `--reverse-cost-factor 1.0` |
+| Differential-drive robot, rotating in place, penalizing turns | `-c ptgs_diffdrive_robot.ini --planner-parameters mvsim-demo-astar-planner-params-ackermann.yaml --turn-cost-factor 0.3` |
 
 With forward and reverse circular-arc PTGs (as in `ptgs_ackermann_vehicle.ini`),
 pose and position goals are reached exactly through Reeds-Shepp maneuvers, if
 a collision-free one is found near the goal; otherwise (e.g., a position goal
 at which the robot fits at no heading), the path ends within one lattice cell
 (`grid_resolution_xy`) of the goal.
+With rotations in place too (`mpp::ptg::DiffDrive_Spin`, as in
+`ptgs_diffdrive_robot.ini`), goals are also reached exactly by rotating, driving
+straight and rotating again.
 Run `path-planner-cli --help` for all options.
 
 ### selfdriving-simulator-gui

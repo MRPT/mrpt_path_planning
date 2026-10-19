@@ -14,15 +14,19 @@
  *    nothing.
  *  - Edges cost factor * heading change; reversing the direction of travel
  *    of a moving robot (a cusp) adds factor * pi.
+ *  - Rotations in place cost factor * angle, and are neither cusps nor
+ *    reverse motions.
  *  - A* includes the straight trajectory even if the evenly spaced subset of
  *    `max_ptg_trajectories_to_explore` misses it, and with the turning cost
  *    a plan along an open corridor turns much less.
  */
 
 #include <gtest/gtest.h>
+#include <mpp/algos/CostEvaluatorReverseMotion.h>
 #include <mpp/algos/CostEvaluatorTurning.h>
 #include <mpp/algos/TPS_Astar.h>
 #include <mpp/data/PlannerInput.h>
+#include <mpp/ptgs/DiffDrive_Spin.h>
 #include <mrpt/config/CConfigFileMemory.h>
 #include <mrpt/math/wrap2pi.h>
 
@@ -210,4 +214,46 @@ TEST(CostEvaluatorTurning, CuspCost)
     // Already moving backwards: no cusp.
     e.stateFrom.vel = {0.0, -1.0, 0.0};
     EXPECT_FALSE(ev.isCusp(e));
+}
+
+// A rotation in place costs its angle, is not a cusp even from a moving
+// state, and is not a reverse motion.
+TEST(CostEvaluatorTurning, RotationInPlace)
+{
+    mrpt::config::CConfigFileMemory cfg(R"cfg(
+[SelfDriving]
+PTG_COUNT = 1
+PTG0_Type        = mpp::ptg::DiffDrive_Spin
+PTG0_resolution  = 0.05
+PTG0_w_max_dps   = 60.0
+RobotModel_shape2D_xs = -0.20 0.30 0.30 -0.20
+RobotModel_shape2D_ys = -0.18 -0.18 0.18 0.18
+)cfg");
+    mpp::TrajectoriesAndRobotShape  trs;
+    trs.initFromConfigFile(cfg, "SelfDriving");
+    const auto* spin =
+        dynamic_cast<const mpp::ptg::DiffDrive_Spin*>(trs.ptgs.at(0).get());
+    ASSERT_NE(spin, nullptr);
+
+    mpp::CostEvaluatorTurning ev;
+    ev.params_.turnCostFactor = 2.0;
+    ev.setPTGs(trs);
+    mpp::CostEvaluatorReverseMotion evRev;
+    evRev.params_.reverseTimeCostFactor = 1.0;
+    evRev.setPTGs(trs);
+
+    for (const double angle : {-M_PI, -M_PI / 2, 0.3, M_PI / 2, M_PI})
+    {
+        const auto ks = spin->rotationToTrajectoryStep(angle);
+        ASSERT_TRUE(ks.has_value());
+        mpp::MoveEdgeSE2_TPS e;
+        e.ptgIndex          = 0;
+        e.ptgPathIndex      = ks->first;
+        e.ptgStepIndex      = ks->second;
+        e.estimatedExecTime = std::abs(angle) / mrpt::DEG2RAD(60.0);
+        e.stateFrom.vel     = {1.0, 0, 0};  // moving forward
+        // (Up to the time resolution of the trajectories)
+        EXPECT_NEAR(ev(e), 2.0 * std::abs(angle), 3e-3) << angle;
+        EXPECT_EQ(evRev(e), 0.0) << angle;
+    }
 }

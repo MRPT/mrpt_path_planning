@@ -60,6 +60,17 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
         float alpha, float t, float x, float y, float phi, float& v,
         float& w) const = 0;
 
+    /** Optional end condition of a trajectory, checked at each integration
+     * step besides the time, distance and turned angle limits. Default: none.
+     */
+    virtual bool ptgDiffDriveTrajectoryEnded(
+        [[maybe_unused]] float alpha, [[maybe_unused]] float t,
+        [[maybe_unused]] float x, [[maybe_unused]] float y,
+        [[maybe_unused]] float phi) const
+    {
+        return false;
+    }
+
     /** @name Virtual interface of each PTG implementation
      *  @{ */
     // getDescription(): remains to be defined in derived classes.

@@ -10,6 +10,7 @@
 #include <mpp/algos/CostEvaluatorTurning.h>
 #include <mpp/algos/TPS_Astar.h>
 #include <mpp/ptgs/DiffDrive_C.h>
+#include <mpp/ptgs/DiffDrive_Spin.h>
 #include <mpp/ptgs/HolonomicBlend.h>
 #include <mrpt/core/initializer.h>
 
@@ -34,4 +35,5 @@ MRPT_INITIALIZER(selfdriving_register)
     // PTGs:
     registerClass(CLASS_ID(ptg::HolonomicBlend));
     registerClass(CLASS_ID(ptg::DiffDrive_C));
+    registerClass(CLASS_ID(ptg::DiffDrive_Spin));
 }

@@ -107,6 +107,26 @@ struct TPS_Astar_Parameters
     bool   use_reeds_shepp_expansion        = true;
     double reeds_shepp_expansion_max_length = 5.0;
 
+    /** Rotations in place [rad] tried from every expanded node, in both
+     * directions, if there is a rotation in place PTG (DiffDrive_Spin). A
+     * node also tries to face the goal (forward and backward) and, for a
+     * full-pose goal, the goal heading. Rotations smaller than half
+     * `grid_resolution_yaw` are skipped. In YAML, in degrees. */
+    std::vector<double> spin_sample_angles = {
+        45.0_deg, 90.0_deg, 135.0_deg, 180.0_deg};
+
+    /** Try a spin shot from expanded nodes within
+     * `reeds_shepp_expansion_max_length` [m] of the goal: rotate in place to
+     * face the goal (or away from it, to back into it), drive straight to
+     * it, and, for a full-pose goal, rotate in place to the goal heading. It
+     * requires a rotation in place PTG (DiffDrive_Spin) and a C-PTG with an
+     * odd number of trajectories (so that one is straight); otherwise it is
+     * silently not used. As the Reeds-Shepp shot, each edge is collision
+     * checked, a clear shot becomes a goal candidate (so
+     * `use_analytic_expansion` must be enabled), and it ends at the goal
+     * itself. If both shots are clear, the cheapest one is used. */
+    bool use_spin_expansion = true;
+
     uint32_t                        max_ptg_trajectories_to_explore = 20;
     std::vector<duration_seconds_t> ptg_sample_timestamps     = {1.0, 3.0, 5.0};
     uint32_t                        max_ptg_speeds_to_explore = 3;
@@ -257,7 +277,8 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         const SE2_KinState& from, const mrpt::math::TPoint2D& goal) const;
 
     /** Minimum turning radius of a set of DiffDrive_C PTGs (the Reeds-Shepp
-     * heuristic radius), or 0 if any PTG is of another type. */
+     * heuristic radius), or 0 if any PTG is of another type (the Reeds-Shepp
+     * distance is not a lower bound with rotations in place). */
     static double reeds_shepp_turning_radius(
         const TrajectoriesAndRobotShape& trs);
 
@@ -560,6 +581,25 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
      * Set in plan() from the PTGs. */
     double reedsSheppTurningRadius_ = 0.0;
 
+    /** Index of the rotation in place PTG (DiffDrive_Spin), if any. Set in
+     * start(). */
+    std::optional<size_t> spinPtgIndex_;
+
+    /** Scale of the angular terms of the SE(2) heuristic (1 = none). With
+     * rotations in place, they are scaled so that they never exceed the
+     * rotation time, which keeps the heuristic consistent along rotation
+     * edges. Set in start(). */
+    double heuristicAngleScale_ = 1.0;
+
+    /** Sets spinPtgIndex_ and heuristicAngleScale_ from the PTGs (after
+     * maxLinSpeed_). */
+    void prepare_rotations_in_place(const TrajectoriesAndRobotShape& trs);
+
+    /** Rotations in place [rad] to try from `from` (see spin_sample_angles).
+     */
+    std::vector<double> spin_angles_to_sample(
+        const mrpt::math::TPose2D& from, const SE2orR2_KinState& goal) const;
+
     /** Trajectories of one C-PTG used by the Reeds-Shepp shot. */
     struct RsExpansionPtg
     {
@@ -576,6 +616,20 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
     /** Sets rsForward_, rsReverse_ and rsExpansionRadius_ from the PTGs.
      * \return false if they do not support the Reeds-Shepp shot. */
     bool prepare_reeds_shepp_expansion(const TrajectoriesAndRobotShape& trs);
+
+    /** Straight trajectories of C-PTGs used by the spin shot. */
+    RsExpansionPtg spinShotForward_, spinShotReverse_;
+    bool           spinShotAvailable_ = false;
+
+    /** Sets spinShotForward_, spinShotReverse_ and spinShotAvailable_ from the
+     * PTGs. \return false if they do not support the spin shot. */
+    bool prepare_spin_expansion(const TrajectoriesAndRobotShape& trs);
+
+    /** Whether some shot to the goal (Reeds-Shepp or spin) is available. */
+    [[nodiscard]] bool goal_shots_available() const
+    {
+        return rsExpansionRadius_ > 0 || spinShotAvailable_;
+    }
 
     /** For a position goal, the obstacle points near it, relative to the
      * goal point, the final headings at which the footprint, grown by the
@@ -604,6 +658,24 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         SE2_KinState    stateTo;
     };
 
+    /** The cheapest clear shot from `from` to the goal: Reeds-Shepp
+     * (reeds_shepp_shot()) or spin (spin_shot()), as available. */
+    std::vector<RsShotEdge> goal_shot(
+        const Node& from, const SE2orR2_KinState& goal, double maxLength,
+        bool allHeadings, const TrajectoriesAndRobotShape& trs,
+        const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+        double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in);
+
+    /** Builds the spin shot from `from` to the goal pose or point as
+     * certified PTG edges (see use_spin_expansion), driving straight no
+     * longer than `maxLength` [m]. \return An empty vector if there is none.
+     */
+    std::vector<RsShotEdge> spin_shot(
+        const Node& from, const SE2orR2_KinState& goal, double maxLength,
+        const TrajectoriesAndRobotShape&                trs,
+        const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+        double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in);
+
     /** Builds the Reeds-Shepp shot from `from` to the goal pose or point as
      * certified PTG edges (see use_reeds_shepp_expansion), no longer than
      * `maxLength` [m]. For a position goal, the shortest path with a free
@@ -618,7 +690,9 @@ class TPS_Astar : virtual public mrpt::system::COutputLogger, public Planner
         double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in);
 
     /** Executes the Reeds-Shepp `segments` from `from` as certified PTG
-     * edges, which must end at the goal (see reeds_shepp_shot()). */
+     * edges, which must end at the goal (see reeds_shepp_shot()). Segments
+     * of type 'P' are rotations in place by `length` [rad] (see
+     * spin_shot()). */
     std::vector<RsShotEdge> execute_shot(
         const Node& from, const std::vector<ReedsSheppSegment>& segments,
         const SE2orR2_KinState& goal, const TrajectoriesAndRobotShape& trs,

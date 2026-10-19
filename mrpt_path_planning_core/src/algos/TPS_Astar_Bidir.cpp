@@ -8,6 +8,7 @@
 #include <mpp/algos/edge_interpolated_path.h>
 #include <mpp/algos/refine_trajectory.h>
 #include <mpp/algos/tp_obstacles_single_path.h>
+#include <mpp/ptgs/DiffDrive_Spin.h>
 #include <mpp/ptgs/SpeedTrimmablePTG.h>
 #include <mrpt/poses/CPose2D.h>
 #include <mrpt/version.h>
@@ -90,91 +91,118 @@ TPS_Astar::list_paths_to_neighbors_t
         }
         else { speedsToConsider.push_back(1.0); }
 
-        for (const auto speed : speedsToConsider)
+        // Trajectory steps to consider: by time, or for rotations in place,
+        // by angle (see spin_sample_angles):
+        std::vector<std::pair<trajectory_index_t, ptg_step_t>> trjSteps;
+        if (const auto* spin =
+                dynamic_cast<const ptg::DiffDrive_Spin*>(ptg.get());
+            spin)
         {
-            if (ptgTrimmable) ptgTrimmable->trimmableSpeed_ = speed;
-
+            for (const double a : params_.spin_sample_angles)
+            {
+                for (const double sa : {a, -a})
+                {
+                    if (std::abs(sa) < 0.5 * params_.grid_resolution_yaw)
+                    {
+                        continue;
+                    }
+                    if (const auto ks = spin->rotationToTrajectoryStep(sa); ks)
+                    {
+                        trjSteps.emplace_back(ks->first, ks->second);
+                    }
+                }
+            }
+        }
+        else
+        {
             for (const auto trjIdx : trajIdxsToConsider)
             {
                 for (duration_seconds_t t : params_.ptg_sample_timestamps)
                 {
-                    const ptg_step_t trjStep = mrpt::round(t / ptg_dt);
-
-                    const auto maxSteps = ptg->getPathStepCount(trjIdx);
+                    const ptg_step_t trjStep  = mrpt::round(t / ptg_dt);
+                    const auto       maxSteps = ptg->getPathStepCount(trjIdx);
                     ASSERT_(maxSteps >= 1);
                     if (trjStep == 0 || trjStep >= maxSteps) continue;
+                    trjSteps.emplace_back(trjIdx, trjStep);
+                }
+            }
+        }
 
-                    // The forward PTG arc, in the predecessor-local frame:
-                    const auto relPose = ptg->getPathPose(trjIdx, trjStep);
-                    const auto relDist = ptg->getPathDist(trjIdx, trjStep);
+        for (const auto speed : speedsToConsider)
+        {
+            if (ptgTrimmable) ptgTrimmable->trimmableSpeed_ = speed;
 
-                    // Predecessor pose: p such that p (+) relPose == qPose
-                    //   CPose2D(p) = CPose2D(q) (+) inverse(relPose)
-                    const auto pPose = (mrpt::poses::CPose2D(qPose) -
-                                        mrpt::poses::CPose2D(relPose))
-                                           .asTPose();
+            for (const auto& [trjIdx, trjStep] : trjSteps)
+            {
+                // The forward PTG arc, in the predecessor-local frame:
+                const auto relPose = ptg->getPathPose(trjIdx, trjStep);
+                const auto relDist = ptg->getPathDist(trjIdx, trjStep);
 
-                    // out of lattice limits?
-                    if (pPose.x < worldBboxMin.x || pPose.y < worldBboxMin.y)
-                        continue;
-                    if (pPose.x > worldBboxMax.x - halfCell ||
-                        pPose.y > worldBboxMax.y - halfCell)
-                        continue;
+                // Predecessor pose: p such that p (+) relPose == qPose
+                //   CPose2D(p) = CPose2D(q) (+) inverse(relPose)
+                const auto pPose = (mrpt::poses::CPose2D(qPose) -
+                                    mrpt::poses::CPose2D(relPose))
+                                       .asTPose();
 
-                    const NodeCoords pCell = nodeGridCoords(pPose);
+                // out of lattice limits?
+                if (pPose.x < worldBboxMin.x || pPose.y < worldBboxMin.y)
+                    continue;
+                if (pPose.x > worldBboxMax.x - halfCell ||
+                    pPose.y > worldBboxMax.y - halfCell)
+                    continue;
 
-                    // TP-obstacles for a forward arc *from p*: build (and
-                    // cache) the free-distance array anchored at the
-                    // predecessor pose.
-                    const auto cacheKey = std::make_pair(
-                        ptgIdx, std::make_pair(pCell.idxX, pCell.idxY));
-                    auto itCache = tpObsCache.find(cacheKey);
-                    if (itCache == tpObsCache.end())
-                    {
-                        const auto localObstacles = cached_local_obstacles(
-                            pPose, globalObstacles,
-                            MAX_XY_OBSTACLES_CLIPPING_DIST);
+                const NodeCoords pCell = nodeGridCoords(pPose);
 
-                        ptg_t::TNavDynamicState ds;
-                        ds.curVelLocal    = mrpt::math::TTwist2D(0, 0, 0);
-                        ds.relTarget      = startPose - pPose;
-                        ds.targetRelSpeed = 0;
-                        ptg->updateNavDynamicState(ds);
+                // TP-obstacles for a forward arc *from p*: build (and
+                // cache) the free-distance array anchored at the
+                // predecessor pose.
+                const auto cacheKey = std::make_pair(
+                    ptgIdx, std::make_pair(pCell.idxX, pCell.idxY));
+                auto itCache = tpObsCache.find(cacheKey);
+                if (itCache == tpObsCache.end())
+                {
+                    const auto localObstacles = cached_local_obstacles(
+                        pPose, globalObstacles, MAX_XY_OBSTACLES_CLIPPING_DIST);
 
-                        std::vector<double> tpObstacles;
-                        ptg->initTPObstacles(tpObstacles);
-                        const auto& ox = localObstacles->getPointsBufferRef_x();
-                        const auto& oy = localObstacles->getPointsBufferRef_y();
-                        const size_t nObs = localObstacles->size();
-                        for (size_t i = 0; i < nObs; i++)
-                            ptg->updateTPObstacle(ox[i], oy[i], tpObstacles);
+                    ptg_t::TNavDynamicState ds;
+                    ds.curVelLocal    = mrpt::math::TTwist2D(0, 0, 0);
+                    ds.relTarget      = startPose - pPose;
+                    ds.targetRelSpeed = 0;
+                    ptg->updateNavDynamicState(ds);
 
-                        itCache =
-                            tpObsCache.emplace(cacheKey, std::move(tpObstacles))
-                                .first;
-                    }
+                    std::vector<double> tpObstacles;
+                    ptg->initTPObstacles(tpObstacles);
+                    const auto&  ox   = localObstacles->getPointsBufferRef_x();
+                    const auto&  oy   = localObstacles->getPointsBufferRef_y();
+                    const size_t nObs = localObstacles->size();
+                    for (size_t i = 0; i < nObs; i++)
+                        ptg->updateTPObstacle(ox[i], oy[i], tpObstacles);
 
-                    const distance_t freeDistance = itCache->second[trjIdx];
-                    if (relDist >= freeDistance) continue;  // collision
+                    itCache =
+                        tpObsCache.emplace(cacheKey, std::move(tpObstacles))
+                            .first;
+                }
 
-                    // Valid predecessor. Store with forward-generator
-                    // convention: neighborPose = from.pose (+) relReconstrPose
-                    //   => relReconstrPose = inverse(relPose)
-                    const NodeCoords nc   = pCell;
-                    auto&            path = bestPaths[nc];
-                    if (relDist < path.ptgDist)
-                    {
-                        path.ptgDist         = relDist;
-                        path.ptgIndex        = ptgIdx;
-                        path.ptgTrajIndex    = trjIdx;
-                        path.relTrgStep      = trjStep;
-                        path.relReconstrPose = (mrpt::poses::CPose2D(pPose) -
-                                                mrpt::poses::CPose2D(qPose))
-                                                   .asTPose();
-                        path.neighborNodeCoords = nc;
-                        path.ptgDynState = ptg->getCurrentNavDynamicState();
-                        path.ptgTrimmableSpeed = speed;
-                    }
+                const distance_t freeDistance = itCache->second[trjIdx];
+                if (relDist >= freeDistance) continue;  // collision
+
+                // Valid predecessor. Store with forward-generator
+                // convention: neighborPose = from.pose (+) relReconstrPose
+                //   => relReconstrPose = inverse(relPose)
+                const NodeCoords nc   = pCell;
+                auto&            path = bestPaths[nc];
+                if (relDist < path.ptgDist)
+                {
+                    path.ptgDist         = relDist;
+                    path.ptgIndex        = ptgIdx;
+                    path.ptgTrajIndex    = trjIdx;
+                    path.relTrgStep      = trjStep;
+                    path.relReconstrPose = (mrpt::poses::CPose2D(pPose) -
+                                            mrpt::poses::CPose2D(qPose))
+                                               .asTPose();
+                    path.neighborNodeCoords = nc;
+                    path.ptgDynState        = ptg->getCurrentNavDynamicState();
+                    path.ptgTrimmableSpeed  = speed;
                 }
             }
         }
@@ -219,6 +247,7 @@ PlannerOutput TPS_Astar_Bidir::plan(const PlannerInput& in)
     }
     ASSERT_(MAX_XY_DIST > 0);
     if (maxLinSpeed_ <= 0) maxLinSpeed_ = 1.0;
+    prepare_rotations_in_place(in.ptgs);
 
     // Warn for non-constant-velocity PTGs (see class restrictions):
     for (const auto& ptg : in.ptgs.ptgs)

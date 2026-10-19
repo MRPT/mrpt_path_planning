@@ -6,9 +6,11 @@
 
 #include <mpp/algos/edge_interpolated_path.h>
 #include <mpp/algos/refine_trajectory.h>
+#include <mpp/ptgs/DiffDrive_Spin.h>
 #include <mpp/ptgs/SpeedTrimmablePTG.h>
 #include <mrpt/math/wrap2pi.h>
 
+#include <cmath>
 #include <iostream>
 
 // see docs in .h
@@ -46,6 +48,35 @@ void mpp::refine_trajectory(
 #endif
 
         const auto deltaNodes = endNode.pose - startNode.pose;
+
+        // Rotations in place are re-fitted by heading instead (a residual
+        // translation, from the lattice rounding of the end node, is kept):
+        if (const auto* spin =
+                dynamic_cast<const ptg::DiffDrive_Spin*>(ptg.get());
+            spin)
+        {
+            // Half turns end at the same pose both ways: keep the direction
+            // the planner checked.
+            const double planned =
+                spin->getTrajectoryRotation(edge.ptgPathIndex);
+            double rotation = mrpt::math::wrapToPi(deltaNodes.phi);
+            if (rotation * planned < 0 && std::abs(rotation) > M_PI - 1e-3)
+            {
+                rotation = std::copysign(M_PI, planned);
+            }
+            const auto ks = spin->rotationToTrajectoryStep(rotation);
+            if (ks && (ks->first != edge.ptgPathIndex ||
+                       ks->second != edge.ptgStepIndex))
+            {
+                edge.ptgPathIndex = ks->first;
+                edge.ptgStepIndex = ks->second;
+                edge.ptgDist      = ptg->getPathDist(ks->first, ks->second);
+                edge_interpolated_path(
+                    edge, ptgInfo, ptg->getPathPose(ks->first, ks->second),
+                    ks->second);
+            }
+            continue;
+        }
 
         // Should never happen, except in buggy callers:
         if (deltaNodes.x == 0 && deltaNodes.y == 0) continue;
