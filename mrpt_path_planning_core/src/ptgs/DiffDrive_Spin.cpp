@@ -152,6 +152,11 @@ std::optional<std::pair<uint16_t, uint32_t>>
     const auto   it     = std::lower_bound(
               traj.begin(), traj.end(), target,
               [](const TCPoint& p, double a) { return std::abs(p.phi) < a; });
+    // (A trajectory may end earlier, at the simulation time limit)
+    if (it == traj.end() && target > std::abs(traj.back().phi) + kEndTolerance)
+    {
+        return std::nullopt;
+    }
     auto step = static_cast<uint32_t>(std::distance(traj.begin(), it));
     if (step >= traj.size()) { step = static_cast<uint32_t>(traj.size() - 1); }
     if (step > 0 && std::abs(std::abs(traj[step - 1].phi) - target) <

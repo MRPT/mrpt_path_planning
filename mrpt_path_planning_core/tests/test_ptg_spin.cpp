@@ -19,9 +19,13 @@
  *  - Obstacles beyond the footprint circumscribed circle never block a
  *    rotation; obstacles within it block both directions before half a turn.
  *  - Clones are independent and identical.
+ *  - refine_trajectory() keeps the direction of half turns, whose end pose
+ *    is the same both ways.
  */
 
 #include <gtest/gtest.h>
+#include <mpp/algos/edge_interpolated_path.h>
+#include <mpp/algos/refine_trajectory.h>
 #include <mpp/data/TrajectoriesAndRobotShape.h>
 #include <mpp/ptgs/DiffDrive_Spin.h>
 #include <mrpt/config/CConfigFileMemory.h>
@@ -195,4 +199,45 @@ TEST(PtgSpin, CloneIsIndependent)
     const auto ks = c->rotationToTrajectoryStep(1.0);
     ASSERT_TRUE(ks.has_value());
     EXPECT_NEAR(c->getPathPose(ks->first, ks->second).phi, 1.0, 1e-3);
+}
+
+TEST(PtgSpin, RefineKeepsHalfTurnDirection)
+{
+    mpp::TrajectoriesAndRobotShape trs;
+    const auto                     spin = loadSpin(trs, spinConfig());
+    ASSERT_TRUE(spin);
+
+    for (const uint16_t k : {uint16_t(0), uint16_t(1)})
+    {
+        for (const double phi0 : {0.0, 1.0, -2.5})
+        {
+            const uint32_t step =
+                static_cast<uint32_t>(spin->getPathStepCount(k) - 1);
+            mpp::MotionPrimitivesTreeSE2::node_t n0;
+            mpp::MotionPrimitivesTreeSE2::node_t n1;
+            n0.pose = {1.0, 2.0, phi0};
+            n1.pose = n0.pose + spin->getPathPose(k, step);
+
+            mpp::MoveEdgeSE2_TPS e;
+            e.ptgIndex       = 0;
+            e.ptgPathIndex   = k;
+            e.ptgStepIndex   = step;
+            e.ptgDist        = spin->getPathDist(k, step);
+            e.stateFrom.pose = n0.pose;
+            e.stateTo.pose   = n1.pose;
+            mpp::edge_interpolated_path(
+                e, trs, spin->getPathPose(k, step), step, 5);
+
+            // The end node pose, slightly moved (as by lattice rounding):
+            for (const double dphi : {0.0, 1e-4, -1e-4})
+            {
+                auto n1b = n1;
+                n1b.pose.phi += dphi;
+                auto edges = std::vector<mpp::MoveEdgeSE2_TPS>{e};
+                mpp::refine_trajectory({n0, n1b}, edges, trs);
+                EXPECT_EQ(edges.at(0).ptgPathIndex, k)
+                    << "phi0=" << phi0 << " dphi=" << dphi;
+            }
+        }
+    }
 }

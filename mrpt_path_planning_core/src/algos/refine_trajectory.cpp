@@ -10,6 +10,7 @@
 #include <mpp/ptgs/SpeedTrimmablePTG.h>
 #include <mrpt/math/wrap2pi.h>
 
+#include <cmath>
 #include <iostream>
 
 // see docs in .h
@@ -54,8 +55,16 @@ void mpp::refine_trajectory(
                 dynamic_cast<const ptg::DiffDrive_Spin*>(ptg.get());
             spin)
         {
-            const auto ks = spin->rotationToTrajectoryStep(
-                mrpt::math::wrapToPi(deltaNodes.phi));
+            // Half turns end at the same pose both ways: keep the direction
+            // the planner checked.
+            const double planned =
+                spin->getTrajectoryRotation(edge.ptgPathIndex);
+            double rotation = mrpt::math::wrapToPi(deltaNodes.phi);
+            if (rotation * planned < 0 && std::abs(rotation) > M_PI - 1e-3)
+            {
+                rotation = std::copysign(M_PI, planned);
+            }
+            const auto ks = spin->rotationToTrajectoryStep(rotation);
             if (ks && (ks->first != edge.ptgPathIndex ||
                        ks->second != edge.ptgStepIndex))
             {
