@@ -418,11 +418,16 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     /** One control cycle: given the latest localization (map) and odometry
      * (odom), computes and returns the command chunk + status. Does not itself
      * call the vehicle interface; the node does `iface.follow(out.command)` (or
-     * `iface.stop()` on ReachedGoal). */
+     * `iface.stop()` on ReachedGoal). ReachedGoal and MissedGoal are
+     * terminal: they are returned (with no command) until a new trajectory is
+     * set, wherever the robot is moved afterwards. */
     Output step(
         const VehicleLocalizationState& loc, const VehicleOdometryState& odo);
 
    private:
+    Output stepImpl(
+        const VehicleLocalizationState& loc, const VehicleOdometryState& odo);
+
     /** A part of the reference path between pivots (see `pivot_in_place`):
      * first, an optional rotation in place to `pivotTo` (in the direction
      * of `pivotDir`), then the path (if it has 2 or more points). */
@@ -506,6 +511,10 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
 
     /** Rotating in place at the goal (see Parameters::rotate_at_goal). */
     bool rotatingAtGoal_ = false;
+
+    /** The terminal status (ReachedGoal or MissedGoal) of the current
+     * trajectory, once reported. */
+    std::optional<FollowerStatus> finalStatus_;
 
     /** Closest distance to the goal point reached so far, used to detect when
      * the robot has passed its closest approach and would start driving away.

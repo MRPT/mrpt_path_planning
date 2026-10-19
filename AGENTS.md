@@ -184,6 +184,7 @@ replan; `rotate_at_goal` lets differential-drive robots finish by rotating in
 place to the goal heading. Pivots (heading changes in place, e.g. planned
 rotations) split the path into legs: the follower stops at each one and rotates
 in place in the planned direction (`pivot_in_place`; not for car-like robots).
+`ReachedGoal` and `MissedGoal` are terminal: no more commands until a new path.
 For car-like robots, `min_turn_radius` clamps the commanded curvature and
 `max_curvature_rate` models the steering slew; the
 pure-pursuit lookahead shortens where the path bends (`lookahead_bend`) and is
