@@ -16,6 +16,8 @@
 #include <mrpt/viz/Scene.h>
 #include <mrpt/viz/stock_objects.h>
 
+#include <algorithm>
+
 using namespace mpp;
 
 auto mpp::render_tree(
@@ -263,11 +265,24 @@ auto mpp::render_tree(
             // dummy, just to allow the easy use of "strip" below:
             obj->appendLine(0, 0, 0, 0, 0, 0);
             const auto& ip = etp->interpolatedPath;
+
+            // Rotations in place have no length: draw them as an arc around
+            // the rotation center, too.
+            const bool inPlace = std::all_of(
+                ip.begin(), ip.end(),
+                [](const auto& tp) {
+                    return std::abs(tp.second.x) < 1e-4 &&
+                           std::abs(tp.second.y) < 1e-4;
+                });
+            const double arcRadius = inPlace ? 0.5 * xyzcorners_scale : 0.0;
+
             for (const auto& timeRelPose : ip)
             {
                 const auto& relPose = timeRelPose.second;
                 obj->appendLineStrip(
-                    relPose.x, relPose.y, ro.phi2z_scale * relPose.phi);
+                    relPose.x + arcRadius * std::cos(relPose.phi),
+                    relPose.y + arcRadius * std::sin(relPose.phi),
+                    ro.phi2z_scale * relPose.phi);
             }
 
             if (isLastNode && ro.highlight_last_added_edge)

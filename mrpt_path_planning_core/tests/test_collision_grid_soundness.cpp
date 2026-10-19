@@ -17,6 +17,7 @@
  * Verified behaviors:
  *  - Soundness with zero clearance, for a non-convex (L-shaped) footprint.
  *  - Soundness with a nonzero clearance.
+ *  - The same, for the rotation in place PTG (DiffDrive_Spin).
  *  - Obstacles beyond the trajectory reference distance but within reach of
  *    the footprint are not ignored.
  *  - The batched query updateTPObstacles() gives exactly the same free
@@ -40,16 +41,16 @@
 
 namespace
 {
-// L-shaped (non-convex) footprint, 6 vertices.
-std::string ptgConfig(double clearance)
+enum class PtgKind
 {
-    return std::string(R"cfg(
-[SelfDriving]
-min_obstacles_height = 0.0
-max_obstacles_height = 2.0
+    C,
+    Spin
+};
 
-PTG_COUNT = 1
-
+// L-shaped (non-convex) footprint, 6 vertices.
+std::string ptgConfig(double clearance, PtgKind kind = PtgKind::C)
+{
+    const std::string ptgC = R"cfg(
 PTG0_Type        = mpp::ptg::DiffDrive_C
 PTG0_resolution  = 0.10
 PTG0_refDistance = 2.0
@@ -57,7 +58,21 @@ PTG0_num_paths   = 21
 PTG0_v_max_mps   = 1.0
 PTG0_w_max_dps   = 90.0
 PTG0_K           = +1.0
-)cfg") +
+)cfg";
+    // Also with intermediate rotations (not only +-pi):
+    const std::string ptgSpin = R"cfg(
+PTG0_Type        = mpp::ptg::DiffDrive_Spin
+PTG0_resolution  = 0.05
+PTG0_num_paths   = 6
+PTG0_w_max_dps   = 90.0
+)cfg";
+    return std::string(R"cfg(
+[SelfDriving]
+min_obstacles_height = 0.0
+max_obstacles_height = 2.0
+
+PTG_COUNT = 1
+)cfg") + (kind == PtgKind::C ? ptgC : ptgSpin) +
            "PTG0_clearance = " + std::to_string(clearance) + R"cfg(
 
 RobotModel_shape2D_xs = -0.20 0.35 0.35 0.05 0.05 -0.20
@@ -100,9 +115,10 @@ double pointPolygonDistance(
 
 // Returns the number of (point, trajectory) pairs actually in contact, so
 // callers can check the test is not vacuous.
-size_t checkSoundness(double clearance, size_t nPoints)
+size_t checkSoundness(
+    double clearance, size_t nPoints, PtgKind kind = PtgKind::C)
 {
-    mrpt::config::CConfigFileMemory cfg(ptgConfig(clearance));
+    mrpt::config::CConfigFileMemory cfg(ptgConfig(clearance, kind));
     mpp::TrajectoriesAndRobotShape  trs;
     trs.initFromConfigFile(cfg, "SelfDriving");
     EXPECT_EQ(trs.ptgs.size(), 1U);
@@ -177,6 +193,18 @@ TEST(CollisionGridSoundness, NonConvexFootprintWithClearance)
     EXPECT_GT(nContacts, 50U);
 }
 
+TEST(CollisionGridSoundness, SpinNoClearance)
+{
+    const size_t nContacts = checkSoundness(0.0, 300, PtgKind::Spin);
+    EXPECT_GT(nContacts, 50U);
+}
+
+TEST(CollisionGridSoundness, SpinWithClearance)
+{
+    const size_t nContacts = checkSoundness(0.05, 300, PtgKind::Spin);
+    EXPECT_GT(nContacts, 50U);
+}
+
 TEST(CollisionGridSoundness, ObstacleBeyondRefDistanceIsSeen)
 {
     mrpt::config::CConfigFileMemory cfg(ptgConfig(0.0));
@@ -197,49 +225,53 @@ TEST(CollisionGridSoundness, ObstacleBeyondRefDistanceIsSeen)
 
 TEST(CollisionGridSoundness, BatchedQueryMatchesPerPoint)
 {
-    for (const double clearance : {0.0, 0.05})
+    for (const auto kind : {PtgKind::C, PtgKind::Spin})
     {
-        mrpt::config::CConfigFileMemory cfg(ptgConfig(clearance));
-        mpp::TrajectoriesAndRobotShape  trs;
-        trs.initFromConfigFile(cfg, "SelfDriving");
-        const auto* ptg =
-            dynamic_cast<const mpp::ptg::DiffDriveCollisionGridBased*>(
-                trs.ptgs.at(0).get());
-        ASSERT_NE(ptg, nullptr);
-
-        auto& rng = mrpt::random::getRandomGenerator();
-        rng.randomize(4321);
-
-        // Beyond the grid on every side, so that edge cells, the truncated
-        // index of points just below the grid minimum, and points out of
-        // reach are all exercised; points inside the footprint too.
-        const double range = ptg->getObstacleReachDistance() + 0.5;
-        for (int batch = 0; batch < 200; batch++)
+        for (const double clearance : {0.0, 0.05})
         {
-            std::vector<float> xs;
-            std::vector<float> ys;
-            for (int i = 0; i < 50; i++)
+            mrpt::config::CConfigFileMemory cfg(ptgConfig(clearance, kind));
+            mpp::TrajectoriesAndRobotShape  trs;
+            trs.initFromConfigFile(cfg, "SelfDriving");
+            const auto* ptg =
+                dynamic_cast<const mpp::ptg::DiffDriveCollisionGridBased*>(
+                    trs.ptgs.at(0).get());
+            ASSERT_NE(ptg, nullptr);
+
+            auto& rng = mrpt::random::getRandomGenerator();
+            rng.randomize(4321);
+
+            // Beyond the grid on every side, so that edge cells, the truncated
+            // index of points just below the grid minimum, and points out of
+            // reach are all exercised; points inside the footprint too.
+            const double range = ptg->getObstacleReachDistance() + 0.5;
+            for (int batch = 0; batch < 200; batch++)
             {
-                xs.push_back(
-                    static_cast<float>(rng.drawUniform(-range, range)));
-                ys.push_back(
-                    static_cast<float>(rng.drawUniform(-range, range)));
-            }
-            std::vector<double> perPoint;
-            std::vector<double> batched;
-            ptg->initTPObstacles(perPoint);
-            ptg->initTPObstacles(batched);
-            for (size_t i = 0; i < xs.size(); i++)
-            {
-                ptg->updateTPObstacle(xs[i], ys[i], perPoint);
-            }
-            ptg->updateTPObstacles(xs.data(), ys.data(), xs.size(), batched);
-            ASSERT_EQ(perPoint.size(), batched.size());
-            for (size_t k = 0; k < perPoint.size(); k++)
-            {
-                EXPECT_EQ(perPoint[k], batched[k])
-                    << "k=" << k << " batch=" << batch
-                    << " clearance=" << clearance;
+                std::vector<float> xs;
+                std::vector<float> ys;
+                for (int i = 0; i < 50; i++)
+                {
+                    xs.push_back(
+                        static_cast<float>(rng.drawUniform(-range, range)));
+                    ys.push_back(
+                        static_cast<float>(rng.drawUniform(-range, range)));
+                }
+                std::vector<double> perPoint;
+                std::vector<double> batched;
+                ptg->initTPObstacles(perPoint);
+                ptg->initTPObstacles(batched);
+                for (size_t i = 0; i < xs.size(); i++)
+                {
+                    ptg->updateTPObstacle(xs[i], ys[i], perPoint);
+                }
+                ptg->updateTPObstacles(
+                    xs.data(), ys.data(), xs.size(), batched);
+                ASSERT_EQ(perPoint.size(), batched.size());
+                for (size_t k = 0; k < perPoint.size(); k++)
+                {
+                    EXPECT_EQ(perPoint[k], batched[k])
+                        << "k=" << k << " batch=" << batch
+                        << " clearance=" << clearance;
+                }
             }
         }
     }

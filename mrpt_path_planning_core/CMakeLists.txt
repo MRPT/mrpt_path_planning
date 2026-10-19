@@ -77,6 +77,7 @@ set(LIB_SRCS
 	src/data/Waypoints.cpp
 	src/interfaces/ObstacleSource.cpp
 	src/ptgs/DiffDrive_C.cpp
+	src/ptgs/DiffDrive_Spin.cpp
 	src/ptgs/DiffDriveCollisionGridBased.cpp
 	src/ptgs/HolonomicBlend.cpp
 	src/registerClasses.cpp
@@ -126,6 +127,7 @@ set(LIB_PUBLIC_HDRS
 	include/mpp/interfaces/ObstacleSource.h
 	include/mpp/interfaces/TrajectoryVehicleInterface.h
 	include/mpp/ptgs/DiffDrive_C.h
+	include/mpp/ptgs/DiffDrive_Spin.h
 	include/mpp/ptgs/DiffDriveCollisionGridBased.h
 	include/mpp/ptgs/HolonomicBlend.h
 	include/mpp/ptgs/SpeedTrimmablePTG.h

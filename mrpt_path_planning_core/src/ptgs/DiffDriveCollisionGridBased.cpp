@@ -239,7 +239,8 @@ void DiffDriveCollisionGridBased::simulateTrajectories(
         points.push_back(TCPoint(x, y, phi, t, dist, v, w));
 
         // Simulate until...
-        while (t < max_time && dist < max_dist && fabs(turned) < 1.95 * M_PI)
+        while (t < max_time && dist < max_dist && fabs(turned) < 1.95 * M_PI &&
+               !ptgDiffDriveTrajectoryEnded(alpha, t, x, y, phi))
         {
             // Compute new movement command (v,w):
             ptgDiffDriveSteeringFunction(alpha, t, x, y, phi, v, w);
@@ -745,7 +746,7 @@ void DiffDriveCollisionGridBased::internal_initialize(
     ASSERTMSG_(
         m_robotShape.size() >= 3, "Robot shape must have 3 or more vertices");
     ASSERT_(refDistance > 0);
-    ASSERT_(V_MAX > 0);
+    ASSERT_GE_(V_MAX, 0.0);  // 0: rotations in place only
     ASSERT_(W_MAX > 0);
     ASSERT_(m_resolution > 0);
 

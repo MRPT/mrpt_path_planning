@@ -14,11 +14,13 @@
 #include <mpp/data/MotionPrimitivesTree.h>
 #include <mpp/ptgs/DiffDriveCollisionGridBased.h>
 #include <mpp/ptgs/DiffDrive_C.h>
+#include <mpp/ptgs/DiffDrive_Spin.h>
 #include <mpp/ptgs/SpeedTrimmablePTG.h>
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/version.h>
 #include <mrpt/viz/Scene.h>
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <queue>
@@ -98,6 +100,13 @@ mrpt::containers::yaml TPS_Astar_Parameters::as_yaml()
     for (const auto& v : ptg_sample_timestamps)
         c["ptg_sample_timestamps"].asSequence().push_back(v);
 
+    MCP_SAVE(c, use_spin_expansion);
+    c["spin_sample_angles"] = mrpt::containers::yaml::Sequence();
+    for (const auto& v : spin_sample_angles)
+    {
+        c["spin_sample_angles"].asSequence().push_back(mrpt::RAD2DEG(v));
+    }
+
     return c;
 }
 
@@ -126,6 +135,16 @@ void TPS_Astar_Parameters::load_from_yaml(const mrpt::containers::yaml& c)
     MCP_LOAD_OPT(c, use_reeds_shepp_heuristic);
     MCP_LOAD_OPT(c, use_reeds_shepp_expansion);
     MCP_LOAD_OPT(c, reeds_shepp_expansion_max_length);
+    MCP_LOAD_OPT(c, use_spin_expansion);
+    if (c.has("spin_sample_angles"))
+    {
+        ASSERT_(c["spin_sample_angles"].isSequence());
+        spin_sample_angles.clear();
+        for (const double deg : c["spin_sample_angles"].toStdVector<double>())
+        {
+            spin_sample_angles.push_back(mrpt::DEG2RAD(deg));
+        }
+    }
 
     MCP_LOAD_OPT(c, maximumComputationTime);
 }
@@ -256,6 +275,14 @@ void TPS_Astar::prepare_obstacles()
             "Reeds-Shepp shot not used: it requires forward and reverse "
             "DiffDrive_C PTGs with an odd number of trajectories.");
     }
+    spinShotAvailable_ = false;
+    if (params_.use_spin_expansion && params_.use_analytic_expansion &&
+        !prepare_spin_expansion(in.ptgs))
+    {
+        MRPT_LOG_DEBUG(
+            "Spin shot not used: it requires a DiffDrive_Spin PTG and a "
+            "DiffDrive_C PTG with an odd number of trajectories.");
+    }
 
     // obstacles (TODO: dynamic over future time?):
     for (const auto& os : in.obstacles)
@@ -360,6 +387,8 @@ void TPS_Astar::start(const PlannerInput& inArg)
         mrpt::keep_max(maxLinSpeed_, ptg->getMaxLinVel());
     if (maxLinSpeed_ <= 0) maxLinSpeed_ = 1.0;  // fallback: units = distance
 
+    prepare_rotations_in_place(in.ptgs);
+
     reedsSheppTurningRadius_ = 0.0;
     if (params_.use_reeds_shepp_heuristic)
     {
@@ -458,11 +487,11 @@ void TPS_Astar::run_search(duration_seconds_t maxComputationTime)
     const auto&  obstaclePoints               = search_.obstaclePoints;
     const double MAX_XY_DIST                  = search_.maxXYDist;
 
-    // Tries a Reeds-Shepp shot from `n` to the goal (see
-    // use_reeds_shepp_expansion). A clear shot becomes the goal candidate if
-    // it is cheaper than the current one or, with `replace`, in any case (an
-    // exact goal is preferred to a candidate anywhere in the goal cell).
-    // Returns whether the shot is clear.
+    // Tries a Reeds-Shepp or spin shot from `n` to the goal (see
+    // use_reeds_shepp_expansion, use_spin_expansion). A clear shot becomes the
+    // goal candidate if it is cheaper than the current one or, with `replace`,
+    // in any case (an exact goal is preferred to a candidate anywhere in the
+    // goal cell). Returns whether the shot is clear.
     auto tryReedsSheppShot = [&](const Node& n, bool replace, bool allHeadings)
     {
         double maxLength = params_.reeds_shepp_expansion_max_length;
@@ -471,7 +500,7 @@ void TPS_Astar::run_search(duration_seconds_t maxComputationTime)
             mrpt::keep_min(
                 maxLength, (bestGoalCandidateG - n.gScore) * maxLinSpeed_);
         }
-        const auto shot = reeds_shepp_shot(
+        const auto shot = goal_shot(
             n, in.stateGoal, maxLength, allHeadings, in.ptgs, obstaclePoints,
             MAX_XY_DIST, in);
         if (shot.empty()) { return false; }
@@ -555,7 +584,7 @@ void TPS_Astar::run_search(duration_seconds_t maxComputationTime)
             Node& gn = *bestGoalCandidate;
             // Reach the goal exactly from the candidate, if possible. The
             // shot is then committed by the rule above.
-            if (rsExpansionRadius_ > 0 && tryShotBeforeEndingInGoalCell(gn))
+            if (goal_shots_available() && tryShotBeforeEndingInGoalCell(gn))
             {
                 continue;
             }
@@ -592,7 +621,7 @@ void TPS_Astar::run_search(duration_seconds_t maxComputationTime)
         // without shots, before any goal-cell node has been expanded.
         if (const auto curNodeGridIdx = nodeGridCoords(current.state.pose);
             curNodeGridIdx.sameLocation(goalCellIndices) &&
-            !(rsExpansionRadius_ > 0 &&
+            !(goal_shots_available() &&
               (bestGoalCandidateShotId.has_value() ||
                tryShotBeforeEndingInGoalCell(current))))
         {
@@ -830,15 +859,16 @@ void TPS_Astar::run_search(duration_seconds_t maxComputationTime)
 
         // Reeds-Shepp shot to the goal (see use_reeds_shepp_expansion), if
         // a lower bound of its cost can improve on the current candidate:
-        if (rsExpansionRadius_ > 0)
+        if (goal_shots_available())
         {
+            // (The straight distance also bounds the spin shot)
             const double lowerBoundLength =
-                in.stateGoal.state.isPose()
+                in.stateGoal.state.isPose() && !spinShotAvailable_
                     ? reeds_shepp_distance(
                           current.state.pose, in.stateGoal.state.pose(),
                           rsExpansionRadius_)
                     : (current.state.pose.translation() -
-                       in.stateGoal.state.point())
+                       in.stateGoal.asSE2KinState().pose.translation())
                           .norm();
             if (current.gScore + lowerBoundLength / maxLinSpeed_ <
                     bestGoalCandidateG &&
@@ -1106,7 +1136,7 @@ cost_t TPS_Astar::default_heuristic_SE2(
     }
 
     mpp::PoseDistanceMetric_Lie<mpp::SE2_KinState> metric(
-        params_.SE2_metricAngleWeight);
+        heuristicAngleScale_ * params_.SE2_metricAngleWeight);
 
     // Distance in SE(2):
     const double distSE2 = metric.distance(from.pose, goal);
@@ -1119,7 +1149,8 @@ cost_t TPS_Astar::default_heuristic_SE2(
             : std::abs(mrpt::math::angDistance(
                   std::atan2(relPose.y, relPose.x), from.pose.phi));
 
-    cost_t h = (distSE2 + params_.heuristic_heading_weight * distHeading) /
+    cost_t h = (distSE2 + heuristicAngleScale_ *
+                              params_.heuristic_heading_weight * distHeading) /
                maxLinSpeed_;
 
     return h;
@@ -1167,6 +1198,62 @@ cost_t TPS_Astar::default_heuristic(
         return default_heuristic_SE2(from, goal.state.pose());
     else
         THROW_EXCEPTION("Goal of unknown type?");
+}
+
+void TPS_Astar::prepare_rotations_in_place(const TrajectoriesAndRobotShape& trs)
+{
+    // The angular terms of the SE(2) heuristic may not exceed the time to
+    // rotate in place. (A rotation changes the heading term of
+    // default_heuristic_SE2() by up to twice its angle.)
+    spinPtgIndex_.reset();
+    heuristicAngleScale_ = 1.0;
+    for (size_t i = 0; i < trs.ptgs.size(); i++)
+    {
+        const auto* spin =
+            dynamic_cast<const ptg::DiffDrive_Spin*>(trs.ptgs[i].get());
+        if (!spin || spinPtgIndex_) { continue; }
+        spinPtgIndex_ = i;
+
+        const double angleWeights = params_.SE2_metricAngleWeight +
+                                    2 * params_.heuristic_heading_weight;
+        const double maxWeights = maxLinSpeed_ / spin->getMaxAngVel();
+        if (angleWeights > maxWeights)
+        {
+            heuristicAngleScale_ = maxWeights / angleWeights;
+        }
+    }
+}
+
+std::vector<double> TPS_Astar::spin_angles_to_sample(
+    const mrpt::math::TPose2D& from, const SE2orR2_KinState& goal) const
+{
+    std::vector<double> angles;
+    for (const double a : params_.spin_sample_angles)
+    {
+        angles.push_back(a);
+        // (+-pi reach the same pose)
+        if (std::abs(a) < M_PI - 1e-6) { angles.push_back(-a); }
+    }
+    // Facing the goal, forward and backward, and its heading:
+    const auto relGoal = goal.asSE2KinState().pose - from;
+    if (std::hypot(relGoal.x, relGoal.y) > params_.grid_resolution_xy)
+    {
+        const double bearing = std::atan2(relGoal.y, relGoal.x);
+        angles.push_back(bearing);
+        angles.push_back(mrpt::math::wrapToPi(bearing + M_PI));
+    }
+    if (goal.state.isPose())
+    {
+        angles.push_back(mrpt::math::wrapToPi(relGoal.phi));
+    }
+    // Smaller rotations would not leave the lattice cell:
+    angles.erase(
+        std::remove_if(
+            angles.begin(), angles.end(),
+            [this](double a)
+            { return std::abs(a) < 0.5 * params_.grid_resolution_yaw; }),
+        angles.end());
+    return angles;
 }
 
 TPS_Astar::list_paths_to_neighbors_t
@@ -1246,95 +1333,117 @@ TPS_Astar::list_paths_to_neighbors_t
             tle3.stop();
         }
 
-        // explore a subset of all trajectories only:
-        std::set<trajectory_index_t> trajIdxsToConsider;
-        std::vector<TPS_point>       tpsPointsToConsider;
-        std::set<size_t> targetTpsPointIndx;  // if reachable with ptg
+        std::vector<TPS_point> tpsPointsToConsider;
+        std::set<size_t>       targetTpsPointIndx;  // if reachable with ptg
 
-        ASSERT_(params_.max_ptg_trajectories_to_explore >= 2);
-        for (size_t i = 0; i < params_.max_ptg_trajectories_to_explore; i++)
+        // Rotations in place are sampled by angle (see spin_sample_angles):
+        if (const auto* spin =
+                dynamic_cast<const ptg::DiffDrive_Spin*>(ptg.get());
+            spin)
         {
-            trajectory_index_t trjIdx = mrpt::round(
-                double(i) * double(ptg->getPathCount() - 1) /
-                double(params_.max_ptg_trajectories_to_explore - 1));
-            trajIdxsToConsider.insert(trjIdx);
-        }
-        // Always include the straight trajectory (alpha=0), which an evenly
-        // spaced subset may skip (e.g. an even count out of an odd number of
-        // paths): without it, every edge turns and paths zigzag.
-        trajIdxsToConsider.insert(ptg->alpha2index(0.0));
-
-        // Build possible distances for each path:
-        std::vector<normalized_speed_t> speedsToConsider;
-        if (ptgTrimmable)
-        {
-            // N=1 ==>  [1.0]
-            // N=2 ==>  [0.5, 1.0]
-            // N=3 ==>  [0.33, 0.66, 1.0]
-            // ....
-
-            ASSERT_(params_.max_ptg_speeds_to_explore >= 1);
-            normalized_speed_t speedStep =
-                1.0 / params_.max_ptg_speeds_to_explore;
-            for (normalized_speed_t s = speedStep; s < 1.001; s += speedStep)
-                speedsToConsider.push_back(s);
+            for (const double a :
+                 spin_angles_to_sample(from.state.pose, goalState))
+            {
+                if (const auto ks = spin->rotationToTrajectoryStep(a); ks)
+                {
+                    tpsPointsToConsider.emplace_back(
+                        ks->first, ks->second, 1.0);
+                }
+            }
         }
         else
         {
-            // No speed-trimmable PTG:
-            speedsToConsider.push_back(1.0);
-        }
+            // explore a subset of all trajectories only:
+            std::set<trajectory_index_t> trajIdxsToConsider;
 
-        // make sure of including the trajectory towards the target, if we
-        // are close enough:
-        {
-            const double queryTolerance = params_.grid_resolution_xy;
-            const auto   trgInvMap =
-                ptg->inverseMap_WS2TP(relGoal.x, relGoal.y, queryTolerance);
-            if (trgInvMap.has_value())
+            ASSERT_(params_.max_ptg_trajectories_to_explore >= 2);
+            for (size_t i = 0; i < params_.max_ptg_trajectories_to_explore; i++)
             {
-                const int                   relTrg_k = trgInvMap->first;
-                const normalized_distance_t relTrg_d = trgInvMap->second;
-                if (const auto relTrgStepOpt =
-                        ptg->getPathStepForDist(relTrg_k, relTrg_d))
-                {
-                    const ptg_step_t relTrg_step = *relTrgStepOpt;
-
-                    // Add direct path to target, and keep a copy of its value:
-                    for (auto speed : speedsToConsider)
-                    {
-                        const auto trgTps =
-                            TPS_point(relTrg_k, relTrg_step, speed);
-
-                        tpsPointsToConsider.emplace_back(trgTps);
-
-                        // save its index:
-                        targetTpsPointIndx.insert(
-                            tpsPointsToConsider.size() - 1);
-                    }
-                }
-
-                // and also, in general, the path:
-                trajIdxsToConsider.insert(relTrg_k);
+                trajectory_index_t trjIdx = mrpt::round(
+                    double(i) * double(ptg->getPathCount() - 1) /
+                    double(params_.max_ptg_trajectories_to_explore - 1));
+                trajIdxsToConsider.insert(trjIdx);
             }
-        }
+            // Always include the straight trajectory (alpha=0), which an evenly
+            // spaced subset may skip (e.g. an even count out of an odd number
+            // of paths): without it, every edge turns and paths zigzag.
+            trajIdxsToConsider.insert(ptg->alpha2index(0.0));
 
-        for (const auto speed : speedsToConsider)
-        {
-            for (const auto trjIdx : trajIdxsToConsider)
+            // Build possible distances for each path:
+            std::vector<normalized_speed_t> speedsToConsider;
+            if (ptgTrimmable)
             {
-                for (duration_seconds_t t : params_.ptg_sample_timestamps)
+                // N=1 ==>  [1.0]
+                // N=2 ==>  [0.5, 1.0]
+                // N=3 ==>  [0.33, 0.66, 1.0]
+                // ....
+
+                ASSERT_(params_.max_ptg_speeds_to_explore >= 1);
+                normalized_speed_t speedStep =
+                    1.0 / params_.max_ptg_speeds_to_explore;
+                for (normalized_speed_t s = speedStep; s < 1.001;
+                     s += speedStep)
+                    speedsToConsider.push_back(s);
+            }
+            else
+            {
+                // No speed-trimmable PTG:
+                speedsToConsider.push_back(1.0);
+            }
+
+            // make sure of including the trajectory towards the target, if we
+            // are close enough:
+            {
+                const double queryTolerance = params_.grid_resolution_xy;
+                const auto   trgInvMap =
+                    ptg->inverseMap_WS2TP(relGoal.x, relGoal.y, queryTolerance);
+                if (trgInvMap.has_value())
                 {
-                    ptg_step_t trjStep = mrpt::round(t / ptg_dt);
+                    const int                   relTrg_k = trgInvMap->first;
+                    const normalized_distance_t relTrg_d = trgInvMap->second;
+                    if (const auto relTrgStepOpt =
+                            ptg->getPathStepForDist(relTrg_k, relTrg_d))
+                    {
+                        const ptg_step_t relTrg_step = *relTrgStepOpt;
 
-                    // skip if this PTG path ends earlier than the specified
-                    // timestamp:
-                    const auto maxSteps = ptg->getPathStepCount(trjIdx);
+                        // Add direct path to target, and keep a copy of its
+                        // value:
+                        for (auto speed : speedsToConsider)
+                        {
+                            const auto trgTps =
+                                TPS_point(relTrg_k, relTrg_step, speed);
 
-                    ASSERT_(maxSteps >= 1);
-                    if (trjStep >= maxSteps) continue;
+                            tpsPointsToConsider.emplace_back(trgTps);
 
-                    tpsPointsToConsider.emplace_back(trjIdx, trjStep, speed);
+                            // save its index:
+                            targetTpsPointIndx.insert(
+                                tpsPointsToConsider.size() - 1);
+                        }
+                    }
+
+                    // and also, in general, the path:
+                    trajIdxsToConsider.insert(relTrg_k);
+                }
+            }
+
+            for (const auto speed : speedsToConsider)
+            {
+                for (const auto trjIdx : trajIdxsToConsider)
+                {
+                    for (duration_seconds_t t : params_.ptg_sample_timestamps)
+                    {
+                        ptg_step_t trjStep = mrpt::round(t / ptg_dt);
+
+                        // skip if this PTG path ends earlier than the specified
+                        // timestamp:
+                        const auto maxSteps = ptg->getPathStepCount(trjIdx);
+
+                        ASSERT_(maxSteps >= 1);
+                        if (trjStep >= maxSteps) continue;
+
+                        tpsPointsToConsider.emplace_back(
+                            trjIdx, trjStep, speed);
+                    }
                 }
             }
         }
@@ -1746,6 +1855,8 @@ bool TPS_Astar::prepare_reeds_shepp_expansion(
     for (size_t i = 0; i < trs.ptgs.size(); i++)
     {
         const auto& ptg = *trs.ptgs.at(i);
+        // (Rotations in place are not used by these shots)
+        if (dynamic_cast<const ptg::DiffDrive_Spin*>(&ptg)) { continue; }
         if (!dynamic_cast<const ptg::DiffDrive_C*>(&ptg)) { return false; }
         const auto n = ptg.getPathCount();
         if (n < 3 || n % 2 == 0) { return false; }
@@ -1775,6 +1886,30 @@ bool TPS_Astar::prepare_reeds_shepp_expansion(
     if (!rsForward_.valid || !rsReverse_.valid) { return false; }
     rsExpansionRadius_ = radius;
     return true;
+}
+
+bool TPS_Astar::prepare_spin_expansion(const TrajectoriesAndRobotShape& trs)
+{
+    spinShotForward_   = RsExpansionPtg();
+    spinShotReverse_   = RsExpansionPtg();
+    spinShotAvailable_ = false;
+    if (!spinPtgIndex_) { return false; }
+    for (size_t i = 0; i < trs.ptgs.size(); i++)
+    {
+        const auto& ptg = *trs.ptgs.at(i);
+        if (!dynamic_cast<const ptg::DiffDrive_C*>(&ptg)) { continue; }
+        const auto n = ptg.getPathCount();
+        if (n % 2 == 0) { continue; }
+        RsExpansionPtg m;
+        m.ptgIndex     = i;
+        m.kStraight    = static_cast<trajectory_index_t>((n - 1) / 2);
+        const auto tw  = ptg.getPathTwist(m.kStraight, 0);
+        m.valid        = std::abs(tw.omega) < 1e-9 && tw.vx != 0;
+        auto& existing = tw.vx > 0 ? spinShotForward_ : spinShotReverse_;
+        if (m.valid && !existing.valid) { existing = m; }
+    }
+    spinShotAvailable_ = spinShotForward_.valid || spinShotReverse_.valid;
+    return spinShotAvailable_;
 }
 
 void TPS_Astar::prepare_point_goal_shots(
@@ -1838,6 +1973,95 @@ bool TPS_Astar::footprint_fits_at_goal(
         if (shape.distance(local) <= rsGoalClearance_) { return false; }
     }
     return true;
+}
+
+std::vector<TPS_Astar::RsShotEdge> TPS_Astar::goal_shot(
+    const Node& from, const SE2orR2_KinState& goal, double maxLength,
+    bool allHeadings, const TrajectoriesAndRobotShape& trs,
+    const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+    double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in)
+{
+    std::vector<RsShotEdge> best;
+    cost_t                  bestCost = std::numeric_limits<cost_t>::max();
+    const auto              consider = [&](std::vector<RsShotEdge>&& shot)
+    {
+        cost_t cost = 0;
+        for (const auto& e : shot) { cost += e.edge.cost; }
+        if (!shot.empty() && cost < bestCost)
+        {
+            bestCost = cost;
+            best     = std::move(shot);
+        }
+    };
+    if (rsExpansionRadius_ > 0)
+    {
+        consider(reeds_shepp_shot(
+            from, goal, maxLength, allHeadings, trs, globalObstacles,
+            MAX_XY_OBSTACLES_CLIPPING_DIST, in));
+    }
+    if (spinShotAvailable_)
+    {
+        consider(spin_shot(
+            from, goal, maxLength, trs, globalObstacles,
+            MAX_XY_OBSTACLES_CLIPPING_DIST, in));
+    }
+    return best;
+}
+
+std::vector<TPS_Astar::RsShotEdge> TPS_Astar::spin_shot(
+    const Node& from, const SE2orR2_KinState& goal, double maxLength,
+    const TrajectoriesAndRobotShape&                trs,
+    const std::vector<mrpt::maps::CPointsMap::Ptr>& globalObstacles,
+    double MAX_XY_OBSTACLES_CLIPPING_DIST, const PlannerInput& in)
+{
+    mrpt::system::CTimeLoggerEntry tle(profiler_(), "spin_shot");
+
+    const auto&  p0       = from.state.pose;
+    const auto   goalPose = goal.asSE2KinState().pose;
+    const double dist     = std::hypot(goalPose.x - p0.x, goalPose.y - p0.y);
+    if (dist > maxLength) { return {}; }
+    const double w = trs.ptgs.at(*spinPtgIndex_)->getMaxAngVel();
+
+    // Candidates, by their execution time:
+    std::vector<std::pair<double, std::vector<ReedsSheppSegment>>> candidates;
+    constexpr double kAtGoalPoint = 1e-3;  // [m]
+    if (dist < kAtGoalPoint)
+    {
+        if (!goal.state.isPose()) { return {}; }
+        const double a = mrpt::math::wrapToPi(goalPose.phi - p0.phi);
+        candidates.push_back({std::abs(a) / w, {{'P', a}}});
+    }
+    else
+    {
+        const double bearing = std::atan2(goalPose.y - p0.y, goalPose.x - p0.x);
+        for (const bool forward : {true, false})
+        {
+            const auto& m = forward ? spinShotForward_ : spinShotReverse_;
+            if (!m.valid) { continue; }
+            const double heading =
+                forward ? bearing : mrpt::math::wrapToPi(bearing + M_PI);
+            const double a1 = mrpt::math::wrapToPi(heading - p0.phi);
+            const double a2 = goal.state.isPose()
+                                  ? mrpt::math::wrapToPi(goalPose.phi - heading)
+                                  : 0.0;
+            const double v  = std::abs(
+                 trs.ptgs.at(m.ptgIndex)->getPathTwist(m.kStraight, 0).vx);
+            candidates.push_back(
+                {(std::abs(a1) + std::abs(a2)) / w + dist / v,
+                 {{'P', a1}, {'S', forward ? dist : -dist}, {'P', a2}}});
+        }
+    }
+    std::sort(
+        candidates.begin(), candidates.end(),
+        [](const auto& a, const auto& b) { return a.first < b.first; });
+    for (const auto& c : candidates)
+    {
+        auto out = execute_shot(
+            from, c.second, goal, trs, globalObstacles,
+            MAX_XY_OBSTACLES_CLIPPING_DIST, in);
+        if (!out.empty()) { return out; }
+    }
+    return {};
 }
 
 std::vector<TPS_Astar::RsShotEdge> TPS_Astar::reeds_shepp_shot(
@@ -1917,7 +2141,28 @@ std::vector<TPS_Astar::RsShotEdge> TPS_Astar::execute_shot(
     SE2_KinState       state = from.state;
     for (const auto& seg : segments)
     {
-        const auto& m   = seg.length > 0 ? rsForward_ : rsReverse_;
+        if (seg.type == 'P')
+        {
+            ASSERT_(spinPtgIndex_.has_value());
+            const auto& spin = dynamic_cast<const ptg::DiffDrive_Spin&>(
+                *trs.ptgs.at(*spinPtgIndex_));
+            const auto ks = spin.rotationToTrajectoryStep(seg.length);
+            if (!ks) { continue; }  // (negligible rotation)
+            const ptg_t& ptg = spin;
+            SE2_KinState next;
+            next.pose = state.pose + ptg.getPathPose(ks->first, ks->second);
+            (next.vel = ptg.getPathTwist(ks->first, ks->second))
+                .rotate(state.pose.phi);
+            chunks.push_back(
+                {*spinPtgIndex_, ks->first, ks->second, state, next});
+            state = next;
+            continue;
+        }
+        // (Straight segments of spin shots may use other C-PTGs)
+        const auto& m =
+            seg.length > 0 ? (rsForward_.valid ? rsForward_ : spinShotForward_)
+                           : (rsReverse_.valid ? rsReverse_ : spinShotReverse_);
+        ASSERT_(m.valid);
         const auto& ptg = *trs.ptgs.at(m.ptgIndex);
         const auto  k   = seg.type == 'L'   ? m.kLeft
                           : seg.type == 'R' ? m.kRight
