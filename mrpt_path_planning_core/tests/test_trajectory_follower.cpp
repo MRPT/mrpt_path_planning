@@ -2267,6 +2267,14 @@ TEST(TrajectoryFollower, ReachedGoalLatchesWithRotateAtGoal)
         EXPECT_TRUE(out.command.points.empty())
             << "follower emitted a motion command after ReachedGoal at k=" << k;
     }
+
+    // An update after completion re-arms the follower, from where the robot is
+    // now (the old goal also lies on the new path).
+    robot.phi = 0;
+    f.updateTrajectory(polyToTraj({{robot.x, 0}, {robot.x + 2, 0}}, 0.5));
+    const auto out = f.step(mkLoc(robot), mkOdo(robot, 0));
+    EXPECT_NE(out.status, mpp::FollowerStatus::ReachedGoal);
+    EXPECT_LT(out.arc_length_s, 0.2);
 }
 
 // ---------------------------------------------------------------------------

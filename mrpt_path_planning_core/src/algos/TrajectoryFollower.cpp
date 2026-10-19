@@ -210,6 +210,8 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
     stoppedSince_       = INVALID_TIMESTAMP;
     offPathSince_       = INVALID_TIMESTAMP;
     ctrlPoseInit_       = false;
+    // (no commands were sent since a terminal status)
+    if (finalStatus_) { recentCmds_.clear(); }
     finalStatus_.reset();
 }
 
@@ -416,7 +418,9 @@ void TrajectoryFollower::setLegPath(const Trajectory& traj)
 
 void TrajectoryFollower::updateTrajectory(const Trajectory& traj)
 {
-    if (!hasTrajectory() || traj.size() < 2)
+    // A completed trajectory is not continued: the robot may have been moved
+    // since then.
+    if (!hasTrajectory() || traj.size() < 2 || finalStatus_)
     {
         setTrajectory(traj);
         return;
