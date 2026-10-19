@@ -393,7 +393,14 @@ void TPS_Astar::start(const PlannerInput& inArg)
     if (params_.use_reeds_shepp_heuristic)
     {
         reedsSheppTurningRadius_ = reeds_shepp_turning_radius(in.ptgs);
-        if (reedsSheppTurningRadius_ <= 0)
+        // (Expected with rotations in place: it would not be a lower bound)
+        if (reedsSheppTurningRadius_ <= 0 && spinPtgIndex_)
+        {
+            MRPT_LOG_DEBUG(
+                "use_reeds_shepp_heuristic ignored: not a lower bound with "
+                "rotations in place.");
+        }
+        else if (reedsSheppTurningRadius_ <= 0)
         {
             MRPT_LOG_WARN(
                 "use_reeds_shepp_heuristic ignored: it requires all PTGs to "
