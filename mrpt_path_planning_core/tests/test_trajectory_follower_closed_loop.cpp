@@ -19,7 +19,8 @@
  *    platform, and control period jitter.
  *
  * Reference paths are both hand-built (arcs, cusps, short maneuvers next to
- * the goal) and planned by TPS_Astar with differential-drive C-PTGs.
+ * the goal, rotations in place) and planned by TPS_Astar with
+ * differential-drive C-PTGs (and rotations in place).
  *
  * Every case checks, on the ground truth: the maximum distance to the
  * reference path, the final position and heading errors, and that the goal
@@ -39,6 +40,7 @@
 #include <mrpt/config/CConfigFileMemory.h>
 #include <mrpt/core/Clock.h>
 #include <mrpt/maps/CSimplePointsMap.h>
+#include <mrpt/math/TPolygon2D.h>
 #include <mrpt/math/wrap2pi.h>
 #include <mrpt/poses/CPose2D.h>
 
@@ -473,6 +475,20 @@ class PathBuilder
     }
 
     // Turns by `angle` (heading change, + to the left) on a circle of radius R.
+    /** Rotation in place, sampled every 10 degrees */
+    PathBuilder& pivot(double angle)
+    {
+        const int n = std::max(
+            1,
+            static_cast<int>(std::ceil(std::abs(angle) / mrpt::DEG2RAD(10.0))));
+        for (int i = 0; i < n; i++)
+        {
+            p_.phi = mrpt::math::wrapToPi(p_.phi + angle / n);
+            tr_.emplace_back(p_, 0.0);
+        }
+        return *this;
+    }
+
     PathBuilder& arc(double R, double angle, int dir = 1)
     {
         const double len = R * std::abs(angle);
@@ -521,6 +537,14 @@ RobotModel_shape2D_xs = 0.30 0.30 -0.30 -0.30
 RobotModel_shape2D_ys = -0.27 0.27 0.27 -0.27
 )cfg";
 
+// The same, with rotations in place:
+const std::string kJackalSpinPtgs = std::string(kJackalPtgs) + R"cfg(
+PTG_COUNT = 3
+PTG2_Type        = mpp::ptg::DiffDrive_Spin
+PTG2_resolution  = 0.05
+PTG2_w_max_dps   = 60.0
+)cfg";
+
 void addWall(
     mrpt::maps::CSimplePointsMap& m, const TPoint2D& a, const TPoint2D& b)
 {
@@ -539,9 +563,10 @@ void addWall(
 // the same way navigation nodes do (refined edges sampled every 0.1 s).
 mpp::Trajectory planPath(
     const TPose2D& start, const TPose2D& goal,
-    const mrpt::maps::CSimplePointsMap::Ptr& obs)
+    const mrpt::maps::CSimplePointsMap::Ptr& obs,
+    const std::string&                       ptgCfg = kJackalPtgs)
 {
-    mrpt::config::CConfigFileMemory cfg(kJackalPtgs);
+    mrpt::config::CConfigFileMemory cfg(ptgCfg);
     mpp::PlannerInput               in;
     in.ptgs.initFromConfigFile(cfg, "SelfDriving");
     in.stateStart.pose = start;
@@ -664,6 +689,23 @@ TEST(FollowerClosedLoop, ReverseIntoGoal)
     for (const auto& c : allStacks())
     {
         expectAccurate("reverse_into_goal", ref, c, ref.front().pose);
+    }
+}
+
+// Rotations in place mid-path and at the goal, also turning back.
+TEST(FollowerClosedLoop, PivotsInPlace)
+{
+    const auto ref = PathBuilder({0, 0, 0})
+                         .straight(2.0)
+                         .pivot(M_PI / 2)
+                         .straight(1.5)
+                         .pivot(-M_PI)
+                         .straight(1.0)
+                         .pivot(-M_PI / 2)
+                         .build();
+    for (const auto& c : allStacks())
+    {
+        expectAccurate("pivots_in_place", ref, c, ref.front().pose);
     }
 }
 
@@ -854,4 +896,58 @@ TEST(FollowerClosedLoop, PathUpdateOnReturnLeg)
     tiny.emplace_back(mrpt::math::TPose2D(1.001, 0, 0), 0.0);
     EXPECT_NO_THROW(f2.updateTrajectory(tiny));
     EXPECT_FALSE(f2.hasTrajectory());
+}
+
+// Turning around in a dead-end corridor too narrow for arcs, by rotating in
+// place: the ground truth footprint never touches the walls.
+TEST(FollowerClosedLoop, PlannedTurnAroundInDeadEnd)
+{
+    // 1.1 m wide; the footprint rotates within a 0.8 m circle.
+    auto obs = mrpt::maps::CSimplePointsMap::Create();
+    addWall(*obs, {-1, -0.55}, {4, -0.55});
+    addWall(*obs, {-1, 0.55}, {4, 0.55});
+    addWall(*obs, {4, -0.55}, {4, 0.55});
+
+    const TPose2D start = {2.8, 0, 0};
+    const TPose2D goal  = {0.5, 0, M_PI};
+    const auto    ref   = planPath(start, goal, obs, kJackalSpinPtgs);
+    ASSERT_GT(ref.size(), 2U) << "planning failed";
+
+    mrpt::math::TPolygon2D shape;
+    for (const auto& [x, y] : std::vector<std::pair<double, double>>{
+             {0.30, -0.27}, {0.30, 0.27}, {-0.30, 0.27}, {-0.30, -0.27}})
+    {
+        shape.emplace_back(x, y);
+    }
+
+    for (const auto& c : allStacks())
+    {
+        mpp::TrajectoryFollower f;
+        setDiffDriveParams(f);
+        f.params.control_delay = c.odo_latency + c.cmd_latency;
+        f.setRobotShape(shape);
+        f.setObstacles(*obs);
+        const auto r = runClosedLoop(f, ref, c, start);
+        saveTrace("planned_dead_end_" + c.name, ref, r);
+
+        const std::string ctx = "planned_dead_end [" + c.name + "]";
+        ASSERT_TRUE(r.ended) << ctx << ": did not finish";
+        EXPECT_EQ(r.finalStatus, mpp::FollowerStatus::ReachedGoal) << ctx;
+        EXPECT_LT(r.maxCross, kMaxCrossTrack) << ctx << ": max deviation";
+        EXPECT_LT(r.posErr, f.params.goal_dist_tol) << ctx;
+        EXPECT_LT(std::abs(r.headingErr), f.params.goal_ang_tol) << ctx;
+
+        // Ground truth footprint vs. walls:
+        const auto& xs = obs->getPointsBufferRef_x();
+        const auto& ys = obs->getPointsBufferRef_y();
+        for (const auto& g : r.gt)
+        {
+            for (size_t i = 0; i < xs.size(); i++)
+            {
+                const auto local = TPose2D(xs[i], ys[i], 0) - g.pose;
+                ASSERT_FALSE(shape.contains({local.x, local.y}))
+                    << ctx << ": collision at t=" << g.t;
+            }
+        }
+    }
 }

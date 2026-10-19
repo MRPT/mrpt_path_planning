@@ -27,6 +27,10 @@
 /** Feature macro: TrajectoryFollower::updateTrajectory() exists. */
 #define MPP_HAS_FOLLOWER_UPDATE_TRAJECTORY 1
 
+/** Feature macro: TrajectoryFollower rotates in place at path pivots (see
+ * TrajectoryFollower::Parameters::pivot_in_place). */
+#define MPP_HAS_FOLLOWER_PIVOTS 1
+
 namespace mpp
 {
 enum class FollowerStatus : uint8_t
@@ -59,6 +63,10 @@ enum class FollowerStatus : uint8_t
  * Feedback: path progress is measured on the map-frame localization; the
  * emitted chunk is expressed in the odom frame (via the current map->odom
  * correction) so relocalization jumps do not lurch the wheels.
+ *
+ * Rotations in place: a vehicle that can turn in place stops at the path
+ * points where the heading changes without moving (e.g. planned with the
+ * DiffDrive_Spin PTG), rotates there, and goes on (see `pivot_in_place`).
  *
  * Predictive safety: if a robot footprint and live obstacle points are set
  * (\ref setRobotShape / \ref setObstacles), each cycle the follower sweeps the
@@ -281,6 +289,17 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
          * obstacles along that rotation. Default: false. */
         bool rotate_at_goal = false;
 
+        /** If true (default), a vehicle that can turn in place (i.e.
+         * `min_turn_radius` <= 0; ignored otherwise) executes the pivots of
+         * the path (heading changes of 10 degrees or more within 1 cm, e.g.
+         * planned with the DiffDrive_Spin PTG) by stopping there and rotating
+         * in place, in the same direction as the path, if the footprint is
+         * clear of obstacles along the rotation (else, it waits there, until
+         * `block_timeout`). A pivot at the end of the path is always
+         * executed, regardless of `rotate_at_goal`. If false, pivots are
+         * merged with the rest of the path (corners for pure pursuit). */
+        bool pivot_in_place = true;
+
         double control_period = 0.05;  //!< [s] nominal call period (20 Hz)
         double horizon        = 1.5;  //!< [s] emitted chunk length
         double sample_period  = 0.1;  //!< [s] emitted chunk sampling
@@ -335,7 +354,8 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     Parameters params;
 
     /** Sets/replaces the reference path (hot-swappable at any time); resets
-     * arc-length progress. Needs >= 2 points to track. */
+     * arc-length progress. Needs >= 2 points to track, or a pivot (see
+     * `pivot_in_place`). */
     void setTrajectory(const Trajectory& traj);
 
     /** Replaces the reference path while following a previous one that it
@@ -363,7 +383,13 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     /** Convenience overload: obstacle points as (x,y) in the map frame. */
     void setObstacles(const std::vector<mrpt::math::TPoint2D>& obstacles);
 
-    bool   hasTrajectory() const { return traj_.size() >= 2; }
+    bool hasTrajectory() const
+    {
+        return !legs_.empty() &&
+               (traj_.size() >= 2 || legs_[legIdx_].pivotTo.has_value());
+    }
+    /** Length of the path being tracked, up to its next pivot (see
+     * `pivot_in_place`), if any. */
     double totalLength() const { return cumS_.empty() ? 0.0 : cumS_.back(); }
 
     struct Output
@@ -397,7 +423,40 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         const VehicleLocalizationState& loc, const VehicleOdometryState& odo);
 
    private:
-    Trajectory          traj_;
+    /** A part of the reference path between pivots (see `pivot_in_place`):
+     * first, an optional rotation in place to `pivotTo` (in the direction
+     * of `pivotDir`), then the path (if it has 2 or more points). */
+    struct Leg
+    {
+        std::optional<double> pivotTo;  //!< heading [rad]
+        double                pivotDir = 1;  //!< +1: left, -1: right
+        Trajectory            path;
+    };
+    std::vector<Leg> legs_;
+    std::size_t      legIdx_ = 0;  //!< the current leg, in legs_
+    bool pivoting_ = false;  //!< rotating at the start of the current leg
+
+    /** Makes legs_[idx] the current leg (a pivot, if any, first), keeping the
+     * motion state. */
+    void startLeg(std::size_t idx);
+
+    /** Sets the path tracked by the pursuit, resetting the progress on it. */
+    void setLegPath(const Trajectory& traj);
+
+    /** One cycle of the rotation in place at the start of the current leg.
+     * \return nullopt once it is done. */
+    std::optional<Output> pivotStep(
+        const mrpt::math::TPose2D&      ctrlPose,
+        const VehicleLocalizationState& loc, const VehicleOdometryState& odo,
+        mrpt::system::TTimeStamp now);
+
+    /** A command to rotate in place at `omega` [rad/s] (0: stand still). */
+    SampledTrajectory inPlaceCommand(
+        const mrpt::math::TPose2D&      ctrlPose,
+        const VehicleLocalizationState& loc, const VehicleOdometryState& odo,
+        double omega) const;
+
+    Trajectory          traj_;  //!< path of the current leg
     std::vector<double> cumS_;  //!< cumulative arc-length per point
     std::vector<double> knotCurv_;  //!< |path curvature| per point [1/m]
     /** Signed turning angle of the path tangent at each point [rad] */
