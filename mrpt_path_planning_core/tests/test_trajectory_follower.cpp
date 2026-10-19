@@ -2226,6 +2226,49 @@ TEST(TrajectoryFollower, RotatesInPlaceToGoalHeading)
     EXPECT_NEAR(mrpt::math::wrapToPi(robot.phi - M_PI / 2), 0.0, 0.15);
 }
 
+// With rotate_at_goal, ReachedGoal must be terminal too: moving the robot away
+// from the goal heading afterwards (e.g. driven by a gamepad) must not make the
+// follower rotate it back.
+TEST(TrajectoryFollower, ReachedGoalLatchesWithRotateAtGoal)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {2, 0}};
+    mpp::TrajectoryFollower     f;
+    f.params.rotate_at_goal  = true;
+    f.params.min_turn_radius = 0;
+    f.setTrajectory(polyToTraj(pts, 0.5));
+
+    TPose2D      robot(0, 0, 0);
+    double       v       = 0;
+    bool         reached = false;
+    const double dt      = f.params.control_period;
+    for (int k = 0; k < 4000; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        if (out.status == mpp::FollowerStatus::ReachedGoal)
+        {
+            reached = true;
+            break;
+        }
+        ASSERT_FALSE(out.command.points.empty());
+        const auto tw = out.command.points.front().twist;
+        robot         = integrate(robot, tw.vx, tw.omega, dt);
+        v             = tw.vx;
+    }
+    ASSERT_TRUE(reached);
+
+    // Turned at the goal, then backed up and turned further:
+    for (int k = 0; k < 200; k++)
+    {
+        robot.phi = mrpt::math::wrapToPi(robot.phi + mrpt::DEG2RAD(1.0));
+        if (k > 100) { robot.x -= 0.01; }
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, 0));
+        EXPECT_EQ(out.status, mpp::FollowerStatus::ReachedGoal)
+            << "follower re-awakened on a completed path at k=" << k;
+        EXPECT_TRUE(out.command.points.empty())
+            << "follower emitted a motion command after ReachedGoal at k=" << k;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Pivots: rotations in place along the path
 // ---------------------------------------------------------------------------

@@ -210,6 +210,7 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
     stoppedSince_       = INVALID_TIMESTAMP;
     offPathSince_       = INVALID_TIMESTAMP;
     ctrlPoseInit_       = false;
+    finalStatus_.reset();
 }
 
 void TrajectoryFollower::startLeg(std::size_t idx)
@@ -612,6 +613,7 @@ void TrajectoryFollower::reset()
     rotatingAtGoal_     = false;
     minDistToGoal_      = std::numeric_limits<double>::infinity();
     ctrlPoseInit_       = false;
+    finalStatus_.reset();
     recentCmds_.clear();
 }
 
@@ -1412,6 +1414,27 @@ mrpt::math::TPose2D TrajectoryFollower::controlPose(
 TrajectoryFollower::Output TrajectoryFollower::step(
     const VehicleLocalizationState& loc, const VehicleOdometryState& odo)
 {
+    // A completed trajectory is never resumed: the caller typically hands the
+    // vehicle to another controller (or a human) on these statuses, and an
+    // unlatched follower would fight it to get back onto the stale path.
+    if (hasTrajectory() && finalStatus_)
+    {
+        Output out;
+        out.status = *finalStatus_;
+        return out;
+    }
+    Output out = stepImpl(loc, odo);
+    if (out.status == FollowerStatus::ReachedGoal ||
+        out.status == FollowerStatus::MissedGoal)
+    {
+        finalStatus_ = out.status;
+    }
+    return out;
+}
+
+TrajectoryFollower::Output TrajectoryFollower::stepImpl(
+    const VehicleLocalizationState& loc, const VehicleOdometryState& odo)
+{
     Output out;
     if (!hasTrajectory())
     {
@@ -1523,12 +1546,6 @@ TrajectoryFollower::Output TrajectoryFollower::step(
     if (lastLeg && atGoalPosition &&
         std::abs(out.heading_err) <= params.goal_ang_tol && !rotatingAtGoal_)
     {
-        // Latch: ReachedGoal is terminal until a new trajectory is set. The
-        // caller typically hands the vehicle to another controller on this
-        // status; if that controller then moves the robot off the completed
-        // path, an unlatched follower would re-awaken on the stale
-        // trajectory and fight it with full-speed commands (observed as a
-        // sustained crop-wall collision on a live run).
         arrived_            = true;
         lastCommandedSpeed_ = 0;
         out.status          = FollowerStatus::ReachedGoal;
