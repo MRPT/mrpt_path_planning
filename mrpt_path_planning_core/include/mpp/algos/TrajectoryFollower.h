@@ -473,8 +473,10 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     Trajectory          traj_;  //!< path of the current leg
     std::vector<double> cumS_;  //!< cumulative arc-length per point
     std::vector<double> knotCurv_;  //!< |path curvature| per point [1/m]
-    /** Signed turning angle of the path tangent at each point [rad] */
-    std::vector<double> vertexTurn_;
+    /** Signed curvature of the path tangent [1/m] just before and just
+     * after each point (see refCurvatureAt()), and the arc-length over which
+     * each applies [m]. */
+    std::vector<double> curvBefore_, curvAfter_, spanBefore_, spanAfter_;
     std::vector<double>
         cuspS_;  //!< arc-lengths where travel direction reverses
     std::vector<std::size_t>
@@ -653,7 +655,8 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         double gear, double speedScale = 1.0) const;
 
     /** Pose (x,y + tangent heading) on the reference polyline at arc-length
-     * `s`. */
+     * `s`. The tangent turns as the curvature of refCurvatureAt() (so it is
+     * continuous, not that of the polyline segments). */
     mrpt::math::TPose2D poseAtArc(double s) const;
 
     /** Pose of the vehicle body at arc-length `s` on the reference path: the

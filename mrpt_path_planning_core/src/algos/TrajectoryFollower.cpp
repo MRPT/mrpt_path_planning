@@ -312,24 +312,73 @@ void TrajectoryFollower::setLegPath(const Trajectory& traj)
         }
     }
 
-    // Signed turning angle of the path tangent at each vertex (zero at cusps,
-    // where the travel direction reverses instead of turning):
-    vertexTurn_.assign(traj_.size(), 0.0);
+    // Signed curvature of the path tangent around each vertex: its turning
+    // angle, spread over half the distance to the neighbor vertices on each
+    // side (so that dense knots tile the path, e.g. a sampled arc reads as a
+    // constant curvature), at most kSpread (a sharp polyline corner reads as
+    // a short arc). Where the tangent before or after a vertex is unknown
+    // (path ends, cusps, where the travel direction reverses), the turn on
+    // that side is taken from the vertex pose heading, if consistent with
+    // the segment direction (e.g. the start of an arc).
     {
-        std::size_t cuspPos = 0;
-        for (std::size_t i = 1; i + 1 < traj_.size(); i++)
+        constexpr double  kSpread     = 0.2;  // [m]
+        constexpr double  kMaxEndTurn = mrpt::DEG2RAD(45.0);
+        const std::size_t n           = traj_.size();
+        curvBefore_.assign(n, 0.0);
+        curvAfter_.assign(n, 0.0);
+        spanBefore_.assign(n, 0.0);
+        spanAfter_.assign(n, 0.0);
+        const auto tangent = [this](std::size_t i)  // segment i -> i+1
         {
-            if (cuspPos < cuspIdx_.size() && cuspIdx_[cuspPos] == i)
+            const auto& a = traj_[i].pose;
+            const auto& b = traj_[i + 1].pose;
+            return std::atan2(b.y - a.y, b.x - a.x);
+        };
+        // Turn from a pose heading to a segment tangent, in the travel
+        // direction (either forward or in reverse along the segment):
+        const auto headingTurn = [](double fromAngle, double toAngle)
+        {
+            double d = mrpt::math::wrapToPi(toAngle - fromAngle);
+            if (std::abs(d) > M_PI_2) { d = mrpt::math::wrapToPi(d - M_PI); }
+            return std::abs(d) <= kMaxEndTurn ? d : 0.0;
+        };
+        std::size_t cuspPos = 0;
+        for (std::size_t i = 0; i < n; i++)
+        {
+            const bool isCusp =
+                cuspPos < cuspIdx_.size() && cuspIdx_[cuspPos] == i;
+            if (isCusp) { cuspPos++; }
+            const bool hasPrev = i > 0;
+            const bool hasNext = i + 1 < n;
+            if (hasPrev)
             {
-                cuspPos++;
+                spanBefore_[i] =
+                    std::min(kSpread, 0.5 * (cumS_[i] - cumS_[i - 1]));
+            }
+            if (hasNext)
+            {
+                spanAfter_[i] =
+                    std::min(kSpread, 0.5 * (cumS_[i + 1] - cumS_[i]));
+            }
+            if (hasPrev && hasNext && !isCusp)
+            {
+                const double turn =
+                    mrpt::math::wrapToPi(tangent(i) - tangent(i - 1));
+                const double span = spanBefore_[i] + spanAfter_[i];
+                if (span > 0) { curvBefore_[i] = curvAfter_[i] = turn / span; }
                 continue;
             }
-            const auto& a  = traj_[i - 1].pose;
-            const auto& b  = traj_[i].pose;
-            const auto& c2 = traj_[i + 1].pose;
-            vertexTurn_[i] = mrpt::math::wrapToPi(
-                std::atan2(c2.y - b.y, c2.x - b.x) -
-                std::atan2(b.y - a.y, b.x - a.x));
+            // A path end or a cusp: from the pose heading.
+            const double phi = traj_[i].pose.phi;
+            if (hasPrev && spanBefore_[i] > 0)
+            {
+                curvBefore_[i] =
+                    headingTurn(tangent(i - 1), phi) / spanBefore_[i];
+            }
+            if (hasNext && spanAfter_[i] > 0)
+            {
+                curvAfter_[i] = headingTurn(phi, tangent(i)) / spanAfter_[i];
+            }
         }
     }
 
@@ -731,14 +780,33 @@ mrpt::math::TPoint2D TrajectoryFollower::pointAtArc(double s) const
 mrpt::math::TPose2D TrajectoryFollower::poseAtArc(double s) const
 {
     if (traj_.empty()) return {0, 0, 0};
-    s                         = std::clamp(s, 0.0, totalLength());
-    const std::size_t i       = segmentAt(cumS_, s);
-    const auto&       a       = traj_[i].pose;
-    const auto&       b       = traj_[i + 1].pose;
-    const double      segLen  = cumS_[i + 1] - cumS_[i];
-    const double      t       = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
-    const double      heading = std::atan2(b.y - a.y, b.x - a.x);
-    return {a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), heading};
+    s                        = std::clamp(s, 0.0, totalLength());
+    const std::size_t i      = segmentAt(cumS_, s);
+    const auto&       a      = traj_[i].pose;
+    const auto&       b      = traj_[i + 1].pose;
+    const double      segLen = cumS_[i + 1] - cumS_[i];
+    const double      t      = segLen > 1e-9 ? (s - cumS_[i]) / segLen : 0.0;
+    // The tangent of the path with the curvature of refCurvatureAt(): the
+    // segment direction at its middle, turning near its ends (e.g. along a
+    // sampled arc, the tangent of the arc, not of the chord):
+    double heading = std::atan2(b.y - a.y, b.x - a.x);
+    if (i < spanAfter_.size() && i + 1 < spanBefore_.size())
+    {
+        const double fromStart = s - cumS_[i];
+        const double toEnd     = cumS_[i + 1] - s;
+        if (fromStart < 0.5 * segLen)
+        {
+            heading -= curvAfter_[i] * std::max(0.0, spanAfter_[i] - fromStart);
+        }
+        else
+        {
+            heading +=
+                curvBefore_[i + 1] * std::max(0.0, spanBefore_[i + 1] - toEnd);
+        }
+    }
+    return {
+        a.x + t * (b.x - a.x), a.y + t * (b.y - a.y),
+        mrpt::math::wrapToPi(heading)};
 }
 
 mrpt::math::TPose2D TrajectoryFollower::bodyPoseAtArc(double s) const
@@ -772,27 +840,24 @@ double TrajectoryFollower::speedCapAt(double s) const
 
 double TrajectoryFollower::refCurvatureAt(double s, double gear) const
 {
-    if (traj_.size() < 3) { return 0.0; }
+    if (traj_.size() < 2) { return 0.0; }
 
-    // Tangent turning angles of the vertices within a window around `s`,
-    // spread over the window (a sharp polyline corner reads as a short arc),
-    // without crossing a cusp:
-    constexpr double kWindow = 0.4;  // [m]
-    double           sLo     = s - 0.5 * kWindow;
-    double           sHi     = s + 0.5 * kWindow;
-    for (const double sc : cuspS_)
-    {
-        if (sc <= s) { sLo = std::max(sLo, sc + 1e-6); }
-        else { sHi = std::min(sHi, sc - 1e-6); }
-    }
-    const auto  itLo = std::lower_bound(cumS_.begin(), cumS_.end(), sLo);
-    double      turn = 0;
-    std::size_t i    = static_cast<std::size_t>(itLo - cumS_.begin());
-    for (; i < traj_.size() && cumS_[i] <= sHi; i++) { turn += vertexTurn_[i]; }
+    // The segment [i, i+1] holding `s`; its curvature comes from the vertices
+    // at both ends (see setLegPath()):
+    const auto  it = std::upper_bound(cumS_.begin(), cumS_.end(), s);
+    std::size_t i =
+        static_cast<std::size_t>(std::max<std::ptrdiff_t>(
+            1, std::min<std::ptrdiff_t>(
+                   it - cumS_.begin(),
+                   static_cast<std::ptrdiff_t>(traj_.size()) - 1))) -
+        1;
+    double curv = 0;
+    if (s - cumS_[i] <= spanAfter_[i]) { curv += curvAfter_[i]; }
+    if (cumS_[i + 1] - s < spanBefore_[i + 1]) { curv += curvBefore_[i + 1]; }
 
     // The tangent is the travel direction: in reverse, the same turn is a
     // curvature of opposite sign.
-    return gear * turn / kWindow;
+    return gear * curv;
 }
 
 double TrajectoryFollower::adaptiveLookaheadS(double sStart, double capS) const

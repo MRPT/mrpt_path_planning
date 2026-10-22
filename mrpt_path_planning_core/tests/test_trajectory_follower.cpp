@@ -489,6 +489,52 @@ TEST(TrajectoryFollower, StopsInsteadOfCrawlingTowardObstacle)
     EXPECT_LT(tStop0, 0);
 }
 
+// A planner path is a sampled arc: knots every 0.25 m with the true headings
+// of the arc. The curvature commanded on it must be that of the arc, from the
+// very start of the path (a robot starting close to obstacles may not be able
+// to deviate from it) and steadily along it, not depending on where the
+// vehicle is between knots.
+TEST(TrajectoryFollower, TracksSampledArcCurvatureFromTheStart)
+{
+    constexpr double R    = 1.2;  // [m]
+    constexpr double step = 0.25;  // [m] between knots
+    mpp::Trajectory  tr;
+    for (int i = 0; i <= 16; i++)
+    {
+        const double a = i * step / R;
+        tr.emplace_back(
+            TPose2D(R * std::sin(a), R * (1 - std::cos(a)), a), 0.5);
+    }
+    mpp::TrajectoryFollower f;
+    f.params.max_speed = 0.5;
+    f.setTrajectory(tr);
+
+    TPose2D      robot   = tr.front().pose;
+    double       v       = 0;
+    const double dt      = f.params.control_period;
+    double       curvMin = std::numeric_limits<double>::infinity();
+    double       curvMax = -curvMin;
+    for (int k = 0; k < 100; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        ASSERT_FALSE(out.command.points.empty());
+        const auto tw = out.command.points.front().twist;
+        if (std::abs(tw.vx) > 1e-3)
+        {
+            const double curv = tw.omega / tw.vx;
+            if (k == 0 || out.arc_length_s < 2.5)
+            {
+                curvMin = std::min(curvMin, curv);
+                curvMax = std::max(curvMax, curv);
+            }
+        }
+        robot = integrate(robot, tw.vx, tw.omega, dt);
+        v     = tw.vx;
+    }
+    EXPECT_NEAR(curvMin, 1 / R, 0.1);
+    EXPECT_NEAR(curvMax, 1 / R, 0.1);
+}
+
 TEST(TrajectoryFollower, IgnoresObstacleOffPath)
 {
     const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};
