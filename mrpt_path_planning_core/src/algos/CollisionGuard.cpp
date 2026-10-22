@@ -346,6 +346,7 @@ CollisionGuard::Result CollisionGuard::filter(
                 r.free_travel           = cur.free;
                 r.limiting_point        = cur.contactPoint;
                 r.current_motion_unsafe = true;
+                r.max_speed             = 0;
                 fullStop();
                 return r;
             }

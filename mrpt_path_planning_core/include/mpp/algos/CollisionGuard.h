@@ -134,7 +134,8 @@ class CollisionGuard
 
         /** [m/s] The largest linear speed along the arc of the command that
          * can stop before a contact found within its stopping distance (+inf
-         * if none; 0 if the obstacle data are stale). A controller can ask
+         * if none; 0 if the obstacle data are stale, or the current motion
+         * can not stop before a contact). A controller can ask
          * for a command at its max speed, and slow down to this beforehand,
          * so that the guard does not have to limit its commands. */
         double max_speed = std::numeric_limits<double>::infinity();

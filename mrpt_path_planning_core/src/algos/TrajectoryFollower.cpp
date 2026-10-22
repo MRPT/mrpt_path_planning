@@ -1136,9 +1136,9 @@ TrajectoryFollower::Command TrajectoryFollower::pursuit(
         cap = std::min(cap, curvaturePreviewCap(proj.s, nextCuspS));
     }
 
-    // Predictive-safety speed scale (caps the target before rate-limiting so
-    // decel stays bounded by max_decel).
-    cap *= std::clamp(speedScale, 0.0, 1.0);
+    // Predictive-safety speed scale, and the external speed cap (caps the
+    // target before rate-limiting so decel stays bounded by max_decel).
+    cap = std::min(cap * std::clamp(speedScale, 0.0, 1.0), speedCap_);
 
     // Rate-limit the *signed* speed toward the gear-directed target. `sCur` is
     // the current speed measured in the gear's forward sense; if it is negative
@@ -1851,28 +1851,36 @@ TrajectoryFollower::Output TrajectoryFollower::stepImpl(
         out.contact_dist_forecast  = dFwd;
         out.contact_dist_reference = dRef;
     }
-    // External speed cap (see setSpeedCap()):
+    // The external speed cap (see setSpeedCap()) limits the speed itself
+    // (in pursuit()), and stops the vehicle like the predictive safety:
+    double stopScale = scale;
     if (speedCap_ < params.max_speed)
     {
-        scale = std::min(
-            scale, std::max(0.0, speedCap_) / std::max(1e-6, params.max_speed));
+        stopScale = std::min(
+            stopScale,
+            std::max(0.0, speedCap_) / std::max(1e-6, params.max_speed));
     }
     // Too slow to be worth moving: stop (see safety_min_speed)
-    if (scale < 1.0 && scale * params.max_speed < params.safety_min_speed)
+    if (stopScale < 1.0 &&
+        stopScale * params.max_speed < params.safety_min_speed)
     {
-        scale = 0.0;
+        scale     = 0.0;
+        stopScale = 0.0;
     }
     if (stopped_)
     {
-        if (scale >= params.resume_scale)
+        if (stopScale >= params.resume_scale)
         {
             stopped_      = false;
             stoppedSince_ = INVALID_TIMESTAMP;
         }
         else
-            scale = 0.0;
+        {
+            scale     = 0.0;
+            stopScale = 0.0;
+        }
     }
-    if (!stopped_ && scale <= 1e-3)
+    if (!stopped_ && stopScale <= 1e-3)
     {
         stopped_      = true;
         stoppedSince_ = nowStamp;

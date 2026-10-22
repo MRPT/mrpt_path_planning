@@ -582,6 +582,46 @@ TEST(TrajectoryFollower, ExternalSpeedCap)
     EXPECT_EQ(status, mpp::FollowerStatus::Blocked);
 }
 
+// The external speed cap is a cap on the speed, not a fraction of it: on a
+// curve that already limits the speed below it, it changes nothing.
+TEST(TrajectoryFollower, ExternalSpeedCapIsAbsolute)
+{
+    constexpr double R = 1.0;  // [m]
+    mpp::Trajectory  tr;
+    for (int i = 0; i <= 60; i++)
+    {
+        const double a = i * 0.1 / R;
+        tr.emplace_back(
+            TPose2D(R * std::sin(a), R * (1 - std::cos(a)), a), 1.0);
+    }
+    const auto maxSpeedOnArc = [&](double cap)
+    {
+        mpp::TrajectoryFollower f;
+        f.params.max_speed = 1.0;
+        f.params.max_omega = 0.2;  // => 0.2 m/s on the arc
+        f.setTrajectory(tr);
+        f.setSpeedCap(cap);
+        TPose2D      robot = tr.front().pose;
+        double       v     = 0;
+        double       vMax  = 0;
+        const double dt    = f.params.control_period;
+        for (int k = 0; k < 100; k++)
+        {
+            const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+            if (out.command.points.empty()) { break; }
+            const auto tw = out.command.points.front().twist;
+            vMax          = std::max(vMax, tw.vx);
+            robot         = integrate(robot, tw.vx, tw.omega, dt);
+            v             = tw.vx;
+        }
+        return vMax;
+    };
+    const double vFree = maxSpeedOnArc(std::numeric_limits<double>::infinity());
+    EXPECT_NEAR(vFree, 0.2, 0.02);
+    EXPECT_NEAR(maxSpeedOnArc(0.3), vFree, 1e-6);
+    EXPECT_NEAR(maxSpeedOnArc(0.1), 0.1, 0.01);
+}
+
 TEST(TrajectoryFollower, IgnoresObstacleOffPath)
 {
     const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};

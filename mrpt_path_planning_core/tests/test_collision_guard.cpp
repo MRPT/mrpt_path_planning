@@ -132,6 +132,12 @@ TEST(CollisionGuard, ReportsMaxSafeSpeed)
     const auto rStale =
         g.filter(1.0, 0.0, kNow + std::chrono::milliseconds(2000));
     EXPECT_EQ(rStale.max_speed, 0.0);
+
+    // The current motion can not stop before the wall: cannot move either.
+    const auto rUnsafe =
+        g.filter(0.5, 0.0, kNow, mrpt::math::TTwist2D(4.0, 0.0, 0.0));
+    EXPECT_TRUE(rUnsafe.current_motion_unsafe);
+    EXPECT_EQ(rUnsafe.max_speed, 0.0);
 }
 
 TEST(CollisionGuard, WallBehind)
