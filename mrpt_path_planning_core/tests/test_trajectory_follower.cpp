@@ -419,6 +419,76 @@ TEST(TrajectoryFollower, BlockedAfterTimeout)
     EXPECT_EQ(out.status, mpp::FollowerStatus::Blocked);
 }
 
+// The safety speed cap decreases with the distance to a predicted contact, so
+// a robot approaching an obstacle on its path would be commanded ever slower
+// speeds, until they are too small to move a real platform (deadband): it
+// would never stop being commanded to move, nor be reported as Blocked. It
+// must come to a full stop instead, and be reported as Blocked after
+// block_timeout (so that a planner can look for another way).
+TEST(TrajectoryFollower, StopsInsteadOfCrawlingTowardObstacle)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {8, 0}};
+
+    // Returns the status at the end, and when the command became zero:
+    const auto run = [&](double safetyMinSpeed)
+    {
+        mpp::TrajectoryFollower f;
+        f.params.max_speed        = 1.0;
+        f.params.block_timeout    = 2.0;
+        f.params.safety_min_speed = safetyMinSpeed;
+        // (a fine sweep, so contact distances are not rounded down to the
+        // stop distance)
+        f.params.footprint_sample_resolution = 0.01;
+        f.setRobotShape(mpp::robot_radius_t{0.3});
+        f.setObstacles(std::vector<TPoint2D>{{4.0, 0.0}});
+        f.setTrajectory(polyToTraj(pts, 1.0));
+
+        constexpr double kDeadband = 0.03;  // [m/s] the platform does not move
+        const double     dt        = f.params.control_period;
+        const auto       t0        = mrpt::Clock::now();
+        TPose2D          robot     = {0, 0, 0};
+        double           v         = 0;
+        double           tStop     = -1;
+        double           t         = 0;
+        auto             status    = mpp::FollowerStatus::Idle;
+        for (int k = 0; k < static_cast<int>(20.0 / dt); k++)
+        {
+            t        = k * dt;
+            auto loc = mkLoc(robot);
+            loc.timestamp =
+                t0 + std::chrono::microseconds(static_cast<int64_t>(t * 1e6));
+            auto odo       = mkOdo(robot, v);
+            odo.timestamp  = loc.timestamp;
+            const auto out = f.step(loc, odo);
+            status         = out.status;
+            if (status == mpp::FollowerStatus::Blocked) { break; }
+            EXPECT_FALSE(out.command.points.empty());
+            if (out.command.points.empty()) { break; }
+            const auto tw = out.command.points.front().twist;
+            if (tw.vx == 0 && tStop < 0 && robot.x > 1.0) { tStop = t; }
+            // Once stopped, never creeps again:
+            if (tStop >= 0) { EXPECT_EQ(tw.vx, 0.0) << "t=" << t; }
+            v     = std::abs(tw.vx) < kDeadband ? 0.0 : tw.vx;
+            robot = integrate(robot, v, tw.omega, dt);
+        }
+        // Stopped before the stop distance, without touching it:
+        const double gap = 4.0 - 0.3 - robot.x;
+        EXPECT_GT(gap, f.params.stop_distance);
+        return std::make_tuple(status, tStop, t);
+    };
+
+    const auto [status, tStop, tEnd] = run(0.05);
+    EXPECT_EQ(status, mpp::FollowerStatus::Blocked);
+    ASSERT_GE(tStop, 0);
+    EXPECT_NEAR(tEnd - tStop, 2.0, 0.2);  // block_timeout after stopping
+    EXPECT_LT(tStop, 8.0);  // not after a long crawl
+
+    // Without a minimum speed, the deadband would hide the robot is held:
+    const auto [status0, tStop0, tEnd0] = run(0.0);
+    EXPECT_NE(status0, mpp::FollowerStatus::Blocked);
+    EXPECT_LT(tStop0, 0);
+}
+
 TEST(TrajectoryFollower, IgnoresObstacleOffPath)
 {
     const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};

@@ -98,6 +98,7 @@ void TrajectoryFollower::Parameters::load_from_yaml(
     MCP_LOAD_OPT(c, reference_lookahead_dist);
     MCP_LOAD_OPT(c, footprint_sample_resolution);
     MCP_LOAD_OPT(c, resume_scale);
+    MCP_LOAD_OPT(c, safety_min_speed);
     MCP_LOAD_OPT(c, block_timeout);
 }
 
@@ -144,6 +145,7 @@ mrpt::containers::yaml TrajectoryFollower::Parameters::as_yaml() const
     MCP_SAVE(c, reference_lookahead_dist);
     MCP_SAVE(c, footprint_sample_resolution);
     MCP_SAVE(c, resume_scale);
+    MCP_SAVE(c, safety_min_speed);
     MCP_SAVE(c, block_timeout);
     return c;
 }
@@ -1779,6 +1781,11 @@ TrajectoryFollower::Output TrajectoryFollower::stepImpl(
             contactDistanceToScale(dFwd), contactDistanceToScale(dRef));
         out.contact_dist_forecast  = dFwd;
         out.contact_dist_reference = dRef;
+        // Too slow to be worth moving: stop (see safety_min_speed)
+        if (scale < 1.0 && scale * params.max_speed < params.safety_min_speed)
+        {
+            scale = 0.0;
+        }
     }
     if (stopped_)
     {

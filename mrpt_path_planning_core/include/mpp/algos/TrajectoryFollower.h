@@ -342,6 +342,15 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
          * stop (hysteresis to avoid chattering). */
         double resume_scale = 0.2;
 
+        /** [m/s] If the predictive safety caps the speed below this, the
+         * vehicle stops (a safety stop, see `resume_scale` and
+         * `block_timeout`) instead of crawling toward the predicted contact:
+         * the speed cap decreases with the distance to it, so the vehicle
+         * would otherwise be commanded ever slower speeds (which a real
+         * platform may not even execute) without ever stopping, and never be
+         * reported as `Blocked`. 0: stop only at a zero speed cap. */
+        double safety_min_speed = 0.05;
+
         /** [s] If held stopped by the safety layer longer than this, report
          * `Blocked`. */
         double block_timeout = 5.0;
