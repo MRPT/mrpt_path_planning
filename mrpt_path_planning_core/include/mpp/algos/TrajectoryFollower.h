@@ -31,6 +31,10 @@
  * TrajectoryFollower::Parameters::pivot_in_place). */
 #define MPP_HAS_FOLLOWER_PIVOTS 1
 
+/** Feature macro: TrajectoryFollower::setSpeedCap() exists, and its Output
+ * has the wanted curvature and gear. */
+#define MPP_HAS_FOLLOWER_SPEED_CAP 1
+
 namespace mpp
 {
 enum class FollowerStatus : uint8_t
@@ -392,6 +396,13 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     /** Convenience overload: obstacle points as (x,y) in the map frame. */
     void setObstacles(const std::vector<mrpt::math::TPoint2D>& obstacles);
 
+    /** [m/s] Sets an external cap on the speed, e.g. the safe speed that a
+     * CollisionGuard reports for the wanted motion (Output::curvature,
+     * Output::gear), applied in the next step()s like a predictive safety
+     * slowdown (so it may stop the vehicle and report `Blocked`). +inf: no
+     * cap (reset by setTrajectory(), kept by updateTrajectory()). */
+    void setSpeedCap(double maxSpeed) { speedCap_ = maxSpeed; }
+
     bool hasTrajectory() const
     {
         return !legs_.empty() &&
@@ -408,10 +419,17 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         FollowerStatus status = FollowerStatus::Idle;
 
         // Debug / introspection:
-        double               arc_length_s    = 0;
-        double               cross_track_err = 0;  //!< signed [m]
-        double               heading_err     = 0;  //!< [rad]
-        double               target_speed    = 0;  //!< [m/s] immediate command
+        double arc_length_s    = 0;
+        double cross_track_err = 0;  //!< signed [m]
+        double heading_err     = 0;  //!< [rad]
+        double target_speed    = 0;  //!< [m/s] immediate command
+        /** [1/m] Path curvature of the immediate command, also while
+         * stopped (the one it would drive). */
+        double curvature = 0;
+        /** Travel direction of the immediate command: +1 forward, -1 in
+         * reverse, 0 if not driving along the path (e.g. rotating in place).
+         */
+        double               gear = 0;
         mrpt::math::TPoint2D lookahead_point{0, 0};
 
         /** Safety speed scale applied this cycle (1 = unrestricted, 0 = stopped
@@ -567,7 +585,8 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     std::vector<mrpt::math::TPoint2D>
                                  shapeSamples_;  //!< footprint, robot frame
     mrpt::maps::CSimplePointsMap obstacles_;  //!< map frame (kd-tree)
-    bool stopped_ = false;  //!< safety-stop hysteresis latch
+    bool   stopped_  = false;  //!< safety-stop hysteresis latch
+    double speedCap_ = std::numeric_limits<double>::infinity();  //!< [m/s]
     mrpt::system::TTimeStamp stoppedSince_ = INVALID_TIMESTAMP;
 
     struct Projection

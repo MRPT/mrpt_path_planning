@@ -211,6 +211,7 @@ void TrajectoryFollower::setTrajectory(const Trajectory& traj)
     stopped_            = false;
     stoppedSince_       = INVALID_TIMESTAMP;
     offPathSince_       = INVALID_TIMESTAMP;
+    speedCap_           = std::numeric_limits<double>::infinity();
     ctrlPoseInit_       = false;
     // (no commands were sent since a terminal status)
     if (finalStatus_) { recentCmds_.clear(); }
@@ -498,6 +499,7 @@ void TrajectoryFollower::updateTrajectory(const Trajectory& traj)
     const auto stopped      = stopped_;
     const auto stoppedSince = stoppedSince_;
     const auto offPathSince = offPathSince_;
+    const auto speedCap     = speedCap_;
 
     // Direction of the old path at the progress point, to tell apart legs of
     // the new path that pass over the same point (e.g. before and after a
@@ -526,6 +528,7 @@ void TrajectoryFollower::updateTrajectory(const Trajectory& traj)
     stopped_            = stopped;
     stoppedSince_       = stoppedSince;
     offPathSince_       = offPathSince;
+    speedCap_           = speedCap;
 
     constexpr double kMatchTol = 0.02;  // [m]
 
@@ -663,6 +666,7 @@ void TrajectoryFollower::reset()
     stopped_            = false;
     stoppedSince_       = INVALID_TIMESTAMP;
     offPathSince_       = INVALID_TIMESTAMP;
+    speedCap_           = std::numeric_limits<double>::infinity();
     arrived_            = false;
     overshotGoal_       = false;
     rotatingAtGoal_     = false;
@@ -1846,11 +1850,17 @@ TrajectoryFollower::Output TrajectoryFollower::stepImpl(
             contactDistanceToScale(dFwd), contactDistanceToScale(dRef));
         out.contact_dist_forecast  = dFwd;
         out.contact_dist_reference = dRef;
-        // Too slow to be worth moving: stop (see safety_min_speed)
-        if (scale < 1.0 && scale * params.max_speed < params.safety_min_speed)
-        {
-            scale = 0.0;
-        }
+    }
+    // External speed cap (see setSpeedCap()):
+    if (speedCap_ < params.max_speed)
+    {
+        scale = std::min(
+            scale, std::max(0.0, speedCap_) / std::max(1e-6, params.max_speed));
+    }
+    // Too slow to be worth moving: stop (see safety_min_speed)
+    if (scale < 1.0 && scale * params.max_speed < params.safety_min_speed)
+    {
+        scale = 0.0;
     }
     if (stopped_)
     {
@@ -1936,6 +1946,8 @@ TrajectoryFollower::Output TrajectoryFollower::stepImpl(
         {
             out.target_speed    = cmd.v;
             out.lookahead_point = cmd.lookahead;
+            out.curvature       = cmd.curv;
+            out.gear            = gear;
             if (!recentCmds_.empty())
             {
                 recentCmds_.back() = {cmd.v, cmd.omega};

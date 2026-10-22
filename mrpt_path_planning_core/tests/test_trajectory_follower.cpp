@@ -535,6 +535,53 @@ TEST(TrajectoryFollower, TracksSampledArcCurvatureFromTheStart)
     EXPECT_NEAR(curvMax, 1 / R, 0.1);
 }
 
+// An external speed cap (e.g. from a collision guard) slows the vehicle down
+// smoothly; one below safety_min_speed stops it, and it is reported Blocked
+// if held so for block_timeout. It reports the curvature and gear it wants.
+TEST(TrajectoryFollower, ExternalSpeedCap)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {20, 0}};
+    mpp::TrajectoryFollower     f;
+    f.params.max_speed     = 1.0;
+    f.params.block_timeout = 1.0;
+    f.setTrajectory(polyToTraj(pts, 1.0));
+
+    const double dt     = f.params.control_period;
+    const auto   t0     = mrpt::Clock::now();
+    TPose2D      robot  = {0, 0, 0};
+    double       v      = 0;
+    double       prevV  = 0;
+    auto         status = mpp::FollowerStatus::Idle;
+    for (int k = 0; k < static_cast<int>(12.0 / dt); k++)
+    {
+        const double t = k * dt;
+        if (t >= 4.0 && t < 8.0) { f.setSpeedCap(0.3); }
+        else if (t >= 8.0) { f.setSpeedCap(0.02); }
+        auto loc = mkLoc(robot);
+        loc.timestamp =
+            t0 + std::chrono::microseconds(static_cast<int64_t>(t * 1e6));
+        auto odo       = mkOdo(robot, v);
+        odo.timestamp  = loc.timestamp;
+        const auto out = f.step(loc, odo);
+        status         = out.status;
+        if (status == mpp::FollowerStatus::Blocked) { break; }
+        ASSERT_FALSE(out.command.points.empty());
+        EXPECT_EQ(out.gear, 1.0);
+        EXPECT_NEAR(out.curvature, 0.0, 0.05);
+        const auto tw = out.command.points.front().twist;
+        // Never faster than the cap after slowing down to it, and slowing
+        // down at the decel limit (smoothly):
+        if (t > 6.0 && t < 8.0) { EXPECT_LE(tw.vx, 0.3 + 1e-6); }
+        EXPECT_GE(tw.vx, prevV - f.params.max_decel * dt - 1e-6);
+        // (ramping down at max_decel from 0.3 m/s)
+        if (t > 8.6) { EXPECT_EQ(tw.vx, 0.0) << t; }
+        prevV = tw.vx;
+        robot = integrate(robot, tw.vx, tw.omega, dt);
+        v     = tw.vx;
+    }
+    EXPECT_EQ(status, mpp::FollowerStatus::Blocked);
+}
+
 TEST(TrajectoryFollower, IgnoresObstacleOffPath)
 {
     const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};

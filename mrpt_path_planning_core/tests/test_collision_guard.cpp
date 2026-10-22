@@ -107,6 +107,33 @@ TEST(CollisionGuard, WallAhead)
     EXPECT_DOUBLE_EQ(r3.v, -3.0);
 }
 
+// The safe speed along the arc of a command is reported, also for commands
+// it does not limit, so a controller can slow down to it in advance.
+TEST(CollisionGuard, ReportsMaxSafeSpeed)
+{
+    auto g = makeGuard();
+    g.setObstacles(wallAtX(3.0), kNow);
+
+    // Asking at a high speed (its stopping distance reaches the wall):
+    const auto r = g.filter(5.0, 0.0, kNow);
+    EXPECT_TRUE(std::isfinite(r.max_speed));
+    EXPECT_NEAR(r.max_speed, r.v, 1e-9);  // it was limited to that speed
+
+    // A command at that speed is not limited, and one faster is:
+    const auto rOk = g.filter(0.99 * r.max_speed, 0.0, kNow);
+    EXPECT_FALSE(rOk.limited);
+    const auto rFast = g.filter(1.1 * r.max_speed, 0.0, kNow);
+    EXPECT_TRUE(rFast.limited);
+
+    // Nothing within the stopping distance: no limit known:
+    EXPECT_FALSE(std::isfinite(g.filter(0.5, 0.0, kNow).max_speed));
+
+    // Stale data: cannot move.
+    const auto rStale =
+        g.filter(1.0, 0.0, kNow + std::chrono::milliseconds(2000));
+    EXPECT_EQ(rStale.max_speed, 0.0);
+}
+
 TEST(CollisionGuard, WallBehind)
 {
     auto g = makeGuard();

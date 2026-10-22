@@ -17,6 +17,9 @@
 #include <optional>
 #include <vector>
 
+/** Feature macro: CollisionGuard::Result::max_speed exists. */
+#define MPP_HAS_GUARD_MAX_SPEED 1
+
 namespace mpp
 {
 /** Last-resort collision guard for velocity commands (ROS-free).
@@ -128,6 +131,13 @@ class CollisionGuard
         /** The robot was stopped because its current motion (rather than the
          * command) could not stop before a contact. */
         bool current_motion_unsafe = false;
+
+        /** [m/s] The largest linear speed along the arc of the command that
+         * can stop before a contact found within its stopping distance (+inf
+         * if none; 0 if the obstacle data are stale). A controller can ask
+         * for a command at its max speed, and slow down to this beforehand,
+         * so that the guard does not have to limit its commands. */
+        double max_speed = std::numeric_limits<double>::infinity();
     };
 
     /** Returns the safe version of the command `(v, omega)`, at time `now`
