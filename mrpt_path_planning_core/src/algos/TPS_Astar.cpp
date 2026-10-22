@@ -949,8 +949,7 @@ void TPS_Astar::run_search(duration_seconds_t maxComputationTime)
 
 PlannerOutput TPS_Astar::finalized_output(PlannerOutput po) const
 {
-    const auto& in   = search_.in;
-    auto&       tree = po.motionTree;
+    auto& tree = po.motionTree;
 
     // A clear shot not committed yet (timeout or exhausted open set) still
     // reaches the goal:

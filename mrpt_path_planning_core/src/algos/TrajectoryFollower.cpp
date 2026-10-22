@@ -346,9 +346,9 @@ void TrajectoryFollower::setLegPath(const Trajectory& traj)
         std::size_t cuspPos = 0;
         for (std::size_t i = 0; i < n; i++)
         {
-            const bool isCusp =
+            const bool atCusp =
                 cuspPos < cuspIdx_.size() && cuspIdx_[cuspPos] == i;
-            if (isCusp) { cuspPos++; }
+            if (atCusp) { cuspPos++; }
             const bool hasPrev = i > 0;
             const bool hasNext = i + 1 < n;
             if (hasPrev)
@@ -361,7 +361,7 @@ void TrajectoryFollower::setLegPath(const Trajectory& traj)
                 spanAfter_[i] =
                     std::min(kSpread, 0.5 * (cumS_[i + 1] - cumS_[i]));
             }
-            if (hasPrev && hasNext && !isCusp)
+            if (hasPrev && hasNext && !atCusp)
             {
                 const double turn =
                     mrpt::math::wrapToPi(tangent(i) - tangent(i - 1));
