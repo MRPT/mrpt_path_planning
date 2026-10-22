@@ -364,6 +364,26 @@ TEST(AstarDiffDrive, ForwardReachesGoalAhead)
         << "Forward C-PTG must reach a goal straight ahead at (3,0)";
 }
 
+// A pose goal in the cell of the start pose (e.g. the robot is already at the
+// goal) is reached by the start node itself: the output must say so
+// consistently (success, goal and best node being the start), instead of a
+// search that ended at the goal without a solution.
+TEST(AstarDiffDrive, StartInGoalCellIsASolution)
+{
+    auto planner = buildPlanner();
+    auto in      = buildInput(
+             /*gx=*/0.0, /*gy=*/0.0, kCPtgForward,
+        /*bboxMin=*/{-2, -3, -M_PI}, /*bboxMax=*/{5, 3, M_PI});
+    in.stateGoal.state = mrpt::math::TPose2D{0.02, 0.0, 0.0};
+
+    const auto out = planner.plan(in);
+    EXPECT_TRUE(out.success);
+    ASSERT_TRUE(out.goalNodeId.has_value());
+    ASSERT_TRUE(out.bestNodeId.has_value());
+    EXPECT_EQ(*out.goalNodeId, *out.bestNodeId);
+    EXPECT_EQ(*out.goalNodeId, out.motionTree.root);
+}
+
 TEST(AstarDiffDrive, ForwardCurvesToOffsetGoal)
 {
     auto planner = buildPlanner();
