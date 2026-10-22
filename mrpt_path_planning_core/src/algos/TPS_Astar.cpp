@@ -667,6 +667,10 @@ void TPS_Astar::run_search(duration_seconds_t maxComputationTime)
                 // Update in our internal A* node:
                 current.state.pose = goalPose;
 
+                // (the best node so far may not be it, e.g. if this is the
+                // start node, in the goal cell)
+                po.goalNodeId           = current.id.value();
+                po.bestNodeId           = po.goalNodeId;
                 po.bestNodeIdCostToGoal = 0;
             }
             // Update in the tree node also:

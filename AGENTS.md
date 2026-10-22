@@ -147,7 +147,8 @@ so edge splitting does not change it): `CostEvaluatorCostMap`
 (obstacle-proximity penalty), `CostEvaluatorPreferredWaypoint` (reward near
 given waypoints), `CostEvaluatorReverseMotion` (extra cost per second driven
 in reverse) and `CostEvaluatorTurning` (extra cost per radian of heading
-change, against weaving paths).
+change, against weaving paths; stopping a moving robot, at a cusp or to
+rotate in place, counts as pi).
 
 **Bidirectional A\* (`TPS_Astar_Bidir`).** Searches forward from the start and
 backward from the goal (predecessors from inverted PTG relative poses) until
@@ -169,7 +170,8 @@ connect the exact node poses (rotations in place: by heading);
 
 **Navigation.** `TrajectoryFollower` is a ROS-free path tracker: reference
 curvature feedforward plus pure-pursuit feedback, with predictive safety
-(footprint sweep against live obstacles, braking-distance aware), consuming a
+(footprint sweep against live obstacles, braking-distance aware; speed caps
+below `safety_min_speed` are stops, not crawling), consuming a
 `Trajectory` and emitting `SampledTrajectory` chunks via
 `TrajectoryVehicleInterface`. Delayed localizations are brought to the present
 with odometry using their timestamps (callers must pass the sensor time, on the
@@ -192,7 +194,9 @@ kept at least `min_lookahead_dist` away so localization noise does not drive
 the steering. `CollisionGuard` is an independent last-resort filter
 for velocity commands: using only robot-frame sensed points, it caps the speed
 so the robot can always stop along the commanded arc before contact (stale data:
-stop).
+stop). Its `Result::max_speed` for the motion the follower wants
+(`Output::curvature`, `Output::gear`), fed back with `setSpeedCap()`, makes the
+follower slow down before the guard has to cut its commands.
 
 ## TPS_Astar::plan() flow
 

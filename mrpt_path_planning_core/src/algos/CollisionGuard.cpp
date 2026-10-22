@@ -323,6 +323,7 @@ CollisionGuard::Result CollisionGuard::filter(
     if (r.stale)
     {
         fullStop();
+        r.max_speed = 0;
         return r;
     }
 
@@ -345,6 +346,7 @@ CollisionGuard::Result CollisionGuard::filter(
                 r.free_travel           = cur.free;
                 r.limiting_point        = cur.contactPoint;
                 r.current_motion_unsafe = true;
+                r.max_speed             = 0;
                 fullStop();
                 return r;
             }
@@ -357,8 +359,12 @@ CollisionGuard::Result CollisionGuard::filter(
     const double vStop = isRot ? std::max(std::abs(omega), std::abs(wCur))
                                : std::max(std::abs(v), std::abs(vCur));
     const auto   cmd   = checkMotion(v, omega, vStop, tR);
-    r.in_contact       = r.in_contact || cmd.inContact;
-    r.free_travel      = cmd.free;
+    if (!cmd.rotation && std::isfinite(cmd.free))
+    {
+        r.max_speed = maxSpeedForTravel(cmd.free, tR, cmd.a);
+    }
+    r.in_contact  = r.in_contact || cmd.inContact;
+    r.free_travel = cmd.free;
     if (cmd.free >= cmd.need) { return r; }
     r.limiting_point = cmd.contactPoint;
 

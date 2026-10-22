@@ -31,6 +31,10 @@
  * TrajectoryFollower::Parameters::pivot_in_place). */
 #define MPP_HAS_FOLLOWER_PIVOTS 1
 
+/** Feature macro: TrajectoryFollower::setSpeedCap() exists, and its Output
+ * has the wanted curvature and gear. */
+#define MPP_HAS_FOLLOWER_SPEED_CAP 1
+
 namespace mpp
 {
 enum class FollowerStatus : uint8_t
@@ -342,6 +346,15 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
          * stop (hysteresis to avoid chattering). */
         double resume_scale = 0.2;
 
+        /** [m/s] If the predictive safety caps the speed below this, the
+         * vehicle stops (a safety stop, see `resume_scale` and
+         * `block_timeout`) instead of crawling toward the predicted contact:
+         * the speed cap decreases with the distance to it, so the vehicle
+         * would otherwise be commanded ever slower speeds (which a real
+         * platform may not even execute) without ever stopping, and never be
+         * reported as `Blocked`. 0: stop only at a zero speed cap. */
+        double safety_min_speed = 0.05;
+
         /** [s] If held stopped by the safety layer longer than this, report
          * `Blocked`. */
         double block_timeout = 5.0;
@@ -383,6 +396,13 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     /** Convenience overload: obstacle points as (x,y) in the map frame. */
     void setObstacles(const std::vector<mrpt::math::TPoint2D>& obstacles);
 
+    /** [m/s] Sets an external cap on the speed, e.g. the safe speed that a
+     * CollisionGuard reports for the wanted motion (Output::curvature,
+     * Output::gear), applied in the next step()s like a predictive safety
+     * slowdown (so it may stop the vehicle and report `Blocked`). +inf: no
+     * cap (reset by setTrajectory(), kept by updateTrajectory()). */
+    void setSpeedCap(double maxSpeed) { speedCap_ = maxSpeed; }
+
     bool hasTrajectory() const
     {
         return !legs_.empty() &&
@@ -399,10 +419,17 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         FollowerStatus status = FollowerStatus::Idle;
 
         // Debug / introspection:
-        double               arc_length_s    = 0;
-        double               cross_track_err = 0;  //!< signed [m]
-        double               heading_err     = 0;  //!< [rad]
-        double               target_speed    = 0;  //!< [m/s] immediate command
+        double arc_length_s    = 0;
+        double cross_track_err = 0;  //!< signed [m]
+        double heading_err     = 0;  //!< [rad]
+        double target_speed    = 0;  //!< [m/s] immediate command
+        /** [1/m] Path curvature of the immediate command, also while
+         * stopped (the one it would drive). */
+        double curvature = 0;
+        /** Travel direction of the immediate command: +1 forward, -1 in
+         * reverse, 0 if not driving along the path (e.g. rotating in place).
+         */
+        double               gear = 0;
         mrpt::math::TPoint2D lookahead_point{0, 0};
 
         /** Safety speed scale applied this cycle (1 = unrestricted, 0 = stopped
@@ -464,8 +491,10 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     Trajectory          traj_;  //!< path of the current leg
     std::vector<double> cumS_;  //!< cumulative arc-length per point
     std::vector<double> knotCurv_;  //!< |path curvature| per point [1/m]
-    /** Signed turning angle of the path tangent at each point [rad] */
-    std::vector<double> vertexTurn_;
+    /** Signed curvature of the path tangent [1/m] just before and just
+     * after each point (see refCurvatureAt()), and the arc-length over which
+     * each applies [m]. */
+    std::vector<double> curvBefore_, curvAfter_, spanBefore_, spanAfter_;
     std::vector<double>
         cuspS_;  //!< arc-lengths where travel direction reverses
     std::vector<std::size_t>
@@ -556,7 +585,8 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
     std::vector<mrpt::math::TPoint2D>
                                  shapeSamples_;  //!< footprint, robot frame
     mrpt::maps::CSimplePointsMap obstacles_;  //!< map frame (kd-tree)
-    bool stopped_ = false;  //!< safety-stop hysteresis latch
+    bool   stopped_  = false;  //!< safety-stop hysteresis latch
+    double speedCap_ = std::numeric_limits<double>::infinity();  //!< [m/s]
     mrpt::system::TTimeStamp stoppedSince_ = INVALID_TIMESTAMP;
 
     struct Projection
@@ -644,7 +674,8 @@ class TrajectoryFollower : public mrpt::system::COutputLogger
         double gear, double speedScale = 1.0) const;
 
     /** Pose (x,y + tangent heading) on the reference polyline at arc-length
-     * `s`. */
+     * `s`. The tangent turns as the curvature of refCurvatureAt() (so it is
+     * continuous, not that of the polyline segments). */
     mrpt::math::TPose2D poseAtArc(double s) const;
 
     /** Pose of the vehicle body at arc-length `s` on the reference path: the

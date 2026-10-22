@@ -419,6 +419,209 @@ TEST(TrajectoryFollower, BlockedAfterTimeout)
     EXPECT_EQ(out.status, mpp::FollowerStatus::Blocked);
 }
 
+// The safety speed cap decreases with the distance to a predicted contact, so
+// a robot approaching an obstacle on its path would be commanded ever slower
+// speeds, until they are too small to move a real platform (deadband): it
+// would never stop being commanded to move, nor be reported as Blocked. It
+// must come to a full stop instead, and be reported as Blocked after
+// block_timeout (so that a planner can look for another way).
+TEST(TrajectoryFollower, StopsInsteadOfCrawlingTowardObstacle)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {8, 0}};
+
+    // Returns the status at the end, and when the command became zero:
+    const auto run = [&](double safetyMinSpeed)
+    {
+        mpp::TrajectoryFollower f;
+        f.params.max_speed        = 1.0;
+        f.params.block_timeout    = 2.0;
+        f.params.safety_min_speed = safetyMinSpeed;
+        // (a fine sweep, so contact distances are not rounded down to the
+        // stop distance)
+        f.params.footprint_sample_resolution = 0.01;
+        f.setRobotShape(mpp::robot_radius_t{0.3});
+        f.setObstacles(std::vector<TPoint2D>{{4.0, 0.0}});
+        f.setTrajectory(polyToTraj(pts, 1.0));
+
+        constexpr double kDeadband = 0.03;  // [m/s] the platform does not move
+        const double     dt        = f.params.control_period;
+        const auto       t0        = mrpt::Clock::now();
+        TPose2D          robot     = {0, 0, 0};
+        double           v         = 0;
+        double           tStop     = -1;
+        double           t         = 0;
+        auto             status    = mpp::FollowerStatus::Idle;
+        for (int k = 0; k < static_cast<int>(20.0 / dt); k++)
+        {
+            t        = k * dt;
+            auto loc = mkLoc(robot);
+            loc.timestamp =
+                t0 + std::chrono::microseconds(static_cast<int64_t>(t * 1e6));
+            auto odo       = mkOdo(robot, v);
+            odo.timestamp  = loc.timestamp;
+            const auto out = f.step(loc, odo);
+            status         = out.status;
+            if (status == mpp::FollowerStatus::Blocked) { break; }
+            EXPECT_FALSE(out.command.points.empty());
+            if (out.command.points.empty()) { break; }
+            const auto tw = out.command.points.front().twist;
+            if (tw.vx == 0 && tStop < 0 && robot.x > 1.0) { tStop = t; }
+            // Once stopped, never creeps again:
+            if (tStop >= 0) { EXPECT_EQ(tw.vx, 0.0) << "t=" << t; }
+            v     = std::abs(tw.vx) < kDeadband ? 0.0 : tw.vx;
+            robot = integrate(robot, v, tw.omega, dt);
+        }
+        // Stopped before the stop distance, without touching it:
+        const double gap = 4.0 - 0.3 - robot.x;
+        EXPECT_GT(gap, f.params.stop_distance);
+        return std::make_tuple(status, tStop, t);
+    };
+
+    const auto [status, tStop, tEnd] = run(0.05);
+    EXPECT_EQ(status, mpp::FollowerStatus::Blocked);
+    ASSERT_GE(tStop, 0);
+    EXPECT_NEAR(tEnd - tStop, 2.0, 0.2);  // block_timeout after stopping
+    EXPECT_LT(tStop, 8.0);  // not after a long crawl
+
+    // Without a minimum speed, the deadband would hide the robot is held:
+    const auto [status0, tStop0, tEnd0] = run(0.0);
+    EXPECT_NE(status0, mpp::FollowerStatus::Blocked);
+    EXPECT_LT(tStop0, 0);
+}
+
+// A planner path is a sampled arc: knots every 0.25 m with the true headings
+// of the arc. The curvature commanded on it must be that of the arc, from the
+// very start of the path (a robot starting close to obstacles may not be able
+// to deviate from it) and steadily along it, not depending on where the
+// vehicle is between knots.
+TEST(TrajectoryFollower, TracksSampledArcCurvatureFromTheStart)
+{
+    constexpr double R    = 1.2;  // [m]
+    constexpr double step = 0.25;  // [m] between knots
+    mpp::Trajectory  tr;
+    for (int i = 0; i <= 16; i++)
+    {
+        const double a = i * step / R;
+        tr.emplace_back(
+            TPose2D(R * std::sin(a), R * (1 - std::cos(a)), a), 0.5);
+    }
+    mpp::TrajectoryFollower f;
+    f.params.max_speed = 0.5;
+    f.setTrajectory(tr);
+
+    TPose2D      robot   = tr.front().pose;
+    double       v       = 0;
+    const double dt      = f.params.control_period;
+    double       curvMin = std::numeric_limits<double>::infinity();
+    double       curvMax = -curvMin;
+    for (int k = 0; k < 100; k++)
+    {
+        const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+        ASSERT_FALSE(out.command.points.empty());
+        const auto tw = out.command.points.front().twist;
+        if (std::abs(tw.vx) > 1e-3)
+        {
+            const double curv = tw.omega / tw.vx;
+            if (k == 0 || out.arc_length_s < 2.5)
+            {
+                curvMin = std::min(curvMin, curv);
+                curvMax = std::max(curvMax, curv);
+            }
+        }
+        robot = integrate(robot, tw.vx, tw.omega, dt);
+        v     = tw.vx;
+    }
+    EXPECT_NEAR(curvMin, 1 / R, 0.1);
+    EXPECT_NEAR(curvMax, 1 / R, 0.1);
+}
+
+// An external speed cap (e.g. from a collision guard) slows the vehicle down
+// smoothly; one below safety_min_speed stops it, and it is reported Blocked
+// if held so for block_timeout. It reports the curvature and gear it wants.
+TEST(TrajectoryFollower, ExternalSpeedCap)
+{
+    const std::vector<TPoint2D> pts = {{0, 0}, {20, 0}};
+    mpp::TrajectoryFollower     f;
+    f.params.max_speed     = 1.0;
+    f.params.block_timeout = 1.0;
+    f.setTrajectory(polyToTraj(pts, 1.0));
+
+    const double dt     = f.params.control_period;
+    const auto   t0     = mrpt::Clock::now();
+    TPose2D      robot  = {0, 0, 0};
+    double       v      = 0;
+    double       prevV  = 0;
+    auto         status = mpp::FollowerStatus::Idle;
+    for (int k = 0; k < static_cast<int>(12.0 / dt); k++)
+    {
+        const double t = k * dt;
+        if (t >= 4.0 && t < 8.0) { f.setSpeedCap(0.3); }
+        else if (t >= 8.0) { f.setSpeedCap(0.02); }
+        auto loc = mkLoc(robot);
+        loc.timestamp =
+            t0 + std::chrono::microseconds(static_cast<int64_t>(t * 1e6));
+        auto odo       = mkOdo(robot, v);
+        odo.timestamp  = loc.timestamp;
+        const auto out = f.step(loc, odo);
+        status         = out.status;
+        if (status == mpp::FollowerStatus::Blocked) { break; }
+        ASSERT_FALSE(out.command.points.empty());
+        EXPECT_EQ(out.gear, 1.0);
+        EXPECT_NEAR(out.curvature, 0.0, 0.05);
+        const auto tw = out.command.points.front().twist;
+        // Never faster than the cap after slowing down to it, and slowing
+        // down at the decel limit (smoothly):
+        if (t > 6.0 && t < 8.0) { EXPECT_LE(tw.vx, 0.3 + 1e-6); }
+        EXPECT_GE(tw.vx, prevV - f.params.max_decel * dt - 1e-6);
+        // (ramping down at max_decel from 0.3 m/s)
+        if (t > 8.6) { EXPECT_EQ(tw.vx, 0.0) << t; }
+        prevV = tw.vx;
+        robot = integrate(robot, tw.vx, tw.omega, dt);
+        v     = tw.vx;
+    }
+    EXPECT_EQ(status, mpp::FollowerStatus::Blocked);
+}
+
+// The external speed cap is a cap on the speed, not a fraction of it: on a
+// curve that already limits the speed below it, it changes nothing.
+TEST(TrajectoryFollower, ExternalSpeedCapIsAbsolute)
+{
+    constexpr double R = 1.0;  // [m]
+    mpp::Trajectory  tr;
+    for (int i = 0; i <= 60; i++)
+    {
+        const double a = i * 0.1 / R;
+        tr.emplace_back(
+            TPose2D(R * std::sin(a), R * (1 - std::cos(a)), a), 1.0);
+    }
+    const auto maxSpeedOnArc = [&](double cap)
+    {
+        mpp::TrajectoryFollower f;
+        f.params.max_speed = 1.0;
+        f.params.max_omega = 0.2;  // => 0.2 m/s on the arc
+        f.setTrajectory(tr);
+        f.setSpeedCap(cap);
+        TPose2D      robot = tr.front().pose;
+        double       v     = 0;
+        double       vMax  = 0;
+        const double dt    = f.params.control_period;
+        for (int k = 0; k < 100; k++)
+        {
+            const auto out = f.step(mkLoc(robot), mkOdo(robot, v));
+            if (out.command.points.empty()) { break; }
+            const auto tw = out.command.points.front().twist;
+            vMax          = std::max(vMax, tw.vx);
+            robot         = integrate(robot, tw.vx, tw.omega, dt);
+            v             = tw.vx;
+        }
+        return vMax;
+    };
+    const double vFree = maxSpeedOnArc(std::numeric_limits<double>::infinity());
+    EXPECT_NEAR(vFree, 0.2, 0.02);
+    EXPECT_NEAR(maxSpeedOnArc(0.3), vFree, 1e-6);
+    EXPECT_NEAR(maxSpeedOnArc(0.1), 0.1, 0.01);
+}
+
 TEST(TrajectoryFollower, IgnoresObstacleOffPath)
 {
     const std::vector<TPoint2D> pts = {{0, 0}, {6, 0}};
