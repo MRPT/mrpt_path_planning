@@ -14,8 +14,9 @@
  *    nothing.
  *  - Edges cost factor * heading change; reversing the direction of travel
  *    of a moving robot (a cusp) adds factor * pi.
- *  - Rotations in place cost factor * angle, and are neither cusps nor
- *    reverse motions.
+ *  - Rotations in place cost factor * angle (plus factor * pi from a moving
+ *    state, which has to stop for them), and are neither cusps nor reverse
+ *    motions.
  *  - A* includes the straight trajectory even if the evenly spaced subset of
  *    `max_ptg_trajectories_to_explore` misses it, and with the turning cost
  *    a plan along an open corridor turns much less.
@@ -216,8 +217,8 @@ TEST(CostEvaluatorTurning, CuspCost)
     EXPECT_FALSE(ev.isCusp(e));
 }
 
-// A rotation in place costs its angle, is not a cusp even from a moving
-// state, and is not a reverse motion.
+// A rotation in place costs its angle (plus a stop, from a moving state), is
+// not a cusp, and is not a reverse motion.
 TEST(CostEvaluatorTurning, RotationInPlace)
 {
     mrpt::config::CConfigFileMemory cfg(R"cfg(
@@ -251,9 +252,15 @@ RobotModel_shape2D_ys = -0.18 -0.18 0.18 0.18
         e.ptgPathIndex      = ks->first;
         e.ptgStepIndex      = ks->second;
         e.estimatedExecTime = std::abs(angle) / mrpt::DEG2RAD(60.0);
-        e.stateFrom.vel     = {1.0, 0, 0};  // moving forward
         // (Up to the time resolution of the trajectories)
         EXPECT_NEAR(ev(e), 2.0 * std::abs(angle), 3e-3) << angle;
+        e.stateFrom.vel = {1.0, 0, 0};  // moving forward
+        EXPECT_FALSE(ev.isCusp(e));
+        EXPECT_TRUE(ev.stopsMovingRobot(e) || angle == 0) << angle;
+        if (angle != 0)
+        {
+            EXPECT_NEAR(ev(e), 2.0 * (std::abs(angle) + M_PI), 3e-3) << angle;
+        }
         EXPECT_EQ(evRev(e), 0.0) << angle;
     }
 }

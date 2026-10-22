@@ -67,6 +67,11 @@ class CostEvaluatorTurning : public CostEvaluator
      * at its start (a cusp), which counts as a heading change of pi. */
     bool isCusp(const MoveEdgeSE2_TPS& edge) const;
 
+    /** Whether the edge makes a robot moving at its start stop: a cusp, or a
+     * rotation in place. Either counts as a heading change of pi (otherwise
+     * stopping would be cheaper than turning while driving). */
+    bool stopsMovingRobot(const MoveEdgeSE2_TPS& edge) const;
+
    private:
     std::vector<std::shared_ptr<ptg_t>> ptgs_;
 };
