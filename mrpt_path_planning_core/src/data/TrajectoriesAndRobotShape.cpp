@@ -73,7 +73,8 @@ TrajectoriesAndRobotShape TrajectoriesAndRobotShape::clone() const
 }
 
 void TrajectoriesAndRobotShape::initFromConfigFile(
-    mrpt::config::CConfigFileBase& c, const std::string& s, bool initializePTGs)
+    mrpt::config::CConfigFileBase& c, const std::string& s, bool initializePTGs,
+    const InitProgressCallback& progress)
 {
     MRPT_START
 
@@ -184,13 +185,23 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
         // Init:
         if (initializePTGs)
         {
-            new_ptg->initialize(
-                mrpt::format(
-                    "%s/ptg_grid_%016zx.dat.gz",
-                    ptg_cache_files_directory.c_str(), ptgConfigHash(c, s, n)),
-                false /*verbose*/
-            );
+            const std::string cacheFile = mrpt::format(
+                "%s/ptg_grid_%016zx.dat.gz", ptg_cache_files_directory.c_str(),
+                ptgConfigHash(c, s, n));
+
+            if (progress)
+            {
+                std::error_code ec;
+                progress(
+                    n, PTG_COUNT, new_ptg->getDescription(),
+                    std::filesystem::exists(cacheFile, ec));
+            }
+            new_ptg->initialize(cacheFile, false /*verbose*/);
         }
+    }
+    if (initializePTGs && progress)
+    {
+        progress(PTG_COUNT, PTG_COUNT, std::string(), true);
     }
     initialized_ = true;
     MRPT_END

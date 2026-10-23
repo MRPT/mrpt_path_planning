@@ -139,7 +139,8 @@ vehicle's physical `RobotModel_min_turning_radius`; C-PTGs turning tighter, or
 any `DiffDrive_Spin` if it is > 0, are rejected when loaded. It is the single
 source of truth shared by planner and follower. PTG collision grids are cached
 in `~/.cache/mrpt_path_planning` (or `$XDG_CACHE_HOME`), named by a hash of
-their configuration.
+their configuration. `initFromConfigFile()` can report per-PTG progress
+(`InitProgressCallback`, `MPP_HAS_PTG_INIT_PROGRESS`).
 
 **Cost model.** Edge cost = PTG segment estimated execution time + the sum of
 cost evaluators (each a penalty per second of motion, or per radian turned,

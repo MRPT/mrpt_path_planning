@@ -11,7 +11,9 @@
 #include <mrpt/containers/yaml.h>
 #include <mrpt/math/TPolygon2D.h>
 
+#include <functional>
 #include <memory>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -20,12 +22,25 @@
  * compatible with older versions. */
 #define MPP_HAS_PTG_CLONE 1
 
+/** Feature macro: TrajectoriesAndRobotShape::initFromConfigFile() accepts an
+ * InitProgressCallback. */
+#define MPP_HAS_PTG_INIT_PROGRESS 1
+
 namespace mpp
 {
 using robot_radius_t = double;
 
 using RobotShape =
     std::variant<mrpt::math::TPolygon2D, robot_radius_t, std::monostate>;
+
+/** Called by TrajectoriesAndRobotShape::initFromConfigFile() before
+ * initializing each PTG: its index, the total number of PTGs, its description
+ * and whether its collision grid is going to be loaded from the cache (fast)
+ * instead of built (slow). It is called once more at the end, with
+ * `index == count`, so callers know the initialization has finished. */
+using InitProgressCallback = std::function<void(
+    size_t index, size_t count, const std::string& ptgDescription,
+    bool fromCache)>;
 
 class TrajectoriesAndRobotShape
 {
@@ -53,10 +68,13 @@ class TrajectoriesAndRobotShape
      * Collision grids are cached in `$XDG_CACHE_HOME/mrpt_path_planning` (or
      * `~/.cache/mrpt_path_planning`), with file names derived from the PTG and
      * robot shape parameters, so different configurations do not invalidate
-     * each other's cache. */
+     * each other's cache.
+     *
+     * If given, `progress` is called while initializing the PTGs (so only if
+     * `initializePTGs` is true), from the calling thread. */
     void initFromConfigFile(
         mrpt::config::CConfigFileBase& cfg, const std::string& section,
-        bool initializePTGs = true);
+        bool initializePTGs = true, const InitProgressCallback& progress = {});
     // void initFromYAML(const mrpt::containers::yaml& node);
 
     std::vector<std::shared_ptr<ptg_t>> ptgs;  //!< Allowed movement sets
