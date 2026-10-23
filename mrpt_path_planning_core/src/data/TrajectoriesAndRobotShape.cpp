@@ -5,6 +5,7 @@
  * ------------------------------------------------------------------------- */
 
 #include <mpp/data/TrajectoriesAndRobotShape.h>
+#include <mpp/ptgs/DiffDriveCollisionGridBased.h>
 #include <mpp/ptgs/DiffDrive_C.h>
 #include <mpp/ptgs/DiffDrive_Spin.h>
 #include <mrpt/system/os.h>
@@ -189,14 +190,30 @@ void TrajectoriesAndRobotShape::initFromConfigFile(
                 "%s/ptg_grid_%016zx.dat.gz", ptg_cache_files_directory.c_str(),
                 ptgConfigHash(c, s, n));
 
-            if (progress)
+            // The collision grid PTGs tell when they know whether the grid is
+            // loaded or built; others have no grid to load.
+            bool reported = false;
+            auto report   = [&](bool fromCache)
             {
-                std::error_code ec;
-                progress(
-                    n, PTG_COUNT, new_ptg->getDescription(),
-                    std::filesystem::exists(cacheFile, ec));
-            }
+                if (reported) { return; }
+                reported = true;
+                progress(n, PTG_COUNT, new_ptg->getDescription(), fromCache);
+            };
+            auto* gridPtg =
+                dynamic_cast<ptg::DiffDriveCollisionGridBased*>(new_ptg.get());
+            if (progress && gridPtg) { gridPtg->setGridInitCallback(report); }
+            // (the callback refers to local variables)
+            struct ResetCallback
+            {
+                ptg::DiffDriveCollisionGridBased* grid;
+                ~ResetCallback()
+                {
+                    if (grid) { grid->setGridInitCallback({}); }
+                }
+            } resetCallback{gridPtg};
+
             new_ptg->initialize(cacheFile, false /*verbose*/);
+            if (progress) { report(false); }
         }
     }
     if (initializePTGs && progress)

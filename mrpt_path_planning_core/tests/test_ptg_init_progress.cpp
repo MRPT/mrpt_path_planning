@@ -9,7 +9,8 @@
  *  - The callback is called once per PTG, in order, plus a final call with
  *    index == count.
  *  - `fromCache` is false while the collision grids are built, and true when
- *    initializing again from the same configuration.
+ *    initializing again from the same configuration, but not if the cache
+ *    file exists and is unusable.
  *  - No calls if PTGs are not initialized, and no callback is also valid.
  */
 
@@ -20,6 +21,7 @@
 
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -117,6 +119,34 @@ TEST_F(PtgInitProgress, FromCacheOnSecondInit)
     ASSERT_EQ(second.size(), 3u);
     EXPECT_TRUE(second[0].fromCache);
     EXPECT_TRUE(second[1].fromCache);
+}
+
+TEST_F(PtgInitProgress, UnusableCacheFileCountsAsBuild)
+{
+    ASSERT_EQ(init().size(), 3u);
+
+    // Replace every cache file by garbage:
+    size_t numFiles = 0;
+    for (const auto& e : std::filesystem::recursive_directory_iterator(dir_))
+    {
+        if (e.is_regular_file())
+        {
+            std::ofstream(e.path(), std::ios::trunc) << "not a cache file";
+            numFiles++;
+        }
+    }
+    ASSERT_EQ(numFiles, 2u);
+
+    const auto calls = init();
+    ASSERT_EQ(calls.size(), 3u);
+    EXPECT_FALSE(calls[0].fromCache);
+    EXPECT_FALSE(calls[1].fromCache);
+
+    // ...which were rewritten, so they load again:
+    const auto again = init();
+    ASSERT_EQ(again.size(), 3u);
+    EXPECT_TRUE(again[0].fromCache);
+    EXPECT_TRUE(again[1].fromCache);
 }
 
 TEST_F(PtgInitProgress, NoCallsIfPtgsNotInitialized)

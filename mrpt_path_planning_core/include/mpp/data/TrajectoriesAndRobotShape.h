@@ -33,11 +33,14 @@ using robot_radius_t = double;
 using RobotShape =
     std::variant<mrpt::math::TPolygon2D, robot_radius_t, std::monostate>;
 
-/** Called by TrajectoriesAndRobotShape::initFromConfigFile() before
- * initializing each PTG: its index, the total number of PTGs, its description
- * and whether its collision grid is going to be loaded from the cache (fast)
- * instead of built (slow). It is called once more at the end, with
- * `index == count`, so callers know the initialization has finished. */
+/** Called by TrajectoriesAndRobotShape::initFromConfigFile() for each PTG, as
+ * soon as it is known whether its collision grid is loaded from the cache
+ * (`fromCache` true: fast) or built (false: slow, it starts right after the
+ * call, and it is also false for PTGs without a grid): the PTG index, the
+ * total number of PTGs and the PTG description. A cache file that exists but
+ * cannot be used (e.g. made for another configuration or corrupt) counts as a
+ * build. It is called once more at the end, with `index == count`, so callers
+ * know the initialization has finished. */
 using InitProgressCallback = std::function<void(
     size_t index, size_t count, const std::string& ptgDescription,
     bool fromCache)>;

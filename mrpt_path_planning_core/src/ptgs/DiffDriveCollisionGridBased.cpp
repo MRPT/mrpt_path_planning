@@ -789,9 +789,12 @@ void DiffDriveCollisionGridBased::internal_initialize(
     if (loadColGridsFromFile(cacheFilename, m_robotShape))
     {
         if (verbose) cout << "loaded from file OK" << endl;
+        if (m_gridInitCallback) { m_gridInitCallback(true); }
     }
     else
     {
+        if (m_gridInitCallback) { m_gridInitCallback(false); }
+
         // BUGFIX: In case we start reading the file and in the end detected an
         // error,
         //         we must make sure that there's space enough for the grid:
