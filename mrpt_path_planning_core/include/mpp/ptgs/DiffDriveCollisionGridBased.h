@@ -14,6 +14,7 @@
 #include <mrpt/typemeta/TEnumType.h>
 #include <mrpt/version.h>
 
+#include <functional>
 #include <optional>
 #include <utility>
 
@@ -149,6 +150,17 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
      * range) [m]. */
     double getObstacleReachDistance() const;
 
+    /** Sets a function called by initialize() as soon as it is known whether
+     * the collision grid is loaded from the cache file (true) or has to be
+     * built (false), which happens before the slow part. It is meant to be
+     * set only while initializing (see
+     * TrajectoriesAndRobotShape::initFromConfigFile()), and reset (empty)
+     * afterwards. */
+    void setGridInitCallback(std::function<void(bool fromCache)> callback)
+    {
+        m_gridInitCallback = std::move(callback);
+    }
+
    protected:
     DiffDriveCollisionGridBased();
 
@@ -194,6 +206,7 @@ class DiffDriveCollisionGridBased : public mrpt::nav::CPTG_RobotShape_Polygonal
     std::vector<TCPointVector> m_trajectory;
     double                     m_resolution{0.05};
     double                     m_clearance{0.0};
+    std::function<void(bool)>  m_gridInitCallback;
     double                     m_robotRadius{0.0};  //!< set at initialize()
 
     /** Whether an obstacle point (vehicle frame) is inside the footprint. */
