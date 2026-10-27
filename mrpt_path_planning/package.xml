@@ -10,7 +10,7 @@
 -->
 <package format="3">
   <name>mrpt_path_planning</name>
-  <version>2.0.0</version>
+  <version>2.1.0</version>
   <description>Metapackage for mrpt_path_planning: depends on mrpt_path_planning_core (headless path-planning library) and mrpt_path_planning_apps (CLI/GUI applications).</description>
 
   <author     email="joseluisblancoc@gmail.com">Jose-Luis Blanco-Claraco</author>

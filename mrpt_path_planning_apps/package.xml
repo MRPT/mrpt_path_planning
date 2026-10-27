@@ -5,7 +5,7 @@
 -->
 <package format="3">
   <name>mrpt_path_planning_apps</name>
-  <version>2.0.0</version>
+  <version>2.1.0</version>
   <description>CLI and GUI applications for mrpt_path_planning: path-planner-cli (opens a 3D viz window) and selfdriving-simulator-gui (requires mvsim). Kept in a separate package from mrpt_path_planning_core so headless consumers don't need to pull in mrpt_libgui.</description>
 
   <author     email="joseluisblancoc@gmail.com">Jose-Luis Blanco-Claraco</author>

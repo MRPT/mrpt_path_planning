@@ -2,8 +2,8 @@
 Changelog for package mrpt_path_planning_core
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+2.1.0 (2026-10-27)
+------------------
 * TrajectoryFollower: latency compensation, curvature feedforward, rotate at goal, ``control_delay``, ``actuation_lag``, ``max_omega`` and curvature preview.
 * TrajectoryFollower: stop (``safety_min_speed``) instead of crawling toward a predicted contact; ``MissedGoal`` when passing the path end or settling off-heading (``arrival_ang_tol``).
 * TrajectoryFollower: ``ReachedGoal`` and ``MissedGoal`` are terminal until a new trajectory.
