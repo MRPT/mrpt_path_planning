@@ -2,6 +2,14 @@
 Changelog for package mrpt_path_planning_apps
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* selfdriving-simulator-gui: port to the mvsim ImGui GUI and TrajectoryFollower; remove NavEngine.
+* WaypointNavigator: ``cancel()`` discards plans in progress; PTGs used under the planning lock.
+* path-planner-cli: new ``--reverse-cost-factor`` and ``--turn-cost-factor`` options.
+* Docs and example config for rotations in place.
+* Contributors: Jose Luis Blanco-Claraco
+
 2.0.0 (2026-10-01)
 ------------------
 * add missing changelogs

@@ -2,6 +2,26 @@
 Changelog for package mrpt_path_planning_core
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Forthcoming
+-----------
+* TrajectoryFollower: latency compensation, curvature feedforward, rotate at goal, ``control_delay``, ``actuation_lag``, ``max_omega`` and curvature preview.
+* TrajectoryFollower: stop (``safety_min_speed``) instead of crawling toward a predicted contact; ``MissedGoal`` when passing the path end or settling off-heading (``arrival_ang_tol``).
+* TrajectoryFollower: ``ReachedGoal`` and ``MissedGoal`` are terminal until a new trajectory.
+* TrajectoryFollower: smooth path curvature and tangent; ignore tiny back-and-forth legs; sweep the body heading on reverse segments.
+* TrajectoryFollower: rotate in place at path pivots; ``updateTrajectory()`` swaps in a continuing path; external speed cap and predicted contact outputs.
+* New ``CollisionGuard``: last-resort velocity filter against sensed obstacles, reporting the max safe speed.
+* New ``DiffDrive_Spin`` PTG: rotations in place for differential-drive robots, with spin shots in A*.
+* New ``CostEvaluatorTurning`` and ``CostEvaluatorReverseMotion``; cost evaluators now charge per second of motion.
+* TPS_Astar: resumable (anytime) search with ``reroot()``, ``set_obstacles()`` and ``first_colliding_edge()``.
+* TPS_Astar: always explore the straight trajectory; plan from start poses in contact or within the clearance; a start in the goal cell is a solution.
+* TPS_Astar: keep tree and search costs consistent in ``reroot()``; conservative start-edge sweep; reject ambiguous robot shapes.
+* Reentrant PTGs: independent copies and ``TrajectoriesAndRobotShape::clone()``.
+* Optional PTG initialization progress callback in ``TrajectoriesAndRobotShape``.
+* PTG grid cache: atomic writes, fallback to the working directory.
+* Remove NavEngine and its vehicle interfaces.
+* Fix compiler warnings, several smaller fixes and new tests.
+* Contributors: Jose Luis Blanco-Claraco
+
 2.0.0 (2026-10-01)
 ------------------
 * add missing changelogs
