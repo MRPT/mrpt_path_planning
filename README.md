@@ -11,6 +11,10 @@ environments**, for arbitrary robot shapes and realistic kinematics
 *Parameterized Trajectory Generators* (PTGs), which act as libraries of motion
 primitives.
 
+> **ROS 2 users:** the ROS 2 nodes (planner and trajectory follower) wrapping
+> this library live in
+> [**mrpt_navigation**](https://github.com/mrpt-ros-pkg/mrpt_navigation).
+
 <p align="center">
   <img src="docs/images/demo-holonomic.svg" width="49%" alt="Holonomic robot following a planned path">
   <img src="docs/images/demo-ackermann.svg" width="49%" alt="Ackermann vehicle following a planned path">
