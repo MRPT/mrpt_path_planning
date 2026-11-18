@@ -31,6 +31,39 @@ path-planner-cli -s "[0.5 0 0]" -g "[4.2 0.5 80]" \
 (and the same with ptgs_holonomic_robot.ini and
 mvsim-demo-astar-planner-params.yaml for demo-holonomic.svg) -->
 
+## Publications
+
+If you use this library in your work, please cite the paper that describes the
+TPS-A\* planner ([arXiv:2611.09210](https://arxiv.org/abs/2611.09210)):
+
+```bibtex
+@misc{blanco2026tpsastar,
+  title         = {{TPS-A*}: Path Planning for Any-Shape Vehicles with Certified Collision Checking in Trajectory Parameter Space},
+  author        = {Blanco-Claraco, Jos{\'e} Luis and Rai, Shravan S. and Ca{\~n}adas-Ar{\'a}nega, Fernando and Torres-Moreno, Jos{\'e} Luis and Moreno-{\'U}beda, Jos{\'e} Carlos},
+  year          = {2026},
+  eprint        = {2611.09210},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.RO},
+  url           = {https://arxiv.org/abs/2611.09210}
+}
+```
+
+It builds on the Trajectory Parameter Space (TP-Space) line of work (newest
+first):
+
+- J.L. Blanco, M. Bellone, A. Gimenez-Fernandez, "TP-Space RRT: Kinematic
+  Path Planning of Non-Holonomic Any-Shape Vehicles", *International Journal
+  of Advanced Robotic Systems*, 12(5):55, 2015.
+  [doi:10.5772/60463](https://doi.org/10.5772/60463)
+- J.L. Blanco, J. Gonzalez, J.A. Fernandez-Madrigal, "Extending obstacle
+  avoidance methods through multiple parameter-space transformations",
+  *Autonomous Robots*, 24(1):29-48, 2008.
+- J.L. Blanco, J. Gonzalez, J.A. Fernandez-Madrigal, "The Trajectory Parameter
+  Space (TP-Space): A New Space Representation for Non-Holonomic Mobile Robot
+  Reactive Navigation", *IEEE/RSJ Int. Conf. on Intelligent Robots and Systems
+  (IROS)*, pp. 1462-1468, 2006.
+  [doi:10.1109/IROS.2006.282518](https://doi.org/10.1109/IROS.2006.282518)
+
 ## Features
 
 - **Kinematically feasible by construction**: every path is a sequence of PTG
@@ -311,25 +344,6 @@ targets them):
 
 
 </details>
-
-## Publications
-
-This library builds on the Trajectory Parameter Space (TP-Space) line of work:
-
-- J.L. Blanco, J. Gonzalez, J.A. Fernandez-Madrigal, "The Trajectory Parameter
-  Space (TP-Space): A New Space Representation for Non-Holonomic Mobile Robot
-  Reactive Navigation", *IEEE/RSJ Int. Conf. on Intelligent Robots and Systems
-  (IROS)*, pp. 1462-1468, 2006.
-  [doi:10.1109/IROS.2006.282518](https://doi.org/10.1109/IROS.2006.282518)
-- J.L. Blanco, J. Gonzalez, J.A. Fernandez-Madrigal, "Extending obstacle
-  avoidance methods through multiple parameter-space transformations",
-  *Autonomous Robots*, 24(1):29-48, 2008.
-- J.L. Blanco, M. Bellone, A. Gimenez-Fernandez, "TP-Space RRT: Kinematic
-  Path Planning of Non-Holonomic Any-Shape Vehicles", *International Journal
-  of Advanced Robotic Systems*, 12(5):55, 2015.
-  [doi:10.5772/60463](https://doi.org/10.5772/60463)
-- A paper describing the planner in this repository will be available on arXiv
-  (2026), soon. <!-- TODO: add arXiv reference and BibTeX -->
 
 ## License
 
