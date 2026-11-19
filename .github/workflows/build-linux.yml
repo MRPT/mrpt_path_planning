@@ -41,7 +41,6 @@ jobs:
           sudo add-apt-repository ppa:joseluisblancoc/${{ matrix.mrpt_ppa }} -y
           sudo apt-get update -qq
 
-          sudo apt-get -y upgrade
           # libgtest-dev is required for the unit tests to be built and run;
           # without it tests/CMakeLists.txt skips the whole suite (ctest then
           # reports "No tests were found").
