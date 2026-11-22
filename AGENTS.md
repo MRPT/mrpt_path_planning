@@ -89,6 +89,12 @@ colcon test --base-paths . && colcon test-result --all --verbose
 - New public APIs that downstream packages (e.g. `mrpt_navigation`) use get a
   feature macro (`#define MPP_HAS_<FEATURE> 1` in their header), so consumers
   keep building against older versions.
+- **ABI and versions**: shared libraries get the SOVERSION `MAJOR.MINOR` of `package.xml`, so a
+  patch release must keep the ABI. Changing the layout of a public type (data members added,
+  removed or reordered, virtual functions) or an exported signature needs a minor bump
+  (`catkin_prepare_release --bump minor`): otherwise packages built against the previous patch
+  release load the new library and silently corrupt memory (e.g. a struct grown by the library
+  overruns the caller's stack copy).
 
 ## Core concepts
 
